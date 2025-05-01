@@ -1,0 +1,257 @@
+.main-menu-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: var(--background-color);
+  padding: 20px;
+}
+
+.main-menu {
+  width: 100%;
+  max-width: 800px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.main-menu-header {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 30px;
+  text-align: center;
+}
+
+.main-menu-header h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.main-menu-header p {
+  margin: 10px 0 0;
+  font-size: 1.2rem;
+  opacity: 0.9;
+}
+
+.main-menu-content {
+  padding: 30px;
+}
+
+.main-menu-content h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: var(--text-color);
+  font-size: 1.5rem;
+}
+
+.database-list {
+  margin-bottom: 30px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.database-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.database-item:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.database-item.selected {
+  border-color: var(--primary-color);
+  background-color: rgba(26, 115, 232, 0.05);
+}
+
+.database-info {
+  flex: 1;
+}
+
+.database-info h3 {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+  color: var(--primary-color);
+}
+
+.database-details {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.database-details p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-color);
+}
+
+.database-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.new-database-form {
+  background-color: #f5f7fa;
+  padding: 20px;
+  border-radius: 4px;
+  margin-top: 20px;
+}
+
+.new-database-form h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+}
+
+.info-text {
+  background-color: #e8f4fd;
+  border-left: 4px solid var(--primary-color);
+  padding: 10px 15px;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #333;
+  border-radius: 0 4px 4px 0;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.form-group input[type="text"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.form-group.checkbox {
+  display: flex;
+  align-items: center;
+}
+
+.form-group.checkbox input {
+  margin-right: 10px;
+}
+
+.form-group.checkbox label {
+  margin-bottom: 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.new-database-button {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.btn {
+  padding: 10px 15px;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #1565c0;
+}
+
+.btn-secondary {
+  background-color: #e0e0e0;
+  color: var(--text-color);
+}
+
+.btn-secondary:hover {
+  background-color: #d0d0d0;
+}
+
+.btn-danger {
+  background-color: #f44336;
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #d32f2f;
+}
+
+.btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-color);
+}
+
+.error {
+  color: #f44336;
+  padding: 10px;
+  background-color: #ffebee;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.no-databases {
+  text-align: center;
+  padding: 30px;
+  color: var(--text-color);
+  background-color: #f5f7fa;
+  border-radius: 4px;
+}
+
+.message {
+  padding: 10px 15px;
+  margin: 0 30px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.message.success {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.message.error {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+.main-menu-footer {
+  padding: 15px 30px;
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+  color: #757575;
+  font-size: 0.9rem;
+}

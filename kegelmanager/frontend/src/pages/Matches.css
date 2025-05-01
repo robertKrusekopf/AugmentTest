@@ -1,0 +1,158 @@
+.matches-page {
+  padding: 20px;
+}
+
+.filters {
+  margin-bottom: 20px;
+}
+
+.filter-bar {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  min-width: 150px;
+}
+
+.matches-container {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.round-section {
+  margin-bottom: 20px;
+}
+
+.round-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 15px;
+  color: var(--primary-color);
+}
+
+.matches-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.match-card {
+  background-color: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.2s, box-shadow 0.2s;
+  color: var(--text-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.match-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.match-header {
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.match-date {
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.match-time {
+  font-size: 14px;
+  color: #5f6368;
+  margin-bottom: 5px;
+}
+
+.match-league {
+  font-size: 14px;
+  color: var(--primary-color);
+}
+
+.match-teams {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+}
+
+.team {
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.team.home {
+  color: var(--primary-color);
+}
+
+.match-result {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.score {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.vs {
+  font-size: 18px;
+  font-weight: 500;
+  color: #5f6368;
+}
+
+.match-footer {
+  padding: 15px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.match-status {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.match-status.played {
+  color: var(--success-color);
+}
+
+.match-status.upcoming {
+  color: var(--accent-color);
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-small:hover {
+  background-color: var(--secondary-color);
+}
+
+@media (max-width: 768px) {
+  .matches-grid {
+    grid-template-columns: 1fr;
+  }
+}

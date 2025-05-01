@@ -1,0 +1,231 @@
+.transfers-page {
+  padding: 20px;
+}
+
+.transfer-budget-card {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.budget-info h3 {
+  font-size: 16px;
+  color: #5f6368;
+  margin-bottom: 5px;
+}
+
+.budget-amount {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.transfers-tabs {
+  background-color: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  padding: 15px 20px;
+  cursor: pointer;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.tab-content {
+  padding: 20px;
+}
+
+.filters {
+  margin-bottom: 20px;
+}
+
+.search-bar {
+  display: flex;
+  margin-bottom: 15px;
+}
+
+.search-bar input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px 0 0 4px;
+  font-size: 16px;
+}
+
+.search-bar button {
+  padding: 10px 15px;
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: 0 4px 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-bar {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  min-width: 150px;
+}
+
+.age-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.age-filter input {
+  width: 100px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.market-table, .offers-table, .history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.market-table th, .offers-table th, .history-table th,
+.market-table td, .offers-table td, .history-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.market-table th, .offers-table th, .history-table th {
+  background-color: #f1f3f4;
+  font-weight: 500;
+}
+
+.strength-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.strength-bar {
+  flex: 1;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.strength-fill {
+  height: 100%;
+  background-color: var(--primary-color);
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-small:hover {
+  background-color: var(--secondary-color);
+}
+
+.btn-success {
+  background-color: var(--success-color);
+}
+
+.btn-success:hover {
+  background-color: #2d964a;
+}
+
+.btn-danger {
+  background-color: var(--error-color);
+}
+
+.btn-danger:hover {
+  background-color: #d23c2a;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.pending {
+  background-color: rgba(251, 188, 5, 0.1);
+  color: #f9ab00;
+}
+
+.status-badge.accepted {
+  background-color: rgba(52, 168, 83, 0.1);
+  color: var(--success-color);
+}
+
+.status-badge.rejected {
+  background-color: rgba(234, 67, 53, 0.1);
+  color: var(--error-color);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 5px;
+}
+
+.my-offers-tab h3, .received-offers-tab h3, .history-tab h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+@media (max-width: 992px) {
+  .transfer-budget-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .budget-actions {
+    margin-top: 15px;
+  }
+  
+  .tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  
+  .market-table, .offers-table, .history-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

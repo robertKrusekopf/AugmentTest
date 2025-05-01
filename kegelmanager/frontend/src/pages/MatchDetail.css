@@ -1,0 +1,425 @@
+.match-detail-page {
+  padding: 20px;
+}
+
+.page-header {
+  margin-bottom: 20px;
+}
+
+.breadcrumbs {
+  font-size: 14px;
+  color: #5f6368;
+}
+
+.breadcrumbs a {
+  color: var(--primary-color);
+}
+
+.match-header-card {
+  margin-bottom: 20px;
+  padding: 20px;
+}
+
+.match-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 20px;
+  color: #5f6368;
+  font-size: 14px;
+}
+
+.match-league a {
+  color: var(--primary-color);
+  font-weight: 500;
+}
+
+.match-teams-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.match-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 40%;
+}
+
+.team-logo {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.team-name {
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.match-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20%;
+}
+
+.score-display {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.score {
+  font-size: 36px;
+  font-weight: 700;
+}
+
+.score-separator {
+  font-size: 36px;
+  font-weight: 700;
+  margin: 0 10px;
+}
+
+.vs-display {
+  font-size: 24px;
+  font-weight: 600;
+  color: #5f6368;
+  margin-bottom: 10px;
+}
+
+.match-status {
+  font-size: 14px;
+  color: #5f6368;
+}
+
+.match-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.match-section {
+  padding: 20px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: var(--primary-color);
+}
+
+.match-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.timeline-event {
+  display: flex;
+  align-items: flex-start;
+  padding: 10px;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+}
+
+.timeline-event.start, .timeline-event.end {
+  background-color: rgba(26, 115, 232, 0.1);
+}
+
+.timeline-event.half {
+  background-color: rgba(251, 188, 5, 0.1);
+}
+
+.timeline-event.point.home {
+  background-color: rgba(52, 168, 83, 0.1);
+}
+
+.timeline-event.point.away {
+  background-color: rgba(234, 67, 53, 0.1);
+}
+
+.event-time {
+  min-width: 60px;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.event-content {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.event-icon {
+  margin-right: 10px;
+  font-size: 18px;
+}
+
+.event-description {
+  flex: 1;
+}
+
+.performances-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.performances-table th,
+.performances-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.performances-table th {
+  background-color: #f1f3f4;
+  font-weight: 500;
+}
+
+.home-player {
+  background-color: rgba(52, 168, 83, 0.05);
+}
+
+.away-player {
+  background-color: rgba(234, 67, 53, 0.05);
+}
+
+/* Bowling results table */
+.bowling-results {
+  overflow-x: auto;
+}
+
+.bowling-results-table,
+.bowling-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.bowling-results-table th,
+.bowling-results-table td,
+.bowling-stats-table th,
+.bowling-stats-table td {
+  padding: 10px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+}
+
+.bowling-results-table th,
+.bowling-stats-table th {
+  background-color: #f1f3f4;
+  font-weight: 500;
+}
+
+.bowling-results-table .player-name,
+.bowling-stats-table .player-name {
+  text-align: left;
+  min-width: 150px;
+  font-weight: 500;
+}
+
+.bowling-results-table .lane-score {
+  width: 60px;
+}
+
+.bowling-stats-table .stat-score {
+  width: 70px;
+}
+
+.bowling-results-table .total-score,
+.bowling-stats-table .total-score {
+  width: 80px;
+  font-weight: 600;
+  background-color: #f8f9fa;
+}
+
+.bowling-results-table tr.home-win td,
+.bowling-stats-table tr.home-win td {
+  background-color: rgba(52, 168, 83, 0.05);
+}
+
+.bowling-results-table tr.away-win td,
+.bowling-stats-table tr.away-win td {
+  background-color: rgba(234, 67, 53, 0.05);
+}
+
+.bowling-results-table tr.draw td,
+.bowling-stats-table tr.draw td {
+  background-color: rgba(251, 188, 5, 0.05);
+}
+
+.bowling-results-table tr.team-totals,
+.bowling-stats-table tr.team-totals {
+  font-weight: 700;
+  background-color: #f1f3f4;
+}
+
+.bowling-results-table tr.team-totals .total-score,
+.bowling-stats-table tr.team-totals .total-score {
+  font-size: 16px;
+  background-color: var(--primary-color);
+  color: white;
+}
+
+/* Spezifische Stile für die Statistik-Tabelle */
+.bowling-stats-table {
+  margin-top: 20px;
+}
+
+.bowling-stats-table .stat-score.fehler {
+  color: #d93025;
+  font-weight: 500;
+}
+
+.player-name-link {
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.player-name-link:hover {
+  text-decoration: underline;
+}
+
+.rating-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rating-value {
+  font-weight: 600;
+}
+
+.rating-stars {
+  display: flex;
+}
+
+.star {
+  color: #e0e0e0;
+  font-size: 16px;
+}
+
+.star.filled {
+  color: var(--accent-color);
+}
+
+.star.half-filled {
+  position: relative;
+  color: #e0e0e0;
+}
+
+.star.half-filled::before {
+  content: '★';
+  position: absolute;
+  color: var(--accent-color);
+  width: 50%;
+  overflow: hidden;
+}
+
+.statistics-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.statistic-item {
+  display: flex;
+  align-items: center;
+}
+
+.statistic-label {
+  width: 100px;
+  font-weight: 500;
+}
+
+.statistic-bars {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.team-bar {
+  height: 20px;
+  background-color: #f1f3f4;
+  border-radius: 4px;
+  position: relative;
+}
+
+.team-bar.home .bar-fill {
+  background-color: var(--primary-color);
+}
+
+.team-bar.away .bar-fill {
+  background-color: var(--accent-color);
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.bar-value {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.team-bar.home .bar-value {
+  right: 5px;
+  color: white;
+}
+
+.team-bar.away .bar-value {
+  left: 5px;
+  color: white;
+}
+
+.statistic-name {
+  text-align: center;
+  font-size: 14px;
+  color: #5f6368;
+}
+
+@media (max-width: 768px) {
+  .match-teams-container {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .match-team {
+    width: 100%;
+  }
+
+  .match-result {
+    width: 100%;
+    margin: 20px 0;
+  }
+
+  .statistic-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .statistic-label {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+}

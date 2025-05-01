@@ -1,0 +1,525 @@
+.youth-page {
+  padding: 20px;
+}
+
+.youth-tabs {
+  background-color: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  padding: 15px 20px;
+  cursor: pointer;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.tab-content {
+  padding: 20px;
+}
+
+/* Academy Tab */
+.academy-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.academy-info h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.academy-level, .academy-budget {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.level-label, .budget-label {
+  font-weight: 500;
+  margin-right: 10px;
+}
+
+.level-stars {
+  display: flex;
+}
+
+.star {
+  color: #e0e0e0;
+  font-size: 18px;
+}
+
+.star.filled {
+  color: var(--accent-color);
+}
+
+.budget-value {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.facilities-section {
+  margin-bottom: 30px;
+}
+
+.facilities-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.facilities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.facility-card {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.facility-card h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.facility-level {
+  margin-bottom: 15px;
+}
+
+.facility-description {
+  margin-bottom: 15px;
+  color: #5f6368;
+  font-size: 14px;
+}
+
+.facility-btn {
+  width: 100%;
+}
+
+.youth-players-section {
+  margin-bottom: 30px;
+}
+
+.youth-players-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.youth-players-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+.youth-players-table th,
+.youth-players-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.youth-players-table th {
+  background-color: #f1f3f4;
+  font-weight: 500;
+}
+
+.progress-bar {
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: var(--primary-color);
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.academy-actions.center {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+/* Team Tab */
+.team-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.team-info h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.team-meta {
+  display: flex;
+  gap: 15px;
+  color: #5f6368;
+}
+
+.team-league, .team-position {
+  display: flex;
+  align-items: center;
+}
+
+.team-league::before, .team-position::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--border-color);
+  margin-right: 8px;
+}
+
+.team-matches {
+  margin-bottom: 30px;
+}
+
+.team-matches h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.matches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.match-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.match-date {
+  font-size: 14px;
+  color: #5f6368;
+  min-width: 100px;
+}
+
+.match-teams {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+}
+
+.team {
+  font-weight: 500;
+}
+
+.team.home {
+  color: var(--primary-color);
+}
+
+.vs, .score {
+  font-weight: 600;
+  min-width: 60px;
+  text-align: center;
+}
+
+.match-status {
+  min-width: 100px;
+  text-align: right;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background-color: #f1f3f4;
+  color: #5f6368;
+}
+
+.badge-success {
+  background-color: rgba(52, 168, 83, 0.1);
+  color: var(--success-color);
+}
+
+.team-players {
+  margin-bottom: 30px;
+}
+
+.team-players h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.players-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.players-table th,
+.players-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.players-table th {
+  background-color: #f1f3f4;
+  font-weight: 500;
+}
+
+.strength-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.strength-bar {
+  flex: 1;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.strength-fill {
+  height: 100%;
+  background-color: var(--primary-color);
+}
+
+.actions {
+  display: flex;
+  gap: 5px;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-small:hover {
+  background-color: var(--secondary-color);
+}
+
+.promote-btn {
+  background-color: var(--accent-color);
+}
+
+.promote-btn:hover {
+  background-color: #e0a800;
+}
+
+/* Development Tab */
+.development-section {
+  margin-bottom: 30px;
+}
+
+.development-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.promotions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.promotion-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.player-info h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.player-meta {
+  display: flex;
+  gap: 15px;
+  color: #5f6368;
+}
+
+.player-age, .player-position {
+  display: flex;
+  align-items: center;
+}
+
+.player-age::before, .player-position::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--border-color);
+  margin-right: 8px;
+}
+
+.promotion-details {
+  text-align: right;
+  color: #5f6368;
+}
+
+.promotion-date {
+  margin-bottom: 5px;
+}
+
+.talents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.talent-card {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.talent-card h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.player-details {
+  margin-bottom: 20px;
+}
+
+.player-detail {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.detail-label {
+  color: #5f6368;
+}
+
+.detail-value {
+  font-weight: 500;
+}
+
+.talent-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.strategy-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.strategy-option {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+  border: 2px solid transparent;
+}
+
+.strategy-option.active {
+  border-color: var(--primary-color);
+  background-color: rgba(26, 115, 232, 0.05);
+}
+
+.strategy-option h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.strategy-option p {
+  margin-bottom: 20px;
+  color: #5f6368;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .academy-header, .team-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .academy-actions, .team-actions {
+    margin-top: 15px;
+  }
+  
+  .tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  
+  .match-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .match-date {
+    margin-bottom: 10px;
+  }
+  
+  .match-teams {
+    margin-bottom: 10px;
+  }
+  
+  .match-status {
+    align-self: flex-end;
+  }
+  
+  .promotion-item {
+    flex-direction: column;
+  }
+  
+  .promotion-details {
+    text-align: left;
+    margin-top: 10px;
+  }
+}
