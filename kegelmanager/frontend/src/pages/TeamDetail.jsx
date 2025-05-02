@@ -787,24 +787,41 @@ const TeamDetail = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {team.players.map(player => {
-                      const stats = player.statistics || {};
-                      return (
-                        <tr key={player.id}>
-                          <td>
-                            <Link to={`/players/${player.id}`} className="player-name-link">
-                              {player.name}
-                            </Link>
-                          </td>
-                          <td>{stats.total_matches || 0}</td>
-                          <td>{stats.avg_total_score?.toFixed(1) || '0.0'}</td>
-                          <td>{stats.avg_total_volle?.toFixed(1) || '0.0'}</td>
-                          <td>{stats.avg_total_raeumer?.toFixed(1) || '0.0'}</td>
-                          <td>{stats.avg_total_fehler?.toFixed(1) || '0.0'}</td>
-                          <td>{stats.mp_win_percentage?.toFixed(1) || '0.0'}%</td>
-                        </tr>
-                      );
-                    })}
+                    {team.players
+                      .filter(player => player.statistics && player.statistics.total_matches > 0)
+                      .sort((a, b) => {
+                        // Sortiere nach Anzahl der Spiele (absteigend)
+                        const matchesA = a.statistics?.total_matches || 0;
+                        const matchesB = b.statistics?.total_matches || 0;
+                        if (matchesB !== matchesA) return matchesB - matchesA;
+
+                        // Bei gleicher Spielanzahl nach Durchschnitt (absteigend)
+                        const avgA = a.statistics?.avg_total_score || 0;
+                        const avgB = b.statistics?.avg_total_score || 0;
+                        return avgB - avgA;
+                      })
+                      .map(player => {
+                        const stats = player.statistics || {};
+                        return (
+                          <tr key={player.id} className={player.is_substitute ? 'substitute-player' : ''}>
+                            <td>
+                              <Link to={`/players/${player.id}`} className="player-name-link">
+                                {player.name}
+                                {player.is_substitute && <span className="substitute-badge" title="Aushilfsspieler"> (A)</span>}
+                              </Link>
+                              {player.club_id !== team.club_id && (
+                                <div className="player-club">{player.club_name}</div>
+                              )}
+                            </td>
+                            <td>{stats.total_matches || 0}</td>
+                            <td>{stats.avg_total_score?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.avg_total_volle?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.avg_total_raeumer?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.avg_total_fehler?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.mp_win_percentage?.toFixed(1) || '0.0'}%</td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>

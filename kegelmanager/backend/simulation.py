@@ -10,7 +10,7 @@ def calculate_team_strength(team):
     total_strength = sum(player.strength for player in team.players)
     return total_strength / len(team.players)
 
-def simulate_match(home_team, away_team, match=None):
+def simulate_match(home_team, away_team, match=None, home_team_players=None, away_team_players=None):
     """Simulate a bowling match between two teams and return the result.
 
     In bowling, 6 players from each team play 4 lanes with 30 throws each.
@@ -21,106 +21,134 @@ def simulate_match(home_team, away_team, match=None):
     If both players have 2 SP each, the player with more total pins gets the MP.
     The team with more total pins gets 2 additional MP.
     The team with more MP wins the match.
+
+    Args:
+        home_team: The home team
+        away_team: The away team
+        match: The match object (optional)
+        home_team_players: Pre-assigned players for the home team (optional)
+        away_team_players: Pre-assigned players for the away team (optional)
     """
     from models import PlayerMatchPerformance, db, Player, Team
     import random
 
-    # Get all teams from the same club as the home team
-    home_club_teams = Team.query.filter_by(club_id=home_team.club_id).all()
-    # Sort teams by league level (lower level number = higher league)
-    home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+    # If pre-assigned players are provided, use them
+    if home_team_players is not None and away_team_players is not None:
+        home_players = home_team_players
+        away_players = away_team_players
 
-    # Get all teams from the same club as the away team
-    away_club_teams = Team.query.filter_by(club_id=away_team.club_id).all()
-    # Sort teams by league level (lower level number = higher league)
-    away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+    else:
+        # If no pre-assigned players, use the old method to assign players
+        print(f"No pre-assigned players for match {home_team.name} vs {away_team.name}, using old method")
 
-    # Get all players from the home club
-    home_club_players = Player.query.filter_by(club_id=home_team.club_id).all()
-    # Get all players from the away club
-    away_club_players = Player.query.filter_by(club_id=away_team.club_id).all()
+        # Get all teams from the same club as the home team
+        home_club_teams = Team.query.filter_by(club_id=home_team.club_id).all()
+        # Sort teams by league level (lower level number = higher league)
+        home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
 
-    # Sort available players by a combination of attributes (best players first)
-    # We'll use a weighted average of strength and other key attributes
-    def player_rating(player):
-        # Calculate a weighted rating based on key attributes
-        # Strength is the most important, but we also consider other attributes
-        return (
-            player.strength
-        )
+        # Get all teams from the same club as the away team
+        away_club_teams = Team.query.filter_by(club_id=away_team.club_id).all()
+        # Sort teams by league level (lower level number = higher league)
+        away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
 
-    # Sort players by their calculated rating
-    home_club_players.sort(key=player_rating, reverse=True)
-    away_club_players.sort(key=player_rating, reverse=True)
+        # Get all available players from the home club
+        home_club_players = Player.query.filter_by(club_id=home_team.club_id, is_available_current_matchday=True).all()
+        # Get all available players from the away club
+        away_club_players = Player.query.filter_by(club_id=away_team.club_id, is_available_current_matchday=True).all()
 
-    # Assign players to teams based on team level (best players to first team, etc.)
-    home_team_players = {}
-    away_team_players = {}
+        # Sort available players by a combination of attributes (best players first)
+        # We'll use a weighted average of strength and other key attributes
+        def player_rating(player):
+            # Calculate a weighted rating based on key attributes
+            # Strength is the most important, but we also consider other attributes
+            return (
+                player.strength * 0.5 +  # 50% weight on strength
+                player.konstanz * 0.1 +   # 10% weight on consistency
+                player.drucksicherheit * 0.1 +  # 10% weight on pressure resistance
+                player.volle * 0.15 +     # 15% weight on full pins
+                player.raeumer * 0.15     # 15% weight on clearing pins
+            )
 
-    # Initialize player lists for each team
-    for team in home_club_teams:
-        home_team_players[team.id] = []
+        # Sort players by their calculated rating
+        home_club_players.sort(key=player_rating, reverse=True)
+        away_club_players.sort(key=player_rating, reverse=True)
 
-    for team in away_club_teams:
-        away_team_players[team.id] = []
+        # Assign players to teams based on team level (best players to first team, etc.)
+        home_team_players = {}
+        away_team_players = {}
 
-    # Get the current match day if a match is provided
-    current_match_day = match.match_day if match else None
+        # Initialize player lists for each team
+        for team in home_club_teams:
+            home_team_players[team.id] = []
 
-    # Filter out players who have already played on this match day
-    # We use the has_played_current_matchday flag and last_played_matchday to check
-    if current_match_day:
-        # Reset flags for players who played on a different match day
-        for player in home_club_players:
-            if player.has_played_current_matchday and player.last_played_matchday != current_match_day:
-                player.has_played_current_matchday = False
-                db.session.add(player)
+        for team in away_club_teams:
+            away_team_players[team.id] = []
 
-        for player in away_club_players:
-            if player.has_played_current_matchday and player.last_played_matchday != current_match_day:
-                player.has_played_current_matchday = False
-                db.session.add(player)
+        # Get the current match day if a match is provided
+        current_match_day = match.match_day if match else None
 
-        # Commit changes to reset flags
-        db.session.commit()
+        # Filter out players who have already played on this match day
+        # We use the has_played_current_matchday flag and last_played_matchday to check
+        if current_match_day:
+            # Reset flags for players who played on a different match day using bulk update
+            # First for home club players
+            home_player_ids = [p.id for p in home_club_players if p.has_played_current_matchday and p.last_played_matchday != current_match_day]
+            if home_player_ids:
+                db.session.execute(
+                    db.update(Player)
+                    .where(Player.id.in_(home_player_ids))
+                    .values(has_played_current_matchday=False)
+                )
 
-    # Filter out players who have already played on this match day
-    home_club_players = [p for p in home_club_players if not p.has_played_current_matchday]
-    away_club_players = [p for p in away_club_players if not p.has_played_current_matchday]
+            # Then for away club players
+            away_player_ids = [p.id for p in away_club_players if p.has_played_current_matchday and p.last_played_matchday != current_match_day]
+            if away_player_ids:
+                db.session.execute(
+                    db.update(Player)
+                    .where(Player.id.in_(away_player_ids))
+                    .values(has_played_current_matchday=False)
+                )
 
-    # Make sure teams are sorted by league level (lower level number = higher league)
-    home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
-    away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+            # Commit changes to reset flags
+            db.session.commit()
 
-    # Assign players to home teams (best teams first)
-    used_home_players = set()  # Track which players have been assigned
-    for team in home_club_teams:
-        home_team_players[team.id] = []
-        # For each team, assign up to 6 players who haven't been used yet
-        needed_players = 6 - len(home_team_players[team.id])
-        available_players = [p for p in home_club_players if p.id not in used_home_players]
+        # Filter out players who have already played on this match day
+        home_club_players = [p for p in home_club_players if not p.has_played_current_matchday]
+        away_club_players = [p for p in away_club_players if not p.has_played_current_matchday]
 
-        # Take the top N available players for this team
-        for player in available_players[:needed_players]:
-            home_team_players[team.id].append(player)
-            used_home_players.add(player.id)
+        # Make sure teams are sorted by league level (lower level number = higher league)
+        home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+        away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
 
-    # Assign players to away teams (best teams first)
-    used_away_players = set()  # Track which players have been assigned
-    for team in away_club_teams:
-        away_team_players[team.id] = []
-        # For each team, assign up to 6 players who haven't been used yet
-        needed_players = 6 - len(away_team_players[team.id])
-        available_players = [p for p in away_club_players if p.id not in used_away_players]
+        # Assign players to home teams (best teams first)
+        used_home_players = set()  # Track which players have been assigned
+        for team in home_club_teams:
+            home_team_players[team.id] = []
+            # For each team, assign up to 6 players who haven't been used yet
+            needed_players = 6 - len(home_team_players[team.id])
+            available_players = [p for p in home_club_players if p.id not in used_home_players]
 
-        # Take the top N available players for this team
-        for player in available_players[:needed_players]:
-            away_team_players[team.id].append(player)
-            used_away_players.add(player.id)
+            # Take the top N available players for this team
+            for player in available_players[:needed_players]:
+                home_team_players[team.id].append(player)
+                used_home_players.add(player.id)
 
-    # Get the players for the current match
-    home_players = home_team_players.get(home_team.id, [])
-    away_players = away_team_players.get(away_team.id, [])
+        # Assign players to away teams (best teams first)
+        used_away_players = set()  # Track which players have been assigned
+        for team in away_club_teams:
+            away_team_players[team.id] = []
+            # For each team, assign up to 6 players who haven't been used yet
+            needed_players = 6 - len(away_team_players[team.id])
+            available_players = [p for p in away_club_players if p.id not in used_away_players]
+
+            # Take the top N available players for this team
+            for player in available_players[:needed_players]:
+                away_team_players[team.id].append(player)
+                used_away_players.add(player.id)
+
+        # Get the players for the current match
+        home_players = home_team_players.get(home_team.id, [])
+        away_players = away_team_players.get(away_team.id, [])
 
     # Determine which players are substitutes (not originally in the team)
     home_substitutes = [p for p in home_players if home_team not in p.teams]
@@ -460,11 +488,17 @@ def simulate_match(home_team, away_team, match=None):
         match.home_match_points = home_match_points
         match.away_match_points = away_match_points
 
-        # Mark all players as having played on this match day
-        for player in home_players + away_players:
-            player.has_played_current_matchday = True
-            player.last_played_matchday = match.match_day
-            db.session.add(player)
+        # Mark all players as having played on this match day using bulk update
+        player_ids = [p.id for p in home_players + away_players]
+        if player_ids:
+            db.session.execute(
+                db.update(Player)
+                .where(Player.id.in_(player_ids))
+                .values(
+                    has_played_current_matchday=True,
+                    last_played_matchday=match.match_day
+                )
+            )
 
     return {
         'home_team': home_team.name,
@@ -478,6 +512,8 @@ def simulate_match(home_team, away_team, match=None):
 
 def simulate_match_day(season):
     """Simulate one match day for all leagues in a season."""
+    from club_player_assignment import assign_players_to_teams_for_match_day
+
     results = []
 
     # Find the global next match day across all leagues
@@ -543,6 +579,47 @@ def simulate_match_day(season):
 
     print(f"Simulating global match day {global_next_match_day} across all leagues")
 
+    # Reset player availability flags for all players
+    reset_player_availability()
+
+    # Determine which clubs have matches on this match day
+    clubs_with_matches = set()
+    teams_playing = {}  # Dictionary to track how many teams each club has playing
+
+    # First, identify all clubs that have teams playing on this match day
+    for league, league_next_match_day in unplayed_match_days:
+        if league_next_match_day == global_next_match_day:
+            unplayed_matches = Match.query.filter_by(
+                league_id=league.id,
+                season_id=season.id,
+                is_played=False,
+                match_day=global_next_match_day
+            ).all()
+
+            for match in unplayed_matches:
+                home_club_id = match.home_team.club_id
+                away_club_id = match.away_team.club_id
+
+                clubs_with_matches.add(home_club_id)
+                clubs_with_matches.add(away_club_id)
+
+                # Count how many teams each club has playing
+                teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
+                teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
+
+    # Now determine player availability for each club
+    for club_id in clubs_with_matches:
+        determine_player_availability(club_id, teams_playing.get(club_id, 0))
+
+    # Assign players to teams for each club
+    club_team_players = {}
+    for club_id in clubs_with_matches:
+        club_team_players[club_id] = assign_players_to_teams_for_match_day(
+            club_id,
+            global_next_match_day,
+            season.id
+        )
+
     # Now simulate only matches for this global match day
     for league, league_next_match_day in unplayed_match_days:
         # Only simulate matches for leagues that have this match day
@@ -562,8 +639,14 @@ def simulate_match_day(season):
                 home_team = match.home_team
                 away_team = match.away_team
 
-                # Pass the match instance to save player performances
-                match_result = simulate_match(home_team, away_team, match=match)
+                # Pass the match instance and pre-assigned players to save player performances
+                match_result = simulate_match(
+                    home_team,
+                    away_team,
+                    match=match,
+                    home_team_players=club_team_players.get(home_team.club_id, {}).get(home_team.id, []),
+                    away_team_players=club_team_players.get(away_team.club_id, {}).get(away_team.id, [])
+                )
 
                 # Update match record
                 match.home_score = match_result['home_score']
@@ -597,15 +680,108 @@ def simulate_match_day(season):
         'match_day': global_next_match_day
     }
 
+def reset_player_availability():
+    """Reset the is_available_current_matchday flag for all players."""
+    # Use a bulk update operation instead of loading all players into memory
+    result = db.session.execute(
+        db.update(Player)
+        .values(is_available_current_matchday=True)
+    )
+    db.session.commit()
+    print(f"Reset availability flags for all players (affected rows: {result.rowcount})")
+
+def determine_player_availability(club_id, teams_playing):
+    """Determine which players are available for a club on the current match day.
+
+    Args:
+        club_id: The ID of the club
+        teams_playing: Number of teams from this club playing on this match day
+    """
+    import random
+
+    # Get all players from this club
+    club_players = Player.query.filter_by(club_id=club_id).all()
+
+    if not club_players:
+        print(f"No players found for club ID {club_id}")
+        return
+
+    # Calculate how many players we need at minimum (6 per team)
+    min_players_needed = teams_playing * 6
+
+    # If we don't have enough players, make all available
+    if len(club_players) <= min_players_needed:
+        # Make sure all players are available using bulk update
+        db.session.execute(
+            db.update(Player)
+            .where(Player.club_id == club_id)
+            .values(is_available_current_matchday=True)
+        )
+        db.session.commit()
+        print(f"Club ID {club_id} has only {len(club_players)} players, need {min_players_needed}. All players will be available.")
+        return
+
+    # Get all player IDs
+    player_ids = [p.id for p in club_players]
+
+    # Determine unavailable players (16.7% chance of being unavailable)
+    unavailable_player_ids = []
+    for player_id in player_ids:
+        # 16.7% chance of being unavailable
+        if random.random() < 0.167:
+            unavailable_player_ids.append(player_id)
+
+    # Mark selected players as unavailable using bulk update
+    if unavailable_player_ids:
+        db.session.execute(
+            db.update(Player)
+            .where(Player.id.in_(unavailable_player_ids))
+            .values(is_available_current_matchday=False)
+        )
+        db.session.commit()
+
+    # Check if we still have enough available players
+    available_players = len(player_ids) - len(unavailable_player_ids)
+
+    # If we don't have enough available players, make some unavailable players available again
+    if available_players < min_players_needed:
+        # Calculate how many more players we need
+        players_needed = min_players_needed - available_players
+
+        # Randomly select players to make available again
+        if players_needed > 0 and unavailable_player_ids:
+            players_to_make_available = random.sample(unavailable_player_ids, min(players_needed, len(unavailable_player_ids)))
+
+            # Mark selected players as available again using bulk update
+            if players_to_make_available:
+                db.session.execute(
+                    db.update(Player)
+                    .where(Player.id.in_(players_to_make_available))
+                    .values(is_available_current_matchday=True)
+                )
+                db.session.commit()
+
+    # Recalculate the actual number of available players after all changes using a database query
+    available_players_count = db.session.query(db.func.count()).filter(
+        Player.club_id == club_id,
+        Player.is_available_current_matchday == True
+    ).scalar()
+
+    total_players_count = db.session.query(db.func.count()).filter(
+        Player.club_id == club_id
+    ).scalar()
+
+
 def reset_player_matchday_flags():
     """Reset the has_played_current_matchday flag for all players."""
-    players = Player.query.all()
-    for player in players:
-        if player.has_played_current_matchday:
-            player.has_played_current_matchday = False
-            db.session.add(player)
+    # Only update players that have the flag set to True
+    result = db.session.execute(
+        db.update(Player)
+        .where(Player.has_played_current_matchday == True)
+        .values(has_played_current_matchday=False)
+    )
     db.session.commit()
-    print(f"Reset match day flags for {len(players)} players")
+    print(f"Reset match day flags for players (affected rows: {result.rowcount})")
 
 def simulate_season(season, create_new_season=True):
     """Simulate all matches for a season.
@@ -614,6 +790,8 @@ def simulate_season(season, create_new_season=True):
         season: The season to simulate
         create_new_season: Whether to create a new season after simulation (default: True)
     """
+    from club_player_assignment import assign_players_to_teams_for_match_day
+
     results = []
     new_season_created = False
     new_season_id = None
@@ -625,41 +803,123 @@ def simulate_season(season, create_new_season=True):
     print(f"Number of leagues: {len(leagues)}")
     print(f"Create new season after simulation: {create_new_season}")
 
+    # First, ensure all leagues have fixtures generated
     for league in leagues:
-        print(f"Processing league: {league.name} (ID: {league.id})")
-
         # Generate matches if they don't exist
         if not league.matches:
             print(f"No matches found for league {league.name}, generating fixtures...")
             generate_fixtures(league, season)
 
-        # Simulate all unplayed matches
-        matches = Match.query.filter_by(league_id=league.id, season_id=season.id, is_played=False).all()
-        print(f"Found {len(matches)} unplayed matches in league {league.name}")
+    # Find the maximum match day across all leagues
+    max_match_day = 0
+    for league in leagues:
+        # Get the highest match day for this league
+        highest_match_day = db.session.query(db.func.max(Match.match_day)).filter(
+            Match.league_id == league.id,
+            Match.season_id == season.id
+        ).scalar() or 0
+        max_match_day = max(max_match_day, highest_match_day)
 
-        for match in matches:
-            home_team = match.home_team
-            away_team = match.away_team
+    print(f"Maximum match day across all leagues: {max_match_day}")
 
-            # Pass the match instance to save player performances
-            match_result = simulate_match(home_team, away_team, match=match)
+    # Simulate match day by match day
+    for match_day in range(1, max_match_day + 1):
+        print(f"Simulating match day {match_day} across all leagues")
 
-            # Update match record
-            match.home_score = match_result['home_score']
-            match.away_score = match_result['away_score']
-            match.home_match_points = match_result['home_match_points']
-            match.away_match_points = match_result['away_match_points']
-            match.is_played = True
-            match.match_date = datetime.now(timezone.utc)
+        # Reset player availability flags for all players
+        reset_player_availability()
 
-            results.append(match_result)
+        # Determine which clubs have matches on this match day
+        clubs_with_matches = set()
+        teams_playing = {}  # Dictionary to track how many teams each club has playing
 
-    # Save all changes to database
-    db.session.commit()
+        # First, identify all clubs that have teams playing on this match day
+        for league in leagues:
+            unplayed_matches = Match.query.filter_by(
+                league_id=league.id,
+                season_id=season.id,
+                is_played=False,
+                match_day=match_day
+            ).all()
+
+            for match in unplayed_matches:
+                home_club_id = match.home_team.club_id
+                away_club_id = match.away_team.club_id
+
+                clubs_with_matches.add(home_club_id)
+                clubs_with_matches.add(away_club_id)
+
+                # Count how many teams each club has playing
+                teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
+                teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
+
+        # Now determine player availability for each club
+        for club_id in clubs_with_matches:
+            determine_player_availability(club_id, teams_playing.get(club_id, 0))
+
+        # Assign players to teams for each club
+        club_team_players = {}
+        for club_id in clubs_with_matches:
+            club_team_players[club_id] = assign_players_to_teams_for_match_day(
+                club_id,
+                match_day,
+                season.id
+            )
+
+        # Now simulate matches for this match day across all leagues
+        match_day_results = []
+        for league in leagues:
+            # Get all unplayed matches for this match day in this league
+            unplayed_matches = Match.query.filter_by(
+                league_id=league.id,
+                season_id=season.id,
+                is_played=False,
+                match_day=match_day
+            ).all()
+
+            print(f"Simulating match day {match_day} for league {league.name} with {len(unplayed_matches)} matches")
+
+            # Simulate each match in this match day
+            for match in unplayed_matches:
+                home_team = match.home_team
+                away_team = match.away_team
+
+                # Pass the match instance and pre-assigned players to save player performances
+                match_result = simulate_match(
+                    home_team,
+                    away_team,
+                    match=match,
+                    home_team_players=club_team_players.get(home_team.club_id, {}).get(home_team.id, []),
+                    away_team_players=club_team_players.get(away_team.club_id, {}).get(away_team.id, [])
+                )
+
+                # Update match record
+                match.home_score = match_result['home_score']
+                match.away_score = match_result['away_score']
+                match.home_match_points = match_result['home_match_points']
+                match.away_match_points = match_result['away_match_points']
+                match.is_played = True
+                match.match_date = datetime.now(timezone.utc)
+
+                # Add team names to the result for better display
+                match_result['home_team_name'] = home_team.name
+                match_result['away_team_name'] = away_team.name
+                match_result['league_name'] = league.name
+                match_result['match_day'] = match_day
+
+                match_day_results.append(match_result)
+
+        # Save all changes to database after each match day
+        db.session.commit()
+        print(f"Simulated {len(match_day_results)} matches for match day {match_day}")
+
+        # Reset player flags after the match day is complete
+        reset_player_matchday_flags()
+
+        # Add results from this match day to overall results
+        results.extend(match_day_results)
+
     print(f"Simulated {len(results)} matches in total")
-
-    # Reset player flags after all matches are simulated
-    reset_player_matchday_flags()
 
     # Explicitly recalculate standings for each league
     for league in leagues:
