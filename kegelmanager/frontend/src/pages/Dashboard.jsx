@@ -237,7 +237,7 @@ const Dashboard = () => {
                         <div className="strength-bar">
                           <div className="strength-fill" style={{ width: `${strength}%` }}></div>
                         </div>
-                        <span>{strength}</span>
+                        <span>{Math.floor(strength)}</span>
                       </div>
                       <div className="player-stat">
                         <span>Talent</span>

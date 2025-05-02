@@ -182,7 +182,7 @@ const Teams = () => {
                     style={{ width: `${team.avgStrength}%` }}
                   ></div>
                 </div>
-                <span className="strength-value">{team.avgStrength}</span>
+                <span className="strength-value">{Math.floor(team.avgStrength)}</span>
               </div>
             </div>
           </Link>

@@ -113,6 +113,66 @@ def get_player(player_id):
     player = Player.query.get_or_404(player_id)
     return jsonify(player.to_dict())
 
+@app.route('/api/players/<int:player_id>', methods=['PATCH'])
+def update_player(player_id):
+    """Update player attributes (Cheat mode)."""
+    player = Player.query.get_or_404(player_id)
+    data = request.json
+
+    # Update basic attributes
+    if 'name' in data:
+        player.name = data['name']
+    if 'age' in data:
+        player.age = data['age']
+    if 'position' in data:
+        player.position = data['position']
+    if 'strength' in data:
+        player.strength = data['strength']
+    if 'talent' in data:
+        player.talent = data['talent']
+    if 'salary' in data:
+        player.salary = data['salary']
+    if 'contract_end' in data and data['contract_end']:
+        from datetime import datetime
+        player.contract_end = datetime.fromisoformat(data['contract_end'].replace('Z', '+00:00')).date()
+
+    # Update bowling-specific attributes
+    if 'konstanz' in data:
+        player.konstanz = data['konstanz']
+    if 'drucksicherheit' in data:
+        player.drucksicherheit = data['drucksicherheit']
+    if 'volle' in data:
+        player.volle = data['volle']
+    if 'raeumer' in data:
+        player.raeumer = data['raeumer']
+    if 'sicherheit' in data:
+        player.sicherheit = data['sicherheit']
+    if 'consistency' in data:
+        player.consistency = data['consistency']
+    if 'precision' in data:
+        player.precision = data['precision']
+    if 'stamina' in data:
+        player.stamina = data['stamina']
+
+    # Update the new attributes
+    if 'auswaerts' in data:
+        player.auswaerts = data['auswaerts']
+    if 'start' in data:
+        player.start = data['start']
+    if 'mitte' in data:
+        player.mitte = data['mitte']
+    if 'schluss' in data:
+        player.schluss = data['schluss']
+
+    # Save changes to database
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": "Spieler erfolgreich aktualisiert",
+        "player": player.to_dict()
+    })
+
 # League endpoints
 @app.route('/api/leagues', methods=['GET'])
 def get_leagues():
@@ -163,10 +223,40 @@ def simulate_match():
 def simulate_season():
     data = request.json
     season_id = data.get('season_id')
+    create_new_season = data.get('create_new_season', True)  # Default to True for backward compatibility
 
-    season = Season.query.get_or_404(season_id)
-    result = simulation.simulate_season(season)
-    return jsonify(result)
+    print(f"DEBUG: Simulating season with ID: {season_id}")
+    print(f"DEBUG: Create new season: {create_new_season}")
+
+    if not season_id:
+        return jsonify({"error": "season_id is required"}), 400
+
+    try:
+        season = Season.query.get_or_404(season_id)
+        print(f"DEBUG: Found season: {season.name} (ID: {season.id})")
+
+        # Count matches before simulation
+        played_matches_before = Match.query.filter_by(is_played=True).count()
+        print(f"DEBUG: Played matches before simulation: {played_matches_before}")
+
+        # Simulate the season
+        result = simulation.simulate_season(season, create_new_season=create_new_season)
+
+        # Count matches after simulation
+        played_matches_after = Match.query.filter_by(is_played=True).count()
+        print(f"DEBUG: Played matches after simulation: {played_matches_after}")
+        print(f"DEBUG: Newly simulated matches: {played_matches_after - played_matches_before}")
+
+        # Explicitly recalculate standings for each league
+        for league in season.leagues:
+            print(f"DEBUG: Recalculating standings for league: {league.name}")
+            standings = simulation.calculate_standings(league)
+            print(f"DEBUG: League {league.name} has {len(standings)} teams in standings")
+
+        return jsonify(result)
+    except Exception as e:
+        print(f"DEBUG: Error simulating season: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/simulate/match_day', methods=['POST'])
 def simulate_match_day():

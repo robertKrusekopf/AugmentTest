@@ -1,4 +1,4 @@
-import random
+import numpy as np
 from datetime import datetime, timedelta, timezone
 from models import db, Match, Player, Team, League, Season
 
@@ -14,38 +14,145 @@ def simulate_match(home_team, away_team, match=None):
     """Simulate a bowling match between two teams and return the result.
 
     In bowling, 6 players from each team play 4 lanes with 30 throws each.
-    The total score of all players determines the winner.
+    Players compete directly against each other (1st vs 1st, 2nd vs 2nd, etc.).
+    For each lane, the player with more pins gets 1 set point (SP).
+    If both players score the same on a lane, each gets 0.5 SP.
+    The player with more SP gets 1 match point (MP).
+    If both players have 2 SP each, the player with more total pins gets the MP.
+    The team with more total pins gets 2 additional MP.
+    The team with more MP wins the match.
     """
-    from models import PlayerMatchPerformance, db
+    from models import PlayerMatchPerformance, db, Player, Team
+    import random
 
-    # Get 6 players from each team
-    home_players = home_team.players[:6] if len(home_team.players) >= 6 else home_team.players
-    away_players = away_team.players[:6] if len(away_team.players) >= 6 else away_team.players
+    # Get all teams from the same club as the home team
+    home_club_teams = Team.query.filter_by(club_id=home_team.club_id).all()
+    # Sort teams by league level (lower level number = higher league)
+    home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+
+    # Get all teams from the same club as the away team
+    away_club_teams = Team.query.filter_by(club_id=away_team.club_id).all()
+    # Sort teams by league level (lower level number = higher league)
+    away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+
+    # Get all players from the home club
+    home_club_players = Player.query.filter_by(club_id=home_team.club_id).all()
+    # Get all players from the away club
+    away_club_players = Player.query.filter_by(club_id=away_team.club_id).all()
+
+    # Sort available players by a combination of attributes (best players first)
+    # We'll use a weighted average of strength and other key attributes
+    def player_rating(player):
+        # Calculate a weighted rating based on key attributes
+        # Strength is the most important, but we also consider other attributes
+        return (
+            player.strength
+        )
+
+    # Sort players by their calculated rating
+    home_club_players.sort(key=player_rating, reverse=True)
+    away_club_players.sort(key=player_rating, reverse=True)
+
+    # Assign players to teams based on team level (best players to first team, etc.)
+    home_team_players = {}
+    away_team_players = {}
+
+    # Initialize player lists for each team
+    for team in home_club_teams:
+        home_team_players[team.id] = []
+
+    for team in away_club_teams:
+        away_team_players[team.id] = []
+
+    # Get the current match day if a match is provided
+    current_match_day = match.match_day if match else None
+
+    # Filter out players who have already played on this match day
+    # We use the has_played_current_matchday flag and last_played_matchday to check
+    if current_match_day:
+        # Reset flags for players who played on a different match day
+        for player in home_club_players:
+            if player.has_played_current_matchday and player.last_played_matchday != current_match_day:
+                player.has_played_current_matchday = False
+                db.session.add(player)
+
+        for player in away_club_players:
+            if player.has_played_current_matchday and player.last_played_matchday != current_match_day:
+                player.has_played_current_matchday = False
+                db.session.add(player)
+
+        # Commit changes to reset flags
+        db.session.commit()
+
+    # Filter out players who have already played on this match day
+    home_club_players = [p for p in home_club_players if not p.has_played_current_matchday]
+    away_club_players = [p for p in away_club_players if not p.has_played_current_matchday]
+
+    # Make sure teams are sorted by league level (lower level number = higher league)
+    home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+    away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
+
+    # Assign players to home teams (best teams first)
+    used_home_players = set()  # Track which players have been assigned
+    for team in home_club_teams:
+        home_team_players[team.id] = []
+        # For each team, assign up to 6 players who haven't been used yet
+        needed_players = 6 - len(home_team_players[team.id])
+        available_players = [p for p in home_club_players if p.id not in used_home_players]
+
+        # Take the top N available players for this team
+        for player in available_players[:needed_players]:
+            home_team_players[team.id].append(player)
+            used_home_players.add(player.id)
+
+    # Assign players to away teams (best teams first)
+    used_away_players = set()  # Track which players have been assigned
+    for team in away_club_teams:
+        away_team_players[team.id] = []
+        # For each team, assign up to 6 players who haven't been used yet
+        needed_players = 6 - len(away_team_players[team.id])
+        available_players = [p for p in away_club_players if p.id not in used_away_players]
+
+        # Take the top N available players for this team
+        for player in available_players[:needed_players]:
+            away_team_players[team.id].append(player)
+            used_away_players.add(player.id)
+
+    # Get the players for the current match
+    home_players = home_team_players.get(home_team.id, [])
+    away_players = away_team_players.get(away_team.id, [])
+
+    # Determine which players are substitutes (not originally in the team)
+    home_substitutes = [p for p in home_players if home_team not in p.teams]
+    away_substitutes = [p for p in away_players if away_team not in p.teams]
 
     # Make sure we have enough players (at least 1)
     if not home_players or not away_players:
         # Default scores if not enough players
         home_score = 3000 if home_players else 0
         away_score = 3000 if away_players else 0
+        home_match_points = 8 if home_score > away_score else (4 if home_score == away_score else 0)
+        away_match_points = 8 if away_score > home_score else (4 if home_score == away_score else 0)
 
         return {
             'home_team': home_team.name,
             'away_team': away_team.name,
             'home_score': home_score,
             'away_score': away_score,
-            'winner': home_team.name if home_score > away_score else (away_team.name if away_score > home_score else 'Draw')
+            'home_match_points': home_match_points,
+            'away_match_points': away_match_points,
+            'winner': home_team.name if home_match_points > away_match_points else (away_team.name if away_match_points > home_match_points else 'Draw')
         }
 
-    # Calculate team strengths
-    home_strength = calculate_team_strength(home_team)
-    away_strength = calculate_team_strength(away_team)
 
     # Add home advantage
     home_advantage = 1.05  # 5% advantage for home team
 
-    # Initialize scores
+    # Initialize scores and match points
     home_score = 0
     away_score = 0
+    home_match_points = 0
+    away_match_points = 0
 
     # Player performances to save
     performances = []
@@ -64,35 +171,80 @@ def simulate_match(home_team, away_team, match=None):
             base_score = (home_player.strength * 1.5) + 450  # 450-600 base for strength 0-100
 
             # Adjust for player attributes
-            consistency_factor = home_player.consistency / 100  # 0-1 scale
-            precision_factor = home_player.precision / 100  # 0-1 scale
-            stamina_factor = max(0.8, home_player.stamina / 100 - (lane * 0.05))  # Decreases with each lane
+            ausdauer_factor = max(0.8, home_player.ausdauer / 100 - (lane * 0.05))  # Decreases with each lane
 
             # Apply home advantage
             base_score *= home_advantage
 
-            # Add randomness (more consistent players have less randomness)
-            randomness = random.uniform(0.85, 1.15) * (2 - consistency_factor)
+            # Add randomness using normal distribution
+            # Mean of 1.0, standard deviation based on konstanz (higher konstanz = lower std dev)
+            konstanz_factor = home_player.konstanz / 100  # 0-1 scale
+            std_dev = 0.15 * (2 - konstanz_factor)
+            randomness = np.random.normal(1.0, std_dev)
 
             # Calculate lane score
-            lane_score = int(base_score * precision_factor * stamina_factor * randomness)
+            lane_score = int(base_score * ausdauer_factor * randomness)
 
-            # Ensure score is within realistic bounds for league level
-            if home_team.league.level == 1:  # Bundesliga
-                lane_score = max(140, min(190, lane_score))
-                # Fehlwürfe für Bundesliga (0-3 pro Spiel)
-                lane_fehler = random.randint(0, 1)
-            elif home_team.league.level == 2:  # 2. Liga
-                lane_score = max(130, min(180, lane_score))
-                # Fehlwürfe für 2. Liga (3-6 pro Spiel)
-                lane_fehler = random.randint(0, 2)
-            else:  # Lower leagues
-                lane_score = max(100, min(160, lane_score))
-                # Fehlwürfe für untere Ligen (5-10 pro Spiel)
-                lane_fehler = random.randint(1, 3)
+            # Calculate score based solely on player strength and attributes
+            # Base score range: 120-180 for strength 0-99
+            mean_score = 120 + (home_player.strength * 0.6)
 
-            # Berechne Volle und Räumer (Verhältnis etwa 2:1)
-            lane_volle = int(lane_score * 0.67)  # ca. 2/3 der Punkte auf Volle
+            # Base standard deviation and error values
+            std_dev = 12 - (home_player.konstanz / 20)  # 12 to 7 based on konstanz
+            fehler_mean = 2.0 - (home_player.sicherheit / 50)  # 2.0 to 0.0 based on sicherheit
+            fehler_std = 0.8
+
+            # Adjust for player position in the match (start, middle, end)
+            # Depending on which lane we're on, use different attributes
+            if lane == 0:  # First lane - use 'start' attribute
+                position_factor = 0.8 + (home_player.start / 500)  # 0.8 to 1.0 range
+                mean_score *= position_factor
+            elif lane == 3:  # Last lane - use 'schluss' attribute and 'drucksicherheit'
+                # Base position factor from 'schluss' attribute
+                position_factor = 0.8 + (home_player.schluss / 500)  # 0.8 to 1.0 range
+
+                # Add pressure factor for the last lane (only if we have previous lanes to compare)
+                if len(home_player_lanes) > 0:
+                    # For the last lane, apply drucksicherheit factor
+                    # Players with high drucksicherheit perform better on the last lane
+                    pressure_factor = 0.9 + (home_player.drucksicherheit / 500)  # 0.9 to 1.1 range
+                    position_factor *= pressure_factor
+
+                mean_score *= position_factor
+            else:  # Middle lanes - use 'mitte' attribute
+                position_factor = 0.8 + (home_player.mitte / 500)  # 0.8 to 1.0 range
+                mean_score *= position_factor
+
+            # Konstanz and Sicherheit are already factored into the base values
+            # No additional adjustments needed here
+
+            # Generate score from normal distribution and ensure it's within reasonable bounds
+            lane_score = int(np.random.normal(mean_score, std_dev))
+            # Ensure score is at least 80 and at most 200
+            lane_score = max(80, min(200, lane_score))
+
+            # Generate fehler from normal distribution and ensure it's a non-negative integer
+            lane_fehler = int(max(0, np.random.normal(fehler_mean, fehler_std)))
+
+            # Berechne Volle und Räumer direkt basierend auf den Spielerattributen
+            # Spieler mit höherem 'volle' Attribut erzielen mehr Punkte auf die vollen Kegel
+
+            # Berechne den Anteil der Volle-Punkte basierend auf den Attributen
+            # Spieler mit höherem volle-Attribut erzielen mehr Punkte auf die vollen Kegel
+            # Spieler mit höherem raeumer-Attribut erzielen mehr Punkte auf die Räumer
+
+            # Berechne den Volle-Prozentsatz direkt aus den Attributen
+            # Formel: 0.5 + (volle / (volle + raeumer)) * 0.3
+            # Dies ergibt einen Bereich von ca. 0.5 bis 0.8 je nach Attributverhältnis
+            volle_percentage = 0.5 + (home_player.volle / max(1, home_player.volle + home_player.raeumer)) * 0.3
+
+            # Füge etwas Zufälligkeit hinzu (±2%)
+            volle_percentage += np.random.normal(0, 0.02)
+
+            # Begrenze den Prozentsatz auf sinnvolle Werte (0.55-0.75)
+            volle_percentage = max(0.55, min(0.75, volle_percentage))
+
+            lane_volle = int(lane_score * volle_percentage)
             lane_raeumer = lane_score - lane_volle  # Rest auf Räumer
 
             home_player_lanes.append(lane_score)
@@ -113,32 +265,83 @@ def simulate_match(home_team, away_team, match=None):
             base_score = (away_player.strength * 1.5) + 450  # 450-600 base for strength 0-100
 
             # Adjust for player attributes
-            consistency_factor = away_player.consistency / 100  # 0-1 scale
-            precision_factor = away_player.precision / 100  # 0-1 scale
-            stamina_factor = max(0.8, away_player.stamina / 100 - (lane * 0.05))  # Decreases with each lane
+            ausdauer_factor = max(0.8, away_player.ausdauer / 100 - (lane * 0.05))  # Decreases with each lane
 
-            # Apply randomness (more consistent players have less randomness)
-            randomness = random.uniform(0.85, 1.15) * (2 - consistency_factor)
+            # Add randomness using normal distribution
+            # Mean of 1.0, standard deviation based on konstanz (higher konstanz = lower std dev)
+            konstanz_factor = away_player.konstanz / 100  # 0-1 scale
+            std_dev = 0.15 * (2 - konstanz_factor)
+            randomness = np.random.normal(1.0, std_dev)
 
             # Calculate lane score
-            lane_score = int(base_score * precision_factor * stamina_factor * randomness)
+            lane_score = int(base_score * ausdauer_factor * randomness)
 
-            # Ensure score is within realistic bounds for league level
-            if away_team.league.level == 1:  # Bundesliga
-                lane_score = max(140, min(190, lane_score))
-                # Fehlwürfe für Bundesliga (0-3 pro Spiel)
-                lane_fehler = random.randint(0, 1)
-            elif away_team.league.level == 2:  # 2. Liga
-                lane_score = max(130, min(180, lane_score))
-                # Fehlwürfe für 2. Liga (3-6 pro Spiel)
-                lane_fehler = random.randint(0, 2)
-            else:  # Lower leagues
-                lane_score = max(100, min(160, lane_score))
-                # Fehlwürfe für untere Ligen (5-10 pro Spiel)
-                lane_fehler = random.randint(1, 3)
+            # Calculate score based solely on player strength and attributes
+            # Base score range: 120-180 for strength 0-99
+            mean_score = 120 + (away_player.strength * 0.6)
 
-            # Berechne Volle und Räumer (Verhältnis etwa 2:1)
-            lane_volle = int(lane_score * 0.67)  # ca. 2/3 der Punkte auf Volle
+            # Base standard deviation and error values
+            std_dev = 12 - (away_player.konstanz / 20)  # 12 to 7 based on konstanz
+            fehler_mean = 2.0 - (away_player.sicherheit / 50)  # 2.0 to 0.0 based on sicherheit
+            fehler_std = 0.8
+
+            # Apply away factor (players with high 'auswaerts' attribute perform better away)
+            # For away games, apply the auswaerts attribute (0-99)
+            # A player with auswaerts 50 will have no adjustment
+            # A player with auswaerts 99 will get +10% boost
+            # A player with auswaerts 0 will get -10% penalty
+            away_factor = 0.9 + (away_player.auswaerts / 1000)  # 0.9 to 1.1 range
+            mean_score *= away_factor
+
+            # Adjust for player position in the match (start, middle, end)
+            # Depending on which lane we're on, use different attributes
+            if lane == 0:  # First lane - use 'start' attribute
+                position_factor = 0.8 + (away_player.start / 500)  # 0.8 to 1.0 range
+                mean_score *= position_factor
+            elif lane == 3:  # Last lane - use 'schluss' attribute and 'drucksicherheit'
+                # Base position factor from 'schluss' attribute
+                position_factor = 0.8 + (away_player.schluss / 500)  # 0.8 to 1.0 range
+
+                # Add pressure factor for the last lane (only if we have previous lanes to compare)
+                if len(away_player_lanes) > 0:
+                    # For the last lane, apply drucksicherheit factor
+                    # Players with high drucksicherheit perform better on the last lane
+                    pressure_factor = 0.9 + (away_player.drucksicherheit / 500)  # 0.9 to 1.1 range
+                    position_factor *= pressure_factor
+
+                mean_score *= position_factor
+            else:  # Middle lanes - use 'mitte' attribute
+                position_factor = 0.8 + (away_player.mitte / 500)  # 0.8 to 1.0 range
+                mean_score *= position_factor
+
+            # Konstanz and Sicherheit are already factored into the base values
+            # No additional adjustments needed here
+
+            # Generate score from normal distribution and ensure it's within reasonable bounds
+            lane_score = int(np.random.normal(mean_score, std_dev))
+
+            # Generate fehler from normal distribution and ensure it's a non-negative integer
+            lane_fehler = int(max(0, np.random.normal(fehler_mean, fehler_std)))
+
+            # Berechne Volle und Räumer direkt basierend auf den Spielerattributen
+            # Spieler mit höherem 'volle' Attribut erzielen mehr Punkte auf die vollen Kegel
+
+            # Berechne den Anteil der Volle-Punkte basierend auf den Attributen
+            # Spieler mit höherem volle-Attribut erzielen mehr Punkte auf die vollen Kegel
+            # Spieler mit höherem raeumer-Attribut erzielen mehr Punkte auf die Räumer
+
+            # Berechne den Volle-Prozentsatz direkt aus den Attributen
+            # Formel: 0.5 + (volle / (volle + raeumer)) * 0.3
+            # Dies ergibt einen Bereich von ca. 0.5 bis 0.8 je nach Attributverhältnis
+            volle_percentage = 0.5 + (away_player.volle / max(1, away_player.volle + away_player.raeumer)) * 0.3
+
+            # Füge etwas Zufälligkeit hinzu (±2%)
+            volle_percentage += np.random.normal(0, 0.02)
+
+            # Begrenze den Prozentsatz auf sinnvolle Werte (0.55-0.75)
+            volle_percentage = max(0.55, min(0.75, volle_percentage))
+
+            lane_volle = int(lane_score * volle_percentage)
             lane_raeumer = lane_score - lane_volle  # Rest auf Räumer
 
             away_player_lanes.append(lane_score)
@@ -151,8 +354,48 @@ def simulate_match(home_team, away_team, match=None):
         home_score += home_player_total
         away_score += away_player_total
 
+        # Calculate set points (SP) for each lane
+        home_player_set_points = 0
+        away_player_set_points = 0
+
+        for lane in range(4):
+            if home_player_lanes[lane] > away_player_lanes[lane]:
+                home_player_set_points += 1
+            elif home_player_lanes[lane] < away_player_lanes[lane]:
+                away_player_set_points += 1
+            else:
+                # Tie on this lane, both get 0.5 SP
+                home_player_set_points += 0.5
+                away_player_set_points += 0.5
+
+        # Calculate match points (MP) for this player duel
+        home_player_match_points = 0
+        away_player_match_points = 0
+
+        if home_player_set_points > away_player_set_points:
+            home_player_match_points = 1
+        elif home_player_set_points < away_player_set_points:
+            away_player_match_points = 1
+        else:
+            # Tie on set points, player with more total pins gets the MP
+            if home_player_total > away_player_total:
+                home_player_match_points = 1
+            elif home_player_total < away_player_total:
+                away_player_match_points = 1
+            else:
+                # Complete tie, both get 0.5 MP (unlikely but possible)
+                home_player_match_points = 0.5
+                away_player_match_points = 0.5
+
+        # Add to team match points
+        home_match_points += home_player_match_points
+        away_match_points += away_player_match_points
+
         # Create performance records if match is provided
         if match:
+            # Check if home player is a substitute
+            is_home_substitute = home_player in home_substitutes if 'home_substitutes' in locals() else False
+
             # Home player performance
             home_perf = PlayerMatchPerformance(
                 player_id=home_player.id,
@@ -160,6 +403,7 @@ def simulate_match(home_team, away_team, match=None):
                 team_id=home_team.id,
                 is_home_team=True,
                 position_number=i+1,
+                is_substitute=is_home_substitute,
                 lane1_score=home_player_lanes[0],
                 lane2_score=home_player_lanes[1],
                 lane3_score=home_player_lanes[2],
@@ -167,9 +411,14 @@ def simulate_match(home_team, away_team, match=None):
                 total_score=home_player_total,
                 volle_score=home_player_volle,
                 raeumer_score=home_player_raeumer,
-                fehler_count=home_player_fehler
+                fehler_count=home_player_fehler,
+                set_points=home_player_set_points,
+                match_points=home_player_match_points
             )
             performances.append(home_perf)
+
+            # Check if away player is a substitute
+            is_away_substitute = away_player in away_substitutes if 'away_substitutes' in locals() else False
 
             # Away player performance
             away_perf = PlayerMatchPerformance(
@@ -178,6 +427,7 @@ def simulate_match(home_team, away_team, match=None):
                 team_id=away_team.id,
                 is_home_team=False,
                 position_number=i+1,
+                is_substitute=is_away_substitute,
                 lane1_score=away_player_lanes[0],
                 lane2_score=away_player_lanes[1],
                 lane3_score=away_player_lanes[2],
@@ -185,24 +435,45 @@ def simulate_match(home_team, away_team, match=None):
                 total_score=away_player_total,
                 volle_score=away_player_volle,
                 raeumer_score=away_player_raeumer,
-                fehler_count=away_player_fehler
+                fehler_count=away_player_fehler,
+                set_points=away_player_set_points,
+                match_points=away_player_match_points
             )
             performances.append(away_perf)
 
-        # Update player development
-        develop_player(home_player, played_minutes=120)  # 120 minutes for a full bowling match
-        develop_player(away_player, played_minutes=120)
+
+    # Add 2 additional MP for the team with more total pins
+    if home_score > away_score:
+        home_match_points += 2
+    elif away_score > home_score:
+        away_match_points += 2
+    else:
+        # Tie on total pins, both get 1 MP
+        home_match_points += 1
+        away_match_points += 1
 
     # Save performances to database if match is provided
     if match and performances:
         db.session.add_all(performances)
+
+        # Update match with match points
+        match.home_match_points = home_match_points
+        match.away_match_points = away_match_points
+
+        # Mark all players as having played on this match day
+        for player in home_players + away_players:
+            player.has_played_current_matchday = True
+            player.last_played_matchday = match.match_day
+            db.session.add(player)
 
     return {
         'home_team': home_team.name,
         'away_team': away_team.name,
         'home_score': home_score,
         'away_score': away_score,
-        'winner': home_team.name if home_score > away_score else (away_team.name if away_score > home_score else 'Draw')
+        'home_match_points': home_match_points,
+        'away_match_points': away_match_points,
+        'winner': home_team.name if home_match_points > away_match_points else (away_team.name if away_match_points > home_match_points else 'Draw')
     }
 
 def simulate_match_day(season):
@@ -297,6 +568,8 @@ def simulate_match_day(season):
                 # Update match record
                 match.home_score = match_result['home_score']
                 match.away_score = match_result['away_score']
+                match.home_match_points = match_result['home_match_points']
+                match.away_match_points = match_result['away_match_points']
                 match.is_played = True
 
                 # Keep the original scheduled date
@@ -314,6 +587,9 @@ def simulate_match_day(season):
     # Save all changes to database
     db.session.commit()
 
+    # Reset player flags after the match day is complete
+    reset_player_matchday_flags()
+
     return {
         'season': season.name,
         'matches_simulated': len(results),
@@ -321,20 +597,45 @@ def simulate_match_day(season):
         'match_day': global_next_match_day
     }
 
-def simulate_season(season):
-    """Simulate all matches for a season."""
+def reset_player_matchday_flags():
+    """Reset the has_played_current_matchday flag for all players."""
+    players = Player.query.all()
+    for player in players:
+        if player.has_played_current_matchday:
+            player.has_played_current_matchday = False
+            db.session.add(player)
+    db.session.commit()
+    print(f"Reset match day flags for {len(players)} players")
+
+def simulate_season(season, create_new_season=True):
+    """Simulate all matches for a season.
+
+    Args:
+        season: The season to simulate
+        create_new_season: Whether to create a new season after simulation (default: True)
+    """
     results = []
+    new_season_created = False
+    new_season_id = None
 
     # Get all leagues in the season
     leagues = season.leagues
 
+    print(f"Simulating entire season: {season.name} (ID: {season.id})")
+    print(f"Number of leagues: {len(leagues)}")
+    print(f"Create new season after simulation: {create_new_season}")
+
     for league in leagues:
+        print(f"Processing league: {league.name} (ID: {league.id})")
+
         # Generate matches if they don't exist
         if not league.matches:
+            print(f"No matches found for league {league.name}, generating fixtures...")
             generate_fixtures(league, season)
 
         # Simulate all unplayed matches
         matches = Match.query.filter_by(league_id=league.id, season_id=season.id, is_played=False).all()
+        print(f"Found {len(matches)} unplayed matches in league {league.name}")
 
         for match in matches:
             home_team = match.home_team
@@ -346,6 +647,8 @@ def simulate_season(season):
             # Update match record
             match.home_score = match_result['home_score']
             match.away_score = match_result['away_score']
+            match.home_match_points = match_result['home_match_points']
+            match.away_match_points = match_result['away_match_points']
             match.is_played = True
             match.match_date = datetime.now(timezone.utc)
 
@@ -353,15 +656,35 @@ def simulate_season(season):
 
     # Save all changes to database
     db.session.commit()
+    print(f"Simulated {len(results)} matches in total")
 
-    # Process end of season (promotions/relegations)
-    if all(match.is_played for league in leagues for match in league.matches):
+    # Reset player flags after all matches are simulated
+    reset_player_matchday_flags()
+
+    # Explicitly recalculate standings for each league
+    for league in leagues:
+        print(f"Recalculating standings for league: {league.name}")
+        standings = calculate_standings(league)
+        print(f"League {league.name} has {len(standings)} teams in standings")
+
+    # Process end of season (promotions/relegations) only if create_new_season is True
+    if create_new_season and all(match.is_played for league in leagues for match in league.matches):
+        print("All matches played, processing end of season...")
         process_end_of_season(season)
+
+        # Get the new current season
+        new_season = Season.query.filter_by(is_current=True).first()
+        if new_season and new_season.id != season.id:
+            new_season_created = True
+            new_season_id = new_season.id
+            print(f"New season created: {new_season.name} (ID: {new_season.id})")
 
     return {
         'season': season.name,
         'matches_simulated': len(results),
-        'results': results
+        'results': results,
+        'new_season_created': new_season_created,
+        'new_season_id': new_season_id
     }
 
 def generate_fixtures(league, season):
@@ -490,29 +813,36 @@ def calculate_standings(league):
     teams = league.teams
     standings = []
 
+    # Check if any matches have been played in this league
+    played_matches_count = Match.query.filter_by(league_id=league.id, is_played=True).count()
+
     for team in teams:
         # Get all matches for this team
         home_matches = Match.query.filter_by(home_team_id=team.id, league_id=league.id).all()
         away_matches = Match.query.filter_by(away_team_id=team.id, league_id=league.id).all()
 
-        points = 0
+        table_points = 0
         wins = 0
         draws = 0
         losses = 0
-        goals_for = 0
-        goals_against = 0
+        match_points_for = 0
+        match_points_against = 0
+        pins_for = 0
+        pins_against = 0
 
         # Calculate points from home matches
         for match in home_matches:
             if match.is_played:
-                goals_for += match.home_score
-                goals_against += match.away_score
+                pins_for += match.home_score
+                pins_against += match.away_score
+                match_points_for += match.home_match_points
+                match_points_against += match.away_match_points
 
-                if match.home_score > match.away_score:
-                    points += 3
+                if match.home_match_points > match.away_match_points:
+                    table_points += 2  # Win = 2 points in table
                     wins += 1
-                elif match.home_score == match.away_score:
-                    points += 1
+                elif match.home_match_points == match.away_match_points:
+                    table_points += 1  # Draw = 1 point in table
                     draws += 1
                 else:
                     losses += 1
@@ -520,31 +850,39 @@ def calculate_standings(league):
         # Calculate points from away matches
         for match in away_matches:
             if match.is_played:
-                goals_for += match.away_score
-                goals_against += match.home_score
+                pins_for += match.away_score
+                pins_against += match.home_score
+                match_points_for += match.away_match_points
+                match_points_against += match.home_match_points
 
-                if match.away_score > match.home_score:
-                    points += 3
+                if match.away_match_points > match.home_match_points:
+                    table_points += 2  # Win = 2 points in table
                     wins += 1
-                elif match.away_score == match.home_score:
-                    points += 1
+                elif match.away_match_points == match.home_match_points:
+                    table_points += 1  # Draw = 1 point in table
                     draws += 1
                 else:
                     losses += 1
 
+        # Create the standings entry for this team
         standings.append({
             'team': team,
-            'points': points,
+            'points': table_points,  # Renamed from table_points to match what's used in the frontend
             'wins': wins,
             'draws': draws,
             'losses': losses,
-            'goals_for': goals_for,
-            'goals_against': goals_against,
-            'goal_difference': goals_for - goals_against
+            'match_points_for': match_points_for,
+            'match_points_against': match_points_against,
+            'match_point_difference': match_points_for - match_points_against,
+            'goals_for': pins_for,  # Renamed from pins_for to match what's used in the frontend
+            'goals_against': pins_against,  # Renamed from pins_against to match what's used in the frontend
+            'goal_difference': pins_for - pins_against  # Renamed from pin_difference to match what's used in the frontend
         })
 
-    # Sort standings by points, then goal difference, then goals scored
-    standings.sort(key=lambda x: (x['points'], x['goal_difference'], x['goals_for']), reverse=True)
+    # Sort standings by table points, then match point difference, then total pins
+    # Only sort if matches have been played, otherwise keep the original team order
+    if played_matches_count > 0:
+        standings.sort(key=lambda x: (x['points'], x['match_point_difference'], x['goal_difference']), reverse=True)
 
     return standings
 
@@ -568,41 +906,90 @@ def relegate_teams(standings, lower_league):
 
 def create_new_season(old_season):
     """Create a new season based on the old one."""
+    print("Creating new season...")
+
+    # Keep the old season as current for now
+    # We'll only change it after everything is set up
     new_season = Season(
         name=f"Season {int(old_season.name.split()[-1]) + 1}",
         start_date=old_season.end_date + timedelta(days=30),  # Start 30 days after previous season
         end_date=old_season.end_date + timedelta(days=30 + 365),  # End roughly a year later
-        is_current=True
+        is_current=False  # Start as not current, will set to current at the end
     )
-
-    # Set old season as not current
-    old_season.is_current = False
 
     db.session.add(new_season)
     db.session.commit()
+    print(f"Created new season: {new_season.name} (ID: {new_season.id})")
 
     # Create leagues for the new season
-    old_leagues = League.query.filter_by(season_id=old_season.id).all()
+    old_leagues = League.query.filter_by(season_id=old_season.id).order_by(League.level).all()
+    new_leagues = []
 
+    print(f"Creating {len(old_leagues)} leagues for the new season...")
     for old_league in old_leagues:
         new_league = League(
             name=old_league.name,
             level=old_league.level,
-            season_id=new_season.id
+            season_id=new_season.id,
+            bundesland=old_league.bundesland,
+            landkreis=old_league.landkreis,
+            altersklasse=old_league.altersklasse,
+            anzahl_aufsteiger=old_league.anzahl_aufsteiger,
+            anzahl_absteiger=old_league.anzahl_absteiger
         )
+        new_leagues.append(new_league)
         db.session.add(new_league)
 
     db.session.commit()
+    print(f"Created {len(new_leagues)} leagues for the new season")
 
-    # Update teams to point to the new leagues
-    new_leagues = League.query.filter_by(season_id=new_season.id).order_by(League.level).all()
-    old_leagues = League.query.filter_by(season_id=old_season.id).order_by(League.level).all()
+    # Create a mapping of teams to their new leagues
+    team_to_new_league = {}
 
+    # First, get the final standings for each old league
     for i, old_league in enumerate(old_leagues):
-        for team in old_league.teams:
-            team.league_id = new_leagues[i].id
+        standings = calculate_standings(old_league)
+
+        # Map each team to its corresponding new league
+        for j, standing in enumerate(standings):
+            team = standing['team']
+            # By default, teams stay in the same level
+            target_level = old_league.level
+
+            # Apply promotions/relegations based on standings
+            if j < old_league.anzahl_aufsteiger and i > 0:  # Promotion (except for top league)
+                target_level = old_league.level - 1
+            elif j >= len(standings) - old_league.anzahl_absteiger and i < len(old_leagues) - 1:  # Relegation (except for bottom league)
+                target_level = old_league.level + 1
+
+            # Find the new league with the matching level
+            for new_league in new_leagues:
+                if new_league.level == target_level:
+                    team_to_new_league[team.id] = new_league.id
+                    break
+
+    # Now update all teams to point to their new leagues
+    teams = Team.query.all()
+    for team in teams:
+        if team.id in team_to_new_league:
+            team.league_id = team_to_new_league[team.id]
+        else:
+            # If for some reason we don't have a mapping, find a league with the same level
+            old_league = League.query.get(team.league_id)
+            if old_league:
+                for new_league in new_leagues:
+                    if new_league.level == old_league.level:
+                        team.league_id = new_league.id
+                        break
 
     db.session.commit()
+    print(f"Updated {len(teams)} teams to point to their new leagues")
+
+    # Generate fixtures for the new season
+    for new_league in new_leagues:
+        generate_fixtures(new_league, new_season)
+
+    print("Generated fixtures for all leagues in the new season")
 
     # Age all players by 1 year
     players = Player.query.all()
@@ -610,35 +997,10 @@ def create_new_season(old_season):
         player.age += 1
 
     db.session.commit()
+    print(f"Aged {len(players)} players by 1 year")
 
-def develop_player(player, played_minutes=0, training_intensity=1.0):
-    """Develop a player based on playing time, training, and talent."""
-    # Base development factor
-    base_factor = 0.01
-
-    # Talent factor (higher talent = faster development)
-    talent_factor = player.talent / 5.0  # Scale from 1-10 to 0.2-2.0
-
-    # Age factor (younger players develop faster)
-    if player.age < 23:
-        age_factor = 2.0 - (player.age / 23.0)
-    else:
-        # Players over 30 start to decline
-        if player.age > 30:
-            age_factor = -0.1 * (player.age - 30)
-        else:
-            age_factor = 0.5
-
-    # Playing time factor
-    play_factor = played_minutes / 90.0
-
-    # Calculate overall development
-    development = base_factor * talent_factor * age_factor * play_factor * training_intensity
-
-    # Apply development to player strength
-    player.strength = max(1, min(99, player.strength + development))
-
-    # Save changes
-    db.session.add(player)
-
-    return development
+    # Now that everything is set up, make the new season current
+    old_season.is_current = False
+    new_season.is_current = True
+    db.session.commit()
+    print(f"Set {new_season.name} as the current season")

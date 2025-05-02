@@ -72,6 +72,16 @@ export const getPlayer = async (id) => {
   }
 };
 
+export const updatePlayer = async (id, playerData) => {
+  try {
+    const response = await api.patch(`/players/${id}`, playerData);
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating player ${id}:`, error);
+    throw error;
+  }
+};
+
 // League endpoints
 export const getLeagues = async () => {
   try {
@@ -165,10 +175,11 @@ export const simulateMatch = async (homeTeamId, awayTeamId) => {
   }
 };
 
-export const simulateSeason = async (seasonId) => {
+export const simulateSeason = async (seasonId, createNewSeason = true) => {
   try {
     const response = await api.post('/simulate/season', {
-      season_id: seasonId
+      season_id: seasonId,
+      create_new_season: createNewSeason
     });
     return response.data;
   } catch (error) {

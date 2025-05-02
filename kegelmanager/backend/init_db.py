@@ -1,6 +1,7 @@
 import os
 import sys
 import random
+import numpy as np
 from datetime import datetime, timedelta
 from flask import Flask
 from models import db, Player, Team, Club, League, Match, Season, Finance
@@ -9,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 
-# Funktionen für die Namensgenerierung
+# Funktionen für die Namensgenerierung und Spielerstärke
 def load_names_from_excel(file_path):
     """Load names and their cumulative frequencies from an Excel file."""
     book = xlrd.open_workbook(file_path)
@@ -42,6 +43,41 @@ def select_random_name(names, frequencies):
 
     # Fallback (should not happen)
     return names[-1]
+
+def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False):
+    """
+    Calculate player attributes based on league level.
+
+    Args:
+        league_level: The level of the league (1 is top level, 10 is lowest)
+        is_youth_team: Whether the team is a youth team
+        is_second_team: Whether the team is a second team (e.g. "Club Name II")
+
+    Returns:
+        A dictionary with base values for player attributes
+    """
+    # Linear interpolation between level 1 (avg 80) and level 10 (avg 30)
+    base_strength = 80 - (league_level - 1) * 5.5
+
+    # Calculate standard deviation (higher leagues have more consistent players)
+    std_dev = 5 + (league_level - 1) * 0.5
+
+    # Generate attribute values using normal distribution
+    attributes = {
+        'strength': max(30, min(99, int(np.random.normal(base_strength, std_dev)))),
+        'talent': random.randint(1, 10),  # Talent is independent of league level
+    }
+
+    # Calculate other attributes based on strength
+    base_attr_value = 60 + (attributes['strength'] - 50) * 0.6
+    attr_std_dev = 5 + (league_level - 1) * 0.3
+
+    # Generate all other attributes
+    for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
+                'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
+        attributes[attr] = min(99, int(np.random.normal(base_attr_value, attr_std_dev)))
+
+    return attributes
 
 
 # Erstelle eine Flask-App, aber konfiguriere sie nicht sofort
@@ -277,15 +313,28 @@ def create_sample_data_alt(custom_app=None):
             print(f"Generating {num_players} players for team {team.name}")
 
             for _ in range(num_players):
+                # Get the league level for this team
+                league_level = team.league.level if team.league else 5  # Default to middle level if no league
+
+                # Check if it's a second team
+                is_second_team = "II" in team.name
+
+                # Calculate player attributes based on league level
+                attributes = calculate_player_attribute_by_league_level(
+                    league_level,
+                    is_youth_team=team.is_youth_team,
+                    is_second_team=is_second_team
+                )
+
                 # Youth players are younger
                 if team.is_youth_team:
                     age = random.randint(16, 19)
-                    strength = random.randint(50, 75)
-                    talent = random.randint(5, 10)  # Youth players have higher potential
                 else:
                     age = random.randint(20, 35)
-                    strength = random.randint(70, 95) if "II" not in team.name else random.randint(60, 85)
-                    talent = random.randint(1, 8)
+
+                # Get attributes from the calculated values
+                strength = attributes['strength']
+                talent = attributes['talent']
 
                 # Contract length based on age
                 if age < 23:
@@ -305,28 +354,17 @@ def create_sample_data_alt(custom_app=None):
                 # Random position
                 position = random.choice(["Angriff", "Mittelfeld", "Abwehr"])
 
-                # Kegeln-spezifische Attribute
-                consistency = random.randint(60, 90)
-                precision = random.randint(60, 90)
-                stamina = random.randint(60, 90)
-
-                # Neue Attribute
-                konstanz = random.randint(60, 90)
-                drucksicherheit = random.randint(60, 90)
-                volle = random.randint(60, 90)
-                raeumer = random.randint(60, 90)
-                sicherheit = random.randint(60, 90)
-
-                # Bessere Spieler haben bessere Attribute
-                if strength > 85:
-                    consistency = random.randint(75, 95)
-                    precision = random.randint(75, 95)
-                    stamina = random.randint(75, 95)
-                    konstanz = random.randint(75, 95)
-                    drucksicherheit = random.randint(75, 95)
-                    volle = random.randint(75, 95)
-                    raeumer = random.randint(75, 95)
-                    sicherheit = random.randint(75, 95)
+                # Get all the other attributes from the calculated values
+                ausdauer = attributes['ausdauer']
+                konstanz = attributes['konstanz']
+                drucksicherheit = attributes['drucksicherheit']
+                volle = attributes['volle']
+                raeumer = attributes['raeumer']
+                sicherheit = attributes['sicherheit']
+                auswaerts = attributes['auswaerts']
+                start = attributes['start']
+                mitte = attributes['mitte']
+                schluss = attributes['schluss']
 
                 # Generate name using frequency-based selection if available
                 if first_name_freqs and last_name_freqs:
@@ -346,15 +384,18 @@ def create_sample_data_alt(custom_app=None):
                     contract_end=contract_end.date(),
                     # Verknüpfung zum Verein
                     club_id=team.club_id,
-                    consistency=consistency,
-                    precision=precision,
-                    stamina=stamina,
+                    ausdauer=ausdauer,
                     # Neue Attribute
                     konstanz=konstanz,
                     drucksicherheit=drucksicherheit,
                     volle=volle,
                     raeumer=raeumer,
-                    sicherheit=sicherheit
+                    sicherheit=sicherheit,
+                    # Weitere Attribute
+                    auswaerts=auswaerts,
+                    start=start,
+                    mitte=mitte,
+                    schluss=schluss
                 )
                 db.session.add(player)
 
@@ -598,12 +639,6 @@ def create_sample_data(custom_app=None):
             print(f"Loaded {len(first_names)} first names and {len(last_names)} last names from Excel files")
         except Exception as e:
             print(f"Error loading names from Excel files: {e}")
-            # Fallback to hardcoded names if Excel files can't be loaded
-            first_names = ["Max", "Thomas", "Felix", "Jan", "Lukas", "Niklas", "Leon", "Tim", "Jonas", "David", "Philipp", "Simon"]
-            last_names = ["Mustermann", "Schmidt", "Müller", "Becker", "Weber", "Fischer", "Schneider", "Hoffmann", "Schäfer", "Wagner", "Bauer", "Koch"]
-            first_name_freqs = None
-            last_name_freqs = None
-            print("Using fallback hardcoded names")
 
         # Alle Teams abrufen
         all_teams = Team.query.all()
@@ -611,19 +646,32 @@ def create_sample_data(custom_app=None):
 
         for team in all_teams:
             # Generate 7-10 players per team
-            num_players = random.randint(7, 10)
+            num_players = 7#random.randint(7, 10)
             print(f"Generating {num_players} players for team {team.name}")
 
             for _ in range(num_players):
+                # Get the league level for this team
+                league_level = team.league.level if team.league else 5  # Default to middle level if no league
+
+                # Check if it's a second team
+                is_second_team = "II" in team.name
+
+                # Calculate player attributes based on league level
+                attributes = calculate_player_attribute_by_league_level(
+                    league_level,
+                    is_youth_team=team.is_youth_team,
+                    is_second_team=is_second_team
+                )
+
                 # Youth players are younger
                 if team.is_youth_team:
                     age = random.randint(16, 19)
-                    strength = random.randint(50, 75)
-                    talent = random.randint(5, 10)  # Youth players have higher potential
                 else:
                     age = random.randint(20, 35)
-                    strength = random.randint(70, 95) if "II" not in team.name else random.randint(60, 85)
-                    talent = random.randint(1, 8)
+
+                # Get attributes from the calculated values
+                strength = attributes['strength']
+                talent = attributes['talent']
 
                 # Contract length based on age
                 if age < 23:
@@ -643,28 +691,17 @@ def create_sample_data(custom_app=None):
                 # Random position
                 position = random.choice(["Angriff", "Mittelfeld", "Abwehr"])
 
-                # Kegeln-spezifische Attribute
-                consistency = random.randint(60, 90)
-                precision = random.randint(60, 90)
-                stamina = random.randint(60, 90)
-
-                # Neue Attribute
-                konstanz = random.randint(60, 90)
-                drucksicherheit = random.randint(60, 90)
-                volle = random.randint(60, 90)
-                raeumer = random.randint(60, 90)
-                sicherheit = random.randint(60, 90)
-
-                # Bessere Spieler haben bessere Attribute
-                if strength > 85:
-                    consistency = random.randint(75, 95)
-                    precision = random.randint(75, 95)
-                    stamina = random.randint(75, 95)
-                    konstanz = random.randint(75, 95)
-                    drucksicherheit = random.randint(75, 95)
-                    volle = random.randint(75, 95)
-                    raeumer = random.randint(75, 95)
-                    sicherheit = random.randint(75, 95)
+                # Get all the other attributes from the calculated values
+                ausdauer = attributes['ausdauer']
+                konstanz = attributes['konstanz']
+                drucksicherheit = attributes['drucksicherheit']
+                volle = attributes['volle']
+                raeumer = attributes['raeumer']
+                sicherheit = attributes['sicherheit']
+                auswaerts = attributes['auswaerts']
+                start = attributes['start']
+                mitte = attributes['mitte']
+                schluss = attributes['schluss']
 
                 # Generate name using frequency-based selection if available
                 if first_name_freqs and last_name_freqs:
@@ -684,15 +721,18 @@ def create_sample_data(custom_app=None):
                     contract_end=contract_end.date(),
                     # Verknüpfung zum Verein
                     club_id=team.club_id,
-                    consistency=consistency,
-                    precision=precision,
-                    stamina=stamina,
+                    ausdauer=ausdauer,
                     # Neue Attribute
                     konstanz=konstanz,
                     drucksicherheit=drucksicherheit,
                     volle=volle,
                     raeumer=raeumer,
-                    sicherheit=sicherheit
+                    sicherheit=sicherheit,
+                    # Weitere Attribute
+                    auswaerts=auswaerts,
+                    start=start,
+                    mitte=mitte,
+                    schluss=schluss
                 )
                 db.session.add(player)
 

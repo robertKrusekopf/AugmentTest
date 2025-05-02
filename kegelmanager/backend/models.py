@@ -22,13 +22,15 @@ class Player(db.Model):
     # Neue Verknüpfung zum Verein
     club_id = db.Column(db.Integer, db.ForeignKey('club.id'))
 
+    # Flag, ob der Spieler am aktuellen Spieltag bereits gespielt hat
+    has_played_current_matchday = db.Column(db.Boolean, default=False)
+    last_played_matchday = db.Column(db.Integer, nullable=True)  # Speichert den letzten Spieltag, an dem der Spieler gespielt hat
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Kegeln-spezifische Attribute
-    consistency = db.Column(db.Integer, default=70)  # 1-99: Wie konstant der Spieler spielt
-    precision = db.Column(db.Integer, default=70)    # 1-99: Genauigkeit der Würfe
-    stamina = db.Column(db.Integer, default=70)      # 1-99: Ausdauer über alle Bahnen
+    ausdauer = db.Column(db.Integer, default=70)      # 1-99: Ausdauer über alle Bahnen
 
     # Neue Attribute
     konstanz = db.Column(db.Integer, default=70)     # 1-99: Konstanz über mehrere Spiele hinweg
@@ -37,10 +39,86 @@ class Player(db.Model):
     raeumer = db.Column(db.Integer, default=70)      # 1-99: Fähigkeit beim Abräumen
     sicherheit = db.Column(db.Integer, default=70)   # 1-99: Vermeidung von Fehlwürfen
 
+    # Weitere Attribute
+    auswaerts = db.Column(db.Integer, default=70)    # 1-99: Leistung bei Auswärtsspielen
+    start = db.Column(db.Integer, default=70)        # 1-99: Leistung zu Beginn eines Spiels
+    mitte = db.Column(db.Integer, default=70)        # 1-99: Leistung in der Mitte eines Spiels
+    schluss = db.Column(db.Integer, default=70)      # 1-99: Leistung am Ende eines Spiels
+
     # Relationships
     club = db.relationship('Club', back_populates='players')
     teams = db.relationship('Team', secondary=player_team, back_populates='players')
     performances = db.relationship('PlayerMatchPerformance', back_populates='player')
+
+    def calculate_stats(self):
+        """Calculate player statistics based on played matches."""
+        # Get all performances for this player
+        performances = self.performances
+
+        # Initialize statistics
+        home_performances = [p for p in performances if p.is_home_team]
+        away_performances = [p for p in performances if not p.is_home_team]
+
+        total_matches = len(performances)
+        home_matches = len(home_performances)
+        away_matches = len(away_performances)
+
+        # Initialize statistics
+        total_score = sum(p.total_score for p in performances) if performances else 0
+        home_score = sum(p.total_score for p in home_performances) if home_performances else 0
+        away_score = sum(p.total_score for p in away_performances) if away_performances else 0
+
+        total_volle = sum(p.volle_score for p in performances) if performances else 0
+        home_volle = sum(p.volle_score for p in home_performances) if home_performances else 0
+        away_volle = sum(p.volle_score for p in away_performances) if away_performances else 0
+
+        total_raeumer = sum(p.raeumer_score for p in performances) if performances else 0
+        home_raeumer = sum(p.raeumer_score for p in home_performances) if home_performances else 0
+        away_raeumer = sum(p.raeumer_score for p in away_performances) if away_performances else 0
+
+        total_fehler = sum(p.fehler_count for p in performances) if performances else 0
+        home_fehler = sum(p.fehler_count for p in home_performances) if home_performances else 0
+        away_fehler = sum(p.fehler_count for p in away_performances) if away_performances else 0
+
+        # Calculate match points won percentage
+        total_mp_won = sum(1 for p in performances if p.match_points > 0) if performances else 0
+        mp_win_percentage = (total_mp_won / total_matches * 100) if total_matches > 0 else 0
+
+        # Calculate averages
+        avg_total_score = total_score / total_matches if total_matches > 0 else 0
+        avg_home_score = home_score / home_matches if home_matches > 0 else 0
+        avg_away_score = away_score / away_matches if away_matches > 0 else 0
+
+        avg_total_volle = total_volle / total_matches if total_matches > 0 else 0
+        avg_home_volle = home_volle / home_matches if home_matches > 0 else 0
+        avg_away_volle = away_volle / away_matches if away_matches > 0 else 0
+
+        avg_total_raeumer = total_raeumer / total_matches if total_matches > 0 else 0
+        avg_home_raeumer = home_raeumer / home_matches if home_matches > 0 else 0
+        avg_away_raeumer = away_raeumer / away_matches if away_matches > 0 else 0
+
+        avg_total_fehler = total_fehler / total_matches if total_matches > 0 else 0
+        avg_home_fehler = home_fehler / home_matches if home_matches > 0 else 0
+        avg_away_fehler = away_fehler / away_matches if away_matches > 0 else 0
+
+        return {
+            'total_matches': total_matches,
+            'home_matches': home_matches,
+            'away_matches': away_matches,
+            'avg_total_score': round(avg_total_score, 1),
+            'avg_home_score': round(avg_home_score, 1),
+            'avg_away_score': round(avg_away_score, 1),
+            'avg_total_volle': round(avg_total_volle, 1),
+            'avg_home_volle': round(avg_home_volle, 1),
+            'avg_away_volle': round(avg_away_volle, 1),
+            'avg_total_raeumer': round(avg_total_raeumer, 1),
+            'avg_home_raeumer': round(avg_home_raeumer, 1),
+            'avg_away_raeumer': round(avg_away_raeumer, 1),
+            'avg_total_fehler': round(avg_total_fehler, 1),
+            'avg_home_fehler': round(avg_home_fehler, 1),
+            'avg_away_fehler': round(avg_away_fehler, 1),
+            'mp_win_percentage': round(mp_win_percentage, 1)
+        }
 
     def to_dict(self):
         return {
@@ -53,17 +131,21 @@ class Player(db.Model):
             'salary': self.salary,
             'contract_end': self.contract_end.isoformat() if self.contract_end else None,
             'club_id': self.club_id,
-            # Bestehende Kegeln-spezifische Attribute
-            'consistency': self.consistency,
-            'precision': self.precision,
-            'stamina': self.stamina,
+            # Kegeln-spezifische Attribute
+            'ausdauer': self.ausdauer,
             # Neue Attribute
             'konstanz': self.konstanz,
             'drucksicherheit': self.drucksicherheit,
             'volle': self.volle,
             'raeumer': self.raeumer,
             'sicherheit': self.sicherheit,
-            'teams': [team.id for team in self.teams]
+            'auswaerts': self.auswaerts,
+            'start': self.start,
+            'mitte': self.mitte,
+            'schluss': self.schluss,
+            'teams': [team.id for team in self.teams],
+            # Include player statistics
+            'statistics': self.calculate_stats()
         }
 
 class Team(db.Model):
@@ -100,7 +182,7 @@ class Team(db.Model):
 
                 if os.path.exists(emblem_path):
                     club_info['emblem_url'] = f"/api/club-emblem/{self.club.verein_id}"
-                    print(f"DEBUG: Team {self.name} (ID: {self.id}) has club {self.club.name} with verein_id: {self.club.verein_id}, emblem_url: {club_info['emblem_url']}")
+                    #print(f"DEBUG: Team {self.name} (ID: {self.id}) has club {self.club.name} with verein_id: {self.club.verein_id}, emblem_url: {club_info['emblem_url']}")
                 else:
                     print(f"DEBUG: Team {self.name} (ID: {self.id}) has club {self.club.name} with verein_id: {self.club.verein_id}, but no emblem file found at {emblem_path}")
             else:
@@ -129,14 +211,17 @@ class Team(db.Model):
                 'position': player.position,
                 'salary': player.salary,
                 'contract_end': player.contract_end.isoformat() if player.contract_end else None,
-                'consistency': player.consistency,
-                'precision': player.precision,
-                'stamina': player.stamina,
+                'ausdauer': player.ausdauer,
                 'konstanz': player.konstanz,
                 'drucksicherheit': player.drucksicherheit,
                 'volle': player.volle,
                 'raeumer': player.raeumer,
-                'sicherheit': player.sicherheit
+                'sicherheit': player.sicherheit,
+                'auswaerts': player.auswaerts,
+                'start': player.start,
+                'mitte': player.mitte,
+                'schluss': player.schluss,
+                'statistics': player.calculate_stats()
             }
             players_info.append(player_info)
 
@@ -179,9 +264,14 @@ class Team(db.Model):
             }
             all_played_matches.append((match.match_date, match_data))
 
-        # Sort by date (newest first) and take the 5 most recent
+        # Sort by date (newest first)
         all_played_matches.sort(key=lambda x: x[0] if x[0] else datetime.min, reverse=True)
-        recent_matches = [match[1] for match in all_played_matches[:5]]
+        # Get all recent matches but mark the first 5 as visible by default
+        recent_matches = []
+        for i, match_tuple in enumerate(all_played_matches):
+            match_data = match_tuple[1]
+            match_data['visible'] = i < 5  # Only first 5 are visible by default
+            recent_matches.append(match_data)
 
         # Get upcoming matches (unplayed matches)
         upcoming_matches = []
@@ -213,9 +303,14 @@ class Team(db.Model):
             }
             all_upcoming_matches.append((match.match_date, match_data))
 
-        # Sort by date (oldest first) and take the 5 next matches
+        # Sort by date (oldest first)
         all_upcoming_matches.sort(key=lambda x: x[0] if x[0] else datetime.max)
-        upcoming_matches = [match[1] for match in all_upcoming_matches[:5]]
+        # Get all upcoming matches but mark the first 5 as visible by default
+        upcoming_matches = []
+        for i, match_tuple in enumerate(all_upcoming_matches):
+            match_data = match_tuple[1]
+            match_data['visible'] = i < 5  # Only first 5 are visible by default
+            upcoming_matches.append(match_data)
 
         # Calculate team statistics
         stats = self.calculate_stats()
@@ -351,7 +446,6 @@ class Club(db.Model):
 
             if os.path.exists(emblem_path):
                 emblem_url = f"/api/club-emblem/{self.verein_id}"
-                print(f"DEBUG: Club {self.name} (ID: {self.id}) has verein_id: {self.verein_id}, emblem_url: {emblem_url}")
             else:
                 print(f"DEBUG: Club {self.name} (ID: {self.id}) has verein_id: {self.verein_id}, but no emblem file found at {emblem_path}")
         else:
@@ -387,14 +481,16 @@ class Club(db.Model):
                 'position': player.position,
                 'salary': player.salary,
                 'contract_end': player.contract_end.isoformat() if player.contract_end else None,
-                'consistency': player.consistency,
-                'precision': player.precision,
-                'stamina': player.stamina,
+                'ausdauer': player.ausdauer,
                 'konstanz': player.konstanz,
                 'drucksicherheit': player.drucksicherheit,
                 'volle': player.volle,
                 'raeumer': player.raeumer,
-                'sicherheit': player.sicherheit
+                'sicherheit': player.sicherheit,
+                'auswaerts': player.auswaerts,
+                'start': player.start,
+                'mitte': player.mitte,
+                'schluss': player.schluss
             }
             players_info.append(player_info)
 
@@ -494,6 +590,85 @@ class League(db.Model):
 
         return fixtures_list
 
+    def get_player_statistics(self):
+        """Get statistics for all players who played in this league."""
+        # Get all matches played in this league
+        matches = Match.query.filter_by(league_id=self.id, is_played=True).all()
+
+        if not matches:
+            return []
+
+        # Get all player performances from these matches
+        match_ids = [match.id for match in matches]
+        performances = PlayerMatchPerformance.query.filter(PlayerMatchPerformance.match_id.in_(match_ids)).all()
+
+        # Group performances by player
+        player_performances = {}
+        for perf in performances:
+            if perf.player_id not in player_performances:
+                player_performances[perf.player_id] = []
+            player_performances[perf.player_id].append(perf)
+
+        # Calculate statistics for each player
+        player_stats = []
+        for player_id, perfs in player_performances.items():
+            player = Player.query.get(player_id)
+            if not player:
+                continue
+
+            # Get team name
+            team = Team.query.get(perfs[0].team_id)
+            team_name = team.name if team else "Unknown"
+
+            # Calculate statistics
+            total_matches = len(perfs)
+            total_score = sum(p.total_score for p in perfs)
+            avg_score = total_score / total_matches if total_matches > 0 else 0
+
+            # Calculate Volle and Räumer averages
+            total_volle = sum(p.volle_score for p in perfs if p.volle_score is not None)
+            total_raeumer = sum(p.raeumer_score for p in perfs if p.raeumer_score is not None)
+            avg_volle = total_volle / total_matches if total_matches > 0 else 0
+            avg_raeumer = total_raeumer / total_matches if total_matches > 0 else 0
+
+            # Calculate error average
+            total_fehler = sum(p.fehler_count for p in perfs if p.fehler_count is not None)
+            avg_fehler = total_fehler / total_matches if total_matches > 0 else 0
+
+            # Calculate home/away averages
+            home_perfs = [p for p in perfs if p.is_home_team]
+            away_perfs = [p for p in perfs if not p.is_home_team]
+
+            home_matches = len(home_perfs)
+            away_matches = len(away_perfs)
+
+            home_score = sum(p.total_score for p in home_perfs)
+            away_score = sum(p.total_score for p in away_perfs)
+
+            avg_home_score = home_score / home_matches if home_matches > 0 else 0
+            avg_away_score = away_score / away_matches if away_matches > 0 else 0
+
+            # Calculate match points won percentage
+            mp_won = sum(1 for p in perfs if p.match_points > 0)
+            mp_win_percentage = (mp_won / total_matches * 100) if total_matches > 0 else 0
+
+            player_stats.append({
+                'player_id': player_id,
+                'player_name': player.name,
+                'team_id': team.id if team else None,
+                'team_name': team_name,
+                'matches': total_matches,
+                'avg_score': round(avg_score, 1),
+                'avg_volle': round(avg_volle, 1),
+                'avg_raeumer': round(avg_raeumer, 1),
+                'avg_fehler': round(avg_fehler, 1),
+                'avg_home_score': round(avg_home_score, 1),
+                'avg_away_score': round(avg_away_score, 1),
+                'mp_win_percentage': round(mp_win_percentage, 1)
+            })
+
+        return player_stats
+
     def to_dict(self):
         # Erstelle eine Liste mit detaillierten Team-Informationen
         teams_info = []
@@ -517,6 +692,9 @@ class League(db.Model):
         import simulation
         standings_data = simulation.calculate_standings(self)
 
+        # Check if any matches have been played in this league
+        played_matches_count = Match.query.filter_by(league_id=self.id, is_played=True).count()
+
         # Convert standings to a format suitable for the frontend
         standings = []
         for i, standing in enumerate(standings_data):
@@ -524,6 +702,10 @@ class League(db.Model):
 
             # Berechne Durchschnittswerte für Heim- und Auswärtsergebnisse
             team_stats = team.calculate_stats()
+
+            # If no matches have been played, use 0 for avg_home_score and avg_away_score
+            avg_home_score = round(team_stats['avgHomeScore'], 1) if played_matches_count > 0 else 0
+            avg_away_score = round(team_stats['avgAwayScore'], 1) if played_matches_count > 0 else 0
 
             standings.append({
                 'position': i + 1,
@@ -539,12 +721,15 @@ class League(db.Model):
                 'goals_for': standing['goals_for'],
                 'goals_against': standing['goals_against'],
                 'goal_difference': standing['goal_difference'],
-                'avg_home_score': round(team_stats['avgHomeScore'], 1),
-                'avg_away_score': round(team_stats['avgAwayScore'], 1)
+                'avg_home_score': avg_home_score,
+                'avg_away_score': avg_away_score
             })
 
         # Get fixtures (match schedule)
         fixtures = self.get_fixtures()
+
+        # Get player statistics
+        player_stats = self.get_player_statistics()
 
         return {
             'id': self.id,
@@ -561,7 +746,12 @@ class League(db.Model):
             'teams': [team.id for team in self.teams],
             'teams_info': teams_info,
             'standings': standings,
-            'fixtures': fixtures
+            'fixtures': fixtures,
+            'player_statistics': player_stats,
+            'stats': {
+                'topScorers': [],
+                'teamStats': []
+            }
         }
 
 class Match(db.Model):
@@ -571,8 +761,10 @@ class Match(db.Model):
     league_id = db.Column(db.Integer, db.ForeignKey('league.id'), nullable=False)
     season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
     match_date = db.Column(db.DateTime)
-    home_score = db.Column(db.Integer)
-    away_score = db.Column(db.Integer)
+    home_score = db.Column(db.Integer)  # Gesamtholz Heimteam
+    away_score = db.Column(db.Integer)  # Gesamtholz Auswärtsteam
+    home_match_points = db.Column(db.Integer, default=0)  # Mannschaftspunkte (MP) Heimteam
+    away_match_points = db.Column(db.Integer, default=0)  # Mannschaftspunkte (MP) Auswärtsteam
     is_played = db.Column(db.Boolean, default=False)
     match_day = db.Column(db.Integer)  # Spieltag (1, 2, 3, ...)
     round = db.Column(db.Integer, default=1)  # 1 = Hinrunde, 2 = Rückrunde
@@ -587,15 +779,34 @@ class Match(db.Model):
     performances = db.relationship('PlayerMatchPerformance', back_populates='match')
 
     def to_dict(self):
+        # Get verein_id for home and away teams
+        home_team_verein_id = None
+        away_team_verein_id = None
+
+        if self.home_team and self.home_team.club:
+            home_team_verein_id = self.home_team.club.verein_id
+
+        if self.away_team and self.away_team.club:
+            away_team_verein_id = self.away_team.club.verein_id
+
         return {
             'id': self.id,
             'home_team_id': self.home_team_id,
             'away_team_id': self.away_team_id,
+            'home_team_name': self.home_team.name,
+            'away_team_name': self.away_team.name,
+            'home_team_club_id': self.home_team.club_id,
+            'away_team_club_id': self.away_team.club_id,
+            'home_team_verein_id': home_team_verein_id,
+            'away_team_verein_id': away_team_verein_id,
             'league_id': self.league_id,
+            'league_name': self.league.name,
             'season_id': self.season_id,
             'match_date': self.match_date.isoformat() if self.match_date else None,
             'home_score': self.home_score,
             'away_score': self.away_score,
+            'home_match_points': self.home_match_points,
+            'away_match_points': self.away_match_points,
             'is_played': self.is_played,
             'match_day': self.match_day,
             'round': self.round,
@@ -656,6 +867,7 @@ class PlayerMatchPerformance(db.Model):
     team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
     is_home_team = db.Column(db.Boolean, nullable=False)  # True für Heimteam, False für Auswärtsteam
     position_number = db.Column(db.Integer, nullable=False)  # Position im Team (1-6)
+    is_substitute = db.Column(db.Boolean, default=False)  # True wenn Spieler ein Ersatzspieler ist
 
     # Ergebnisse der 4 Bahnen (je 30 Wurf)
     lane1_score = db.Column(db.Integer)
@@ -668,6 +880,10 @@ class PlayerMatchPerformance(db.Model):
     volle_score = db.Column(db.Integer)  # Ergebnis auf die vollen Bilder (15 Wurf pro Bahn)
     raeumer_score = db.Column(db.Integer)  # Ergebnis auf die Räumer (15 Wurf pro Bahn)
     fehler_count = db.Column(db.Integer)  # Anzahl der Fehlwürfe
+
+    # Neue Felder für das Punktesystem
+    set_points = db.Column(db.Float, default=0.0)  # Satzpunkte (SP) - kann auch 0.5 sein
+    match_points = db.Column(db.Integer, default=0)  # Mannschaftspunkte (MP)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -687,6 +903,7 @@ class PlayerMatchPerformance(db.Model):
             'team_name': self.team.name,
             'is_home_team': self.is_home_team,
             'position_number': self.position_number,
+            'is_substitute': self.is_substitute,
             'lane1_score': self.lane1_score,
             'lane2_score': self.lane2_score,
             'lane3_score': self.lane3_score,
@@ -694,5 +911,7 @@ class PlayerMatchPerformance(db.Model):
             'total_score': self.total_score,
             'volle_score': self.volle_score,
             'raeumer_score': self.raeumer_score,
-            'fehler_count': self.fehler_count
+            'fehler_count': self.fehler_count,
+            'set_points': self.set_points,
+            'match_points': self.match_points
         }

@@ -8,6 +8,7 @@ const LeagueDetail = () => {
   const [league, setLeague] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('standings');
+  const [selectedStat, setSelectedStat] = useState('avg_score'); // Default statistic is average score
 
   // Lade Daten aus der API
   useEffect(() => {
@@ -268,6 +269,81 @@ const LeagueDetail = () => {
           {activeTab === 'stats' && (
             <div className="stats-tab">
               <div className="stats-grid">
+                <div className="stats-card full-width">
+                  <h3>Spielerstatistiken</h3>
+                  <div className="stats-controls">
+                    <label htmlFor="stat-select">Statistik auswählen:</label>
+                    <select
+                      id="stat-select"
+                      value={selectedStat}
+                      onChange={(e) => setSelectedStat(e.target.value)}
+                      className="stat-select"
+                    >
+                      <option value="avg_score">Gesamtschnitt</option>
+                      <option value="avg_home_score">Heimschnitt</option>
+                      <option value="avg_away_score">Auswärtsschnitt</option>
+                      <option value="avg_volle">Volle-Schnitt</option>
+                      <option value="avg_raeumer">Räumer-Schnitt</option>
+                      <option value="avg_fehler">Fehler-Schnitt</option>
+                      <option value="mp_win_percentage">MP-Gewinnquote (%)</option>
+                    </select>
+                  </div>
+
+                  {league.player_statistics && league.player_statistics.length > 0 ? (
+                    <table className="table stats-table">
+                      <thead>
+                        <tr>
+                          <th>Rang</th>
+                          <th>Spieler</th>
+                          <th>Team</th>
+                          <th>Spiele</th>
+                          <th>
+                            {selectedStat === 'avg_score' && 'Gesamtschnitt'}
+                            {selectedStat === 'avg_home_score' && 'Heimschnitt'}
+                            {selectedStat === 'avg_away_score' && 'Auswärtsschnitt'}
+                            {selectedStat === 'avg_volle' && 'Volle-Schnitt'}
+                            {selectedStat === 'avg_raeumer' && 'Räumer-Schnitt'}
+                            {selectedStat === 'avg_fehler' && 'Fehler-Schnitt'}
+                            {selectedStat === 'mp_win_percentage' && 'MP-Gewinnquote (%)'}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...league.player_statistics]
+                          .sort((a, b) => {
+                            // Für Fehler-Schnitt sortieren wir aufsteigend (weniger ist besser)
+                            if (selectedStat === 'avg_fehler') {
+                              return a[selectedStat] - b[selectedStat];
+                            }
+                            // Für alle anderen Statistiken sortieren wir absteigend (mehr ist besser)
+                            return b[selectedStat] - a[selectedStat];
+                          })
+                          .map((player, index) => (
+                            <tr key={player.player_id}>
+                              <td>{index + 1}</td>
+                              <td>
+                                <Link to={`/players/${player.player_id}`}>
+                                  {player.player_name}
+                                </Link>
+                              </td>
+                              <td>
+                                <Link to={`/teams/${player.team_id}`}>
+                                  {player.team_name}
+                                </Link>
+                              </td>
+                              <td>{player.matches}</td>
+                              <td>{player[selectedStat]}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="no-stats">
+                      <p>Keine Spielerstatistiken verfügbar. Spieler müssen erst Spiele in dieser Liga absolvieren.</p>
+                    </div>
+                  )}
+                </div>
+
                 <div className="stats-card">
                   <h3>Top Scorer</h3>
                   <table className="table stats-table">
@@ -279,13 +355,19 @@ const LeagueDetail = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {league.stats.topScorers.map((player, index) => (
-                        <tr key={index}>
-                          <td>{player.player}</td>
-                          <td>{player.team}</td>
-                          <td>{player.score}</td>
+                      {league.stats.topScorers && league.stats.topScorers.length > 0 ? (
+                        league.stats.topScorers.map((player, index) => (
+                          <tr key={index}>
+                            <td>{player.player}</td>
+                            <td>{player.team}</td>
+                            <td>{player.score}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="3">Keine Daten verfügbar</td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -301,13 +383,19 @@ const LeagueDetail = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {league.stats.teamStats.map((team, index) => (
-                        <tr key={index}>
-                          <td>{team.team}</td>
-                          <td>{team.matches}</td>
-                          <td>{team.avgScore.toFixed(1)}</td>
+                      {league.stats.teamStats && league.stats.teamStats.length > 0 ? (
+                        league.stats.teamStats.map((team, index) => (
+                          <tr key={index}>
+                            <td>{team.team}</td>
+                            <td>{team.matches}</td>
+                            <td>{typeof team.avgScore === 'number' ? team.avgScore.toFixed(1) : '0.0'}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="3">Keine Daten verfügbar</td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>

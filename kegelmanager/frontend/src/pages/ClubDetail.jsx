@@ -189,7 +189,7 @@ const ClubDetail = () => {
                         <span className="player-name">{player.name}</span>
                         <div className="player-info">
                           <span className="player-position">{player.position}</span>
-                          <span className="player-strength">{player.strength}</span>
+                          <span className="player-strength">{Math.floor(player.strength)}</span>
                         </div>
                       </Link>
                     ))}
@@ -337,7 +337,7 @@ const ClubDetail = () => {
                               style={{ width: `${player.strength}%` }}
                             ></div>
                           </div>
-                          <span>{player.strength}</span>
+                          <span>{Math.floor(player.strength)}</span>
                         </div>
                       </td>
                       <td>{player.team}</td>

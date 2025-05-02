@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPlayer } from '../services/api';
+import { getPlayer, updatePlayer } from '../services/api';
 import './PlayerDetail.css';
 
 const PlayerDetail = () => {
@@ -8,6 +8,9 @@ const PlayerDetail = () => {
   const [player, setPlayer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [cheatForm, setCheatForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState({ show: false, type: '', text: '' });
 
   // Lade Spielerdaten aus der API
   useEffect(() => {
@@ -25,9 +28,28 @@ const PlayerDetail = () => {
             team: data.teams && data.teams.length > 0 ? data.teams[0] : 'Kein Team',
             salary: data.salary || 0,
             contractEnd: data.contract_end || new Date().toISOString(),
-            // Füge Statistiken hinzu (in einer echten Anwendung würden diese aus der Datenbank kommen)
+            // Verwende die Statistiken aus der API oder setze Standardwerte
+            statistics: data.statistics || {
+              total_matches: 0,
+              home_matches: 0,
+              away_matches: 0,
+              avg_total_score: 0,
+              avg_home_score: 0,
+              avg_away_score: 0,
+              avg_total_volle: 0,
+              avg_home_volle: 0,
+              avg_away_volle: 0,
+              avg_total_raeumer: 0,
+              avg_home_raeumer: 0,
+              avg_away_raeumer: 0,
+              avg_total_fehler: 0,
+              avg_home_fehler: 0,
+              avg_away_fehler: 0,
+              mp_win_percentage: 0
+            },
+            // Für die Übersichtsseite
             stats: {
-              matches: 0,
+              matches: data.statistics?.total_matches || 0,
               goals: 0,
               assists: 0,
               rating: 0
@@ -39,9 +61,11 @@ const PlayerDetail = () => {
               volle: data.volle || 0,
               raeumer: data.raeumer || 0,
               sicherheit: data.sicherheit || 0,
-              consistency: data.consistency || 0,
-              precision: data.precision || 0,
-              stamina: data.stamina || 0
+              auswaerts: data.auswaerts || 0,
+              start: data.start || 0,
+              mitte: data.mitte || 0,
+              schluss: data.schluss || 0,
+              ausdauer: data.ausdauer || 0
             },
             // In einer echten Anwendung würden diese aus der Datenbank kommen
             history: [],
@@ -49,6 +73,27 @@ const PlayerDetail = () => {
           };
 
           setPlayer(processedPlayer);
+
+          // Initialize cheat form with player data
+          setCheatForm({
+            name: processedPlayer.name,
+            age: processedPlayer.age,
+            position: processedPlayer.position,
+            strength: processedPlayer.strength,
+            talent: processedPlayer.talent,
+            salary: processedPlayer.salary,
+            contract_end: processedPlayer.contractEnd.split('T')[0], // Format as YYYY-MM-DD
+            konstanz: processedPlayer.attributes.konstanz,
+            drucksicherheit: processedPlayer.attributes.drucksicherheit,
+            volle: processedPlayer.attributes.volle,
+            raeumer: processedPlayer.attributes.raeumer,
+            sicherheit: processedPlayer.attributes.sicherheit,
+            auswaerts: processedPlayer.attributes.auswaerts,
+            start: processedPlayer.attributes.start,
+            mitte: processedPlayer.attributes.mitte,
+            schluss: processedPlayer.attributes.schluss,
+            ausdauer: processedPlayer.attributes.ausdauer
+          });
         } else {
           console.error(`Keine Daten für Spieler ${id} gefunden`);
         }
@@ -60,6 +105,74 @@ const PlayerDetail = () => {
         setLoading(false);
       });
   }, [id]);
+
+  // Handle form input changes
+  const handleCheatInputChange = (e) => {
+    const { name, value } = e.target;
+    setCheatForm({
+      ...cheatForm,
+      [name]: name === 'name' || name === 'position' ? value : Number(value)
+    });
+  };
+
+  // Handle form submission
+  const handleCheatSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaveMessage({ show: false, type: '', text: '' });
+
+    try {
+      const response = await updatePlayer(id, cheatForm);
+
+      if (response.success) {
+        // Update the player state with the new data
+        setPlayer({
+          ...player,
+          ...response.player,
+          team: response.player.teams && response.player.teams.length > 0 ? response.player.teams[0] : 'Kein Team',
+          contractEnd: response.player.contract_end || new Date().toISOString(),
+          attributes: {
+            konstanz: response.player.konstanz || 0,
+            drucksicherheit: response.player.drucksicherheit || 0,
+            volle: response.player.volle || 0,
+            raeumer: response.player.raeumer || 0,
+            sicherheit: response.player.sicherheit || 0,
+            auswaerts: response.player.auswaerts || 0,
+            start: response.player.start || 0,
+            mitte: response.player.mitte || 0,
+            schluss: response.player.schluss || 0,
+            ausdauer: response.player.ausdauer || 0
+          }
+        });
+
+        setSaveMessage({
+          show: true,
+          type: 'success',
+          text: 'Spieler erfolgreich aktualisiert!'
+        });
+      } else {
+        setSaveMessage({
+          show: true,
+          type: 'error',
+          text: response.message || 'Fehler beim Aktualisieren des Spielers'
+        });
+      }
+    } catch (error) {
+      console.error('Fehler beim Aktualisieren des Spielers:', error);
+      setSaveMessage({
+        show: true,
+        type: 'error',
+        text: 'Fehler beim Aktualisieren des Spielers: ' + error.message
+      });
+    } finally {
+      setSaving(false);
+
+      // Hide message after 3 seconds
+      setTimeout(() => {
+        setSaveMessage({ show: false, type: '', text: '' });
+      }, 3000);
+    }
+  };
 
   if (loading) {
     return <div className="loading">Lade Spielerdaten...</div>;
@@ -96,7 +209,7 @@ const PlayerDetail = () => {
           <div className="player-ratings">
             <div className="rating-item">
               <span className="rating-label">Stärke</span>
-              <span className="rating-value">{player.strength}</span>
+              <span className="rating-value">{Math.floor(player.strength)}</span>
               <div className="strength-bar">
                 <div className="strength-fill" style={{ width: `${player.strength}%` }}></div>
               </div>
@@ -129,6 +242,12 @@ const PlayerDetail = () => {
             Attribute
           </div>
           <div
+            className={`tab ${activeTab === 'statistics' ? 'active' : ''}`}
+            onClick={() => setActiveTab('statistics')}
+          >
+            Statistiken
+          </div>
+          <div
             className={`tab ${activeTab === 'history' ? 'active' : ''}`}
             onClick={() => setActiveTab('history')}
           >
@@ -139,6 +258,12 @@ const PlayerDetail = () => {
             onClick={() => setActiveTab('development')}
           >
             Entwicklung
+          </div>
+          <div
+            className={`tab ${activeTab === 'cheat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('cheat')}
+          >
+            Cheat
           </div>
         </div>
 
@@ -210,7 +335,7 @@ const PlayerDetail = () => {
                     <div className="attribute-bar">
                       <div className="attribute-fill" style={{ width: `${value}%` }}></div>
                     </div>
-                    <span className="attribute-value">{value}</span>
+                    <span className="attribute-value">{Math.floor(value)}</span>
                   </div>
                 ))}
               </div>
@@ -239,6 +364,72 @@ const PlayerDetail = () => {
                       <td>{season.assists}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {activeTab === 'statistics' && (
+            <div className="statistics-tab">
+              <div className="statistics-grid">
+                <div className="statistics-card">
+                  <h3>Allgemeine Statistiken</h3>
+                  <div className="info-list">
+                    <div className="info-item">
+                      <span className="info-label">Gespielte Spiele:</span>
+                      <span className="info-value">{player.statistics?.total_matches || 0}</span>
+                    </div>
+                    <div className="info-item">
+                      <span className="info-label">Heimspiele:</span>
+                      <span className="info-value">{player.statistics?.home_matches || 0}</span>
+                    </div>
+                    <div className="info-item">
+                      <span className="info-label">Auswärtsspiele:</span>
+                      <span className="info-value">{player.statistics?.away_matches || 0}</span>
+                    </div>
+                    <div className="info-item">
+                      <span className="info-label">MP-Gewinnquote:</span>
+                      <span className="info-value">{player.statistics?.mp_win_percentage || 0}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <h3>Detaillierte Statistiken</h3>
+              <table className="table statistics-table">
+                <thead>
+                  <tr>
+                    <th>Statistik</th>
+                    <th>Heim</th>
+                    <th>Auswärts</th>
+                    <th>Gesamt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Durchschnitt</strong></td>
+                    <td>{player.statistics?.avg_home_score || 0}</td>
+                    <td>{player.statistics?.avg_away_score || 0}</td>
+                    <td>{player.statistics?.avg_total_score || 0}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Volle</strong></td>
+                    <td>{player.statistics?.avg_home_volle || 0}</td>
+                    <td>{player.statistics?.avg_away_volle || 0}</td>
+                    <td>{player.statistics?.avg_total_volle || 0}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Räumer</strong></td>
+                    <td>{player.statistics?.avg_home_raeumer || 0}</td>
+                    <td>{player.statistics?.avg_away_raeumer || 0}</td>
+                    <td>{player.statistics?.avg_total_raeumer || 0}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Fehlwürfe</strong></td>
+                    <td>{player.statistics?.avg_home_fehler || 0}</td>
+                    <td>{player.statistics?.avg_away_fehler || 0}</td>
+                    <td>{player.statistics?.avg_total_fehler || 0}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -277,6 +468,259 @@ const PlayerDetail = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {activeTab === 'cheat' && (
+            <div className="cheat-tab">
+              <h3>Spieler bearbeiten (Cheat-Modus)</h3>
+
+              {saveMessage.show && (
+                <div className={`message ${saveMessage.type}`}>
+                  {saveMessage.text}
+                </div>
+              )}
+
+              <form className="cheat-form" onSubmit={handleCheatSubmit}>
+                <div className="form-grid">
+                  <div className="form-section">
+                    <h4>Persönliche Daten</h4>
+
+                    <div className="form-group">
+                      <label htmlFor="name">Name:</label>
+                      <input
+                        type="text"
+                        id="name"
+                        name="name"
+                        value={cheatForm.name || ''}
+                        onChange={handleCheatInputChange}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="age">Alter:</label>
+                      <input
+                        type="number"
+                        id="age"
+                        name="age"
+                        min="16"
+                        max="45"
+                        value={cheatForm.age || ''}
+                        onChange={handleCheatInputChange}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="position">Position:</label>
+                      <input
+                        type="text"
+                        id="position"
+                        name="position"
+                        value={cheatForm.position || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="strength">Stärke (1-99):</label>
+                      <input
+                        type="number"
+                        id="strength"
+                        name="strength"
+                        min="1"
+                        max="99"
+                        value={cheatForm.strength || ''}
+                        onChange={handleCheatInputChange}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="talent">Talent (1-10):</label>
+                      <input
+                        type="number"
+                        id="talent"
+                        name="talent"
+                        min="1"
+                        max="10"
+                        value={cheatForm.talent || ''}
+                        onChange={handleCheatInputChange}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="salary">Gehalt (€):</label>
+                      <input
+                        type="number"
+                        id="salary"
+                        name="salary"
+                        min="0"
+                        step="100"
+                        value={cheatForm.salary || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="contract_end">Vertragsende:</label>
+                      <input
+                        type="date"
+                        id="contract_end"
+                        name="contract_end"
+                        value={cheatForm.contract_end || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-section">
+                    <h4>Bowling-Attribute</h4>
+
+                    <div className="form-group">
+                      <label htmlFor="konstanz">Konstanz (1-99):</label>
+                      <input
+                        type="number"
+                        id="konstanz"
+                        name="konstanz"
+                        min="1"
+                        max="99"
+                        value={cheatForm.konstanz || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="drucksicherheit">Drucksicherheit (1-99):</label>
+                      <input
+                        type="number"
+                        id="drucksicherheit"
+                        name="drucksicherheit"
+                        min="1"
+                        max="99"
+                        value={cheatForm.drucksicherheit || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="volle">Volle (1-99):</label>
+                      <input
+                        type="number"
+                        id="volle"
+                        name="volle"
+                        min="1"
+                        max="99"
+                        value={cheatForm.volle || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="raeumer">Räumer (1-99):</label>
+                      <input
+                        type="number"
+                        id="raeumer"
+                        name="raeumer"
+                        min="1"
+                        max="99"
+                        value={cheatForm.raeumer || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="sicherheit">Sicherheit (1-99):</label>
+                      <input
+                        type="number"
+                        id="sicherheit"
+                        name="sicherheit"
+                        min="1"
+                        max="99"
+                        value={cheatForm.sicherheit || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="auswaerts">Auswärts (1-99):</label>
+                      <input
+                        type="number"
+                        id="auswaerts"
+                        name="auswaerts"
+                        min="1"
+                        max="99"
+                        value={cheatForm.auswaerts || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="start">Start (1-99):</label>
+                      <input
+                        type="number"
+                        id="start"
+                        name="start"
+                        min="1"
+                        max="99"
+                        value={cheatForm.start || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="mitte">Mitte (1-99):</label>
+                      <input
+                        type="number"
+                        id="mitte"
+                        name="mitte"
+                        min="1"
+                        max="99"
+                        value={cheatForm.mitte || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="schluss">Schluss (1-99):</label>
+                      <input
+                        type="number"
+                        id="schluss"
+                        name="schluss"
+                        min="1"
+                        max="99"
+                        value={cheatForm.schluss || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="ausdauer">Ausdauer (1-99):</label>
+                      <input
+                        type="number"
+                        id="ausdauer"
+                        name="ausdauer"
+                        min="1"
+                        max="99"
+                        value={cheatForm.ausdauer || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-actions">
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={saving}
+                  >
+                    {saving ? 'Speichern...' : 'Änderungen speichern'}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>

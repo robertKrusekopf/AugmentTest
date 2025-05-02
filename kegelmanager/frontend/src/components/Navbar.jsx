@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { simulateMatchDay, getCurrentSeason, getMatches } from '../services/api';
+import { simulateMatchDay, simulateSeason, getCurrentSeason, getMatches } from '../services/api';
 import './Navbar.css';
 
 const Navbar = ({ toggleSidebar, onLogout }) => {
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [simulating, setSimulating] = useState(false);
+  const [simulatingSeason, setSimulatingSeason] = useState(false);
   const [simulationResult, setSimulationResult] = useState(null);
   const [currentSeason, setCurrentSeason] = useState(null);
   const [currentDate, setCurrentDate] = useState(null);
@@ -108,6 +109,46 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
     }
   };
 
+  const handleSimulateSeason = async () => {
+    // Bestätigungsdialog anzeigen
+    const confirmed = window.confirm('Bist du sicher, dass du die gesamte Saison simulieren möchtest? Alle verbleibenden Spieltage werden simuliert.');
+
+    if (!confirmed) {
+      return; // Abbrechen, wenn der Benutzer nicht bestätigt
+    }
+
+    try {
+      setSimulatingSeason(true);
+
+      if (!currentSeason || !currentSeason.id) {
+        throw new Error('Keine aktuelle Saison gefunden');
+      }
+
+      console.log(`Simuliere komplette Saison mit ID: ${currentSeason.id}`);
+
+      // Simuliere die gesamte Saison mit der aktuellen Saison-ID
+      // Setze createNewSeason auf false, um keine neue Saison zu erstellen
+      const result = await simulateSeason(currentSeason.id, false);
+      setSimulationResult(result);
+
+      console.log('Saison-Simulation abgeschlossen:', result);
+
+      // Informiere den Benutzer, dass die Saison simuliert wurde
+      alert('Die Saison wurde vollständig simuliert. Die Seite wird neu geladen, um die aktualisierten Daten anzuzeigen.');
+
+      // Kurze Verzögerung vor dem Neuladen, um sicherzustellen, dass alle DB-Operationen abgeschlossen sind
+      setTimeout(() => {
+        // Seite neu laden, um die aktualisierten Daten anzuzeigen
+        window.location.reload();
+      }, 500);
+    } catch (error) {
+      console.error('Fehler bei der Simulation der Saison:', error);
+      alert('Fehler bei der Simulation der Saison. Bitte versuche es erneut.');
+    } finally {
+      setSimulatingSeason(false);
+    }
+  };
+
   // Formatiere das Datum für die Anzeige
   const formatDate = (date) => {
     if (!date) return '';
@@ -160,10 +201,19 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
         <button
           className={`sim-button btn btn-primary ${simulating ? 'loading' : ''}`}
           onClick={handleSimulateMatchDay}
-          disabled={simulating || !nextMatchDay}
+          disabled={simulating || simulatingSeason || !nextMatchDay}
           title={!nextMatchDay ? 'Alle Spieltage wurden bereits simuliert' : ''}
         >
           {simulating ? 'Simuliere...' : nextMatchDay ? `Spieltag ${nextMatchDay} simulieren` : 'Keine weiteren Spieltage'}
+        </button>
+
+        <button
+          className={`sim-season-button btn btn-warning ${simulatingSeason ? 'loading' : ''}`}
+          onClick={handleSimulateSeason}
+          disabled={simulating || simulatingSeason || !nextMatchDay}
+          title={!nextMatchDay ? 'Alle Spieltage wurden bereits simuliert' : 'Gesamte Saison simulieren'}
+        >
+          {simulatingSeason ? 'Simuliere...' : 'Saison simulieren'}
         </button>
 
         <div className="user-menu">
