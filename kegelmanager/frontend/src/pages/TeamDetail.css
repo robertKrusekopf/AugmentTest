@@ -331,6 +331,55 @@
   font-weight: 600;
 }
 
+.staerke-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.staerke-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staerke-input {
+  width: 60px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.edit-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-edit {
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--primary-color);
+}
+
+.btn-save {
+  background-color: var(--primary-color);
+  border: 1px solid var(--primary-color);
+  color: white;
+}
+
+.btn-cancel {
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: #5f6368;
+}
+
 .player-roster {
   display: flex;
   flex-direction: column;

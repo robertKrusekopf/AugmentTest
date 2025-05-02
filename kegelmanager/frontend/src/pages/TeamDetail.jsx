@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getTeam } from '../services/api';
+import { getTeam, updateTeam } from '../services/api';
 import './TeamDetail.css';
 
 const TeamDetail = () => {
@@ -10,6 +10,9 @@ const TeamDetail = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [upcomingMatchesExpanded, setUpcomingMatchesExpanded] = useState(false);
   const [recentMatchesExpanded, setRecentMatchesExpanded] = useState(false);
+  const [isEditingStaerke, setIsEditingStaerke] = useState(false);
+  const [staerkeValue, setStaerkeValue] = useState(0);
+  const [savingStaerke, setSavingStaerke] = useState(false);
 
   // Lade Teamdaten aus der API
   useEffect(() => {
@@ -57,6 +60,8 @@ const TeamDetail = () => {
           };
 
           setTeam(processedTeam);
+          // Initialize the staerke value
+          setStaerkeValue(data.staerke || 0);
         } else {
           console.error(`Keine Daten für Team ${id} gefunden`);
         }
@@ -84,6 +89,41 @@ const TeamDetail = () => {
 
   const toggleRecentMatches = () => {
     setRecentMatchesExpanded(!recentMatchesExpanded);
+  };
+
+  // Function to handle editing team strength
+  const handleEditStaerke = () => {
+    setIsEditingStaerke(true);
+  };
+
+  // Function to handle saving team strength
+  const handleSaveStaerke = async () => {
+    setSavingStaerke(true);
+    try {
+      // Update the team strength via API
+      const result = await updateTeam(id, { staerke: staerkeValue });
+
+      // Update the local team data
+      setTeam(prevTeam => ({
+        ...prevTeam,
+        staerke: staerkeValue
+      }));
+
+      setIsEditingStaerke(false);
+      console.log('Team strength updated successfully:', result);
+    } catch (error) {
+      console.error('Error updating team strength:', error);
+      // Revert to original value on error
+      setStaerkeValue(team.staerke || 0);
+    } finally {
+      setSavingStaerke(false);
+    }
+  };
+
+  // Function to handle canceling edit
+  const handleCancelEdit = () => {
+    setStaerkeValue(team.staerke || 0);
+    setIsEditingStaerke(false);
   };
 
   return (
@@ -301,6 +341,48 @@ const TeamDetail = () => {
                     </div>
 
                     <div className="team-attributes">
+                      <div className="attribute-item">
+                        <div className="attribute-label">Team-Stärke-Bonus:</div>
+                        <div className="attribute-value">
+                          {isEditingStaerke ? (
+                            <div className="staerke-edit">
+                              <input
+                                type="number"
+                                min="0"
+                                max="20"
+                                value={staerkeValue}
+                                onChange={(e) => setStaerkeValue(parseInt(e.target.value) || 0)}
+                                className="staerke-input"
+                              />
+                              <div className="edit-buttons">
+                                <button
+                                  onClick={handleSaveStaerke}
+                                  disabled={savingStaerke}
+                                  className="btn btn-small btn-save"
+                                >
+                                  {savingStaerke ? 'Speichern...' : 'Speichern'}
+                                </button>
+                                <button
+                                  onClick={handleCancelEdit}
+                                  className="btn btn-small btn-cancel"
+                                >
+                                  Abbrechen
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="staerke-display">
+                              <span>{team.staerke || 0}</span>
+                              <button
+                                onClick={handleEditStaerke}
+                                className="btn btn-small btn-edit"
+                              >
+                                Bearbeiten
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       <div className="attribute-item">
                         <div className="attribute-label">Trainingseinrichtungen:</div>
                         <div className="attribute-value">

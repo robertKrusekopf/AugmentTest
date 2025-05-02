@@ -102,6 +102,29 @@ def get_team(team_id):
     team = Team.query.get_or_404(team_id)
     return jsonify(team.to_dict())
 
+@app.route('/api/teams/<int:team_id>', methods=['PATCH'])
+def update_team(team_id):
+    """Update team attributes."""
+    team = Team.query.get_or_404(team_id)
+    data = request.json
+
+    # Update team attributes
+    if 'staerke' in data:
+        team.staerke = data['staerke']
+    if 'name' in data:
+        team.name = data['name']
+    if 'is_youth_team' in data:
+        team.is_youth_team = data['is_youth_team']
+
+    # Save changes to database
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": "Team erfolgreich aktualisiert",
+        "team": team.to_dict()
+    })
+
 # Player endpoints
 @app.route('/api/players', methods=['GET'])
 def get_players():

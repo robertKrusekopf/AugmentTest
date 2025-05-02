@@ -230,6 +230,7 @@ class Team(db.Model):
     club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
     league_id = db.Column(db.Integer, db.ForeignKey('league.id'))
     is_youth_team = db.Column(db.Boolean, default=False)
+    staerke = db.Column(db.Integer, default=0)  # Stärke des Teams, wird bei Spielergenerierung aufaddiert
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -455,6 +456,7 @@ class Team(db.Model):
             'club_id': self.club_id,
             'league_id': self.league_id,
             'is_youth_team': self.is_youth_team,
+            'staerke': self.staerke,  # Include the team's strength value
             'club': club_info,
             'league': league_info,
             'players': players_info,

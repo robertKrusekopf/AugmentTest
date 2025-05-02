@@ -51,6 +51,16 @@ export const getTeam = async (id) => {
   }
 };
 
+export const updateTeam = async (id, teamData) => {
+  try {
+    const response = await api.patch(`/teams/${id}`, teamData);
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating team ${id}:`, error);
+    throw error;
+  }
+};
+
 // Player endpoints
 export const getPlayers = async () => {
   try {
