@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMatch } from '../services/api';
+import LineupSelector from '../components/LineupSelector';
 import './MatchDetail.css';
 
 const MatchDetail = () => {
   const { id } = useParams();
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showLineupSelector, setShowLineupSelector] = useState(false);
+  const [managedClubId, setManagedClubId] = useState(null);
 
   // Lade Spieldaten aus der API
   useEffect(() => {
@@ -55,6 +58,16 @@ const MatchDetail = () => {
       });
   }, [id]);
 
+  // Lade den verwalteten Verein aus den Einstellungen
+  useEffect(() => {
+    // In einer echten Anwendung würde dies aus den Benutzereinstellungen geladen
+    // Für dieses Beispiel verwenden wir localStorage
+    const storedManagedClubId = localStorage.getItem('managedClubId');
+    if (storedManagedClubId) {
+      setManagedClubId(parseInt(storedManagedClubId));
+    }
+  }, []);
+
   if (loading) {
     return <div className="loading">Lade Spieldaten...</div>;
   }
@@ -62,6 +75,64 @@ const MatchDetail = () => {
   if (!match) {
     return <div className="error">Spiel nicht gefunden</div>;
   }
+
+  // Prüfe, ob der Benutzer Manager eines der beteiligten Vereine ist
+  const isHomeClubManager = managedClubId && match.home_team_club_id === managedClubId;
+  const isAwayClubManager = managedClubId && match.away_team_club_id === managedClubId;
+  const isClubManager = isHomeClubManager || isAwayClubManager;
+
+  // Prüfe, ob das Spiel noch nicht gespielt wurde
+  const isUpcomingMatch = match.status !== 'played';
+
+  // Prüfe, ob der Benutzer die Aufstellung festlegen kann
+  const canSetLineup = isClubManager && isUpcomingMatch;
+
+  // Handler für das Öffnen des Aufstellungs-Selektors
+  const handleOpenLineupSelector = () => {
+    setShowLineupSelector(true);
+  };
+
+  // Handler für das Schließen des Aufstellungs-Selektors
+  const handleCloseLineupSelector = () => {
+    setShowLineupSelector(false);
+  };
+
+  // Handler für das Speichern der Aufstellung
+  const handleSaveLineup = () => {
+    setShowLineupSelector(false);
+    // Lade die Spieldaten neu, um die aktualisierte Aufstellung anzuzeigen
+    getMatch(id)
+      .then(data => {
+        if (data) {
+          const processedMatch = {
+            ...data,
+            home_team_id: data.home_team_id || 0,
+            away_team_id: data.away_team_id || 0,
+            home_team_name: data.home_team_name || 'Unbekannt',
+            away_team_name: data.away_team_name || 'Unbekannt',
+            home_team_club_id: data.home_team_club_id || 0,
+            away_team_club_id: data.away_team_club_id || 0,
+            home_team_verein_id: data.home_team_verein_id || 0,
+            away_team_verein_id: data.away_team_verein_id || 0,
+            homeScore: data.home_score || 0,
+            awayScore: data.away_score || 0,
+            homeMatchPoints: data.home_match_points || 0,
+            awayMatchPoints: data.away_match_points || 0,
+            league: { id: data.league_id || 0, name: data.league_name || 'Unbekannt' },
+            status: data.is_played ? 'played' : 'scheduled',
+            round: data.round || 0,
+            venue: data.venue || 'Unbekannt',
+            attendance: data.attendance || 0,
+            referee: data.referee || 'Unbekannt',
+            performances: data.performances || []
+          };
+          setMatch(processedMatch);
+        }
+      })
+      .catch(error => {
+        console.error(`Fehler beim Neuladen des Spiels ${id}:`, error);
+      });
+  };
 
   return (
     <div className="match-detail-page">
@@ -95,6 +166,18 @@ const MatchDetail = () => {
           )}
           {match.referee && (
             <div className="match-referee">Schiedsrichter: {match.referee}</div>
+          )}
+
+          {/* Aufstellungs-Button anzeigen, wenn der Benutzer Manager eines der beteiligten Vereine ist */}
+          {canSetLineup && (
+            <div className="lineup-actions">
+              <button
+                className="btn btn-primary lineup-button"
+                onClick={handleOpenLineupSelector}
+              >
+                Aufstellung festlegen
+              </button>
+            </div>
           )}
         </div>
 
@@ -144,6 +227,20 @@ const MatchDetail = () => {
           </div>
         </div>
       </div>
+
+      {/* Aufstellungs-Selektor anzeigen, wenn geöffnet */}
+      {showLineupSelector && (
+        <div className="lineup-selector-overlay">
+          <div className="lineup-selector-container">
+            <LineupSelector
+              matchId={id}
+              managedClubId={managedClubId}
+              onSave={handleSaveLineup}
+              onCancel={handleCloseLineupSelector}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="match-content">
 

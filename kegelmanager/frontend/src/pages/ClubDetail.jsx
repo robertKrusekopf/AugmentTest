@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getClub } from '../services/api';
+import { getClub, updateClub } from '../services/api';
 import './ClubDetail.css';
 
 const ClubDetail = () => {
@@ -8,6 +8,9 @@ const ClubDetail = () => {
   const [club, setClub] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [cheatForm, setCheatForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState({ show: false, type: '', text: '' });
 
   // Lade Daten aus der API
   useEffect(() => {
@@ -42,6 +45,17 @@ const ClubDetail = () => {
           }
 
           setClub(processedClub);
+
+          // Initialize cheat form with club data
+          setCheatForm({
+            name: data.name,
+            founded: data.founded || 2000,
+            reputation: data.reputation || 50,
+            fans: data.fans || 1000,
+            training_facilities: data.training_facilities || 50,
+            coaching: data.coaching || 50,
+            lane_quality: data.lane_quality || 1.0
+          });
         } else {
           console.error(`Keine Daten für Club ${id} gefunden`);
         }
@@ -61,6 +75,48 @@ const ClubDetail = () => {
   if (!club) {
     return <div className="error">Verein nicht gefunden</div>;
   }
+
+  // Handle form input changes
+  const handleCheatInputChange = (e) => {
+    const { name, value } = e.target;
+    setCheatForm({
+      ...cheatForm,
+      [name]: name === 'name' ? value : Number(value)
+    });
+  };
+
+  // Handle form submission
+  const handleCheatSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaveMessage({ show: false, type: '', text: '' });
+
+    try {
+      const response = await updateClub(id, cheatForm);
+      console.log('Club update response:', response);
+
+      // Update the club state with the new data
+      setClub({
+        ...club,
+        ...response.club
+      });
+
+      setSaveMessage({
+        show: true,
+        type: 'success',
+        text: 'Vereinsdaten erfolgreich aktualisiert!'
+      });
+    } catch (error) {
+      console.error('Error updating club:', error);
+      setSaveMessage({
+        show: true,
+        type: 'error',
+        text: `Fehler beim Aktualisieren: ${error.message}`
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="club-detail-page">
@@ -141,6 +197,18 @@ const ClubDetail = () => {
             onClick={() => setActiveTab('finances')}
           >
             Finanzen
+          </div>
+          <div
+            className={`tab ${activeTab === 'records' ? 'active' : ''}`}
+            onClick={() => setActiveTab('records')}
+          >
+            Bahnrekorde
+          </div>
+          <div
+            className={`tab ${activeTab === 'cheat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('cheat')}
+          >
+            Cheat
           </div>
         </div>
 
@@ -495,6 +563,251 @@ const ClubDetail = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'records' && (
+            <div className="records-tab">
+              <h3>Bahnrekorde</h3>
+              <div className="info-text">
+                Hier werden alle Bahnrekorde angezeigt, die auf den Bahnen dieses Vereins erzielt wurden.
+              </div>
+
+              <div className="records-section">
+                <h4>Mannschaftsrekorde</h4>
+                {club.lane_records && club.lane_records.team && club.lane_records.team.length > 0 ? (
+                  <table className="table records-table">
+                    <thead>
+                      <tr>
+                        <th>Mannschaft</th>
+                        <th>Ergebnis</th>
+                        <th>Datum</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {club.lane_records.team.sort((a, b) => b.score - a.score).map(record => (
+                        <tr key={`team-${record.id}`}>
+                          <td>{record.team_name}</td>
+                          <td className="record-score">{record.score}</td>
+                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="no-records">Noch keine Mannschaftsrekorde vorhanden.</p>
+                )}
+              </div>
+
+              <div className="records-section">
+                <h4>Einzelrekorde - Herren</h4>
+                {club.lane_records && club.lane_records.individual && club.lane_records.individual.Herren && club.lane_records.individual.Herren.length > 0 ? (
+                  <table className="table records-table">
+                    <thead>
+                      <tr>
+                        <th>Spieler</th>
+                        <th>Ergebnis</th>
+                        <th>Datum</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {club.lane_records.individual.Herren.sort((a, b) => b.score - a.score).map(record => (
+                        <tr key={`herren-${record.id}`}>
+                          <td>{record.player_name}</td>
+                          <td className="record-score">{record.score}</td>
+                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="no-records">Noch keine Herren-Einzelrekorde vorhanden.</p>
+                )}
+              </div>
+
+              <div className="records-section">
+                <h4>Einzelrekorde - U19</h4>
+                {club.lane_records && club.lane_records.individual && club.lane_records.individual.U19 && club.lane_records.individual.U19.length > 0 ? (
+                  <table className="table records-table">
+                    <thead>
+                      <tr>
+                        <th>Spieler</th>
+                        <th>Ergebnis</th>
+                        <th>Datum</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {club.lane_records.individual.U19.sort((a, b) => b.score - a.score).map(record => (
+                        <tr key={`u19-${record.id}`}>
+                          <td>{record.player_name}</td>
+                          <td className="record-score">{record.score}</td>
+                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="no-records">Noch keine U19-Einzelrekorde vorhanden.</p>
+                )}
+              </div>
+
+              <div className="records-section">
+                <h4>Einzelrekorde - U14</h4>
+                {club.lane_records && club.lane_records.individual && club.lane_records.individual.U14 && club.lane_records.individual.U14.length > 0 ? (
+                  <table className="table records-table">
+                    <thead>
+                      <tr>
+                        <th>Spieler</th>
+                        <th>Ergebnis</th>
+                        <th>Datum</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {club.lane_records.individual.U14.sort((a, b) => b.score - a.score).map(record => (
+                        <tr key={`u14-${record.id}`}>
+                          <td>{record.player_name}</td>
+                          <td className="record-score">{record.score}</td>
+                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="no-records">Noch keine U14-Einzelrekorde vorhanden.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'cheat' && (
+            <div className="cheat-tab">
+              <h3>Cheat-Modus: Vereinsattribute bearbeiten</h3>
+              <p className="info-text">
+                Hier können Sie die Attribute des Vereins bearbeiten. Diese Änderungen wirken sich sofort auf das Spielgeschehen aus.
+              </p>
+
+              {saveMessage.show && (
+                <div className={`message ${saveMessage.type}`}>
+                  {saveMessage.text}
+                </div>
+              )}
+
+              <form className="cheat-form" onSubmit={handleCheatSubmit}>
+                <div className="form-grid">
+                  <div className="form-section">
+                    <h4>Allgemeine Informationen</h4>
+
+                    <div className="form-group">
+                      <label htmlFor="name">Vereinsname:</label>
+                      <input
+                        type="text"
+                        id="name"
+                        name="name"
+                        value={cheatForm.name || ''}
+                        onChange={handleCheatInputChange}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="founded">Gründungsjahr:</label>
+                      <input
+                        type="number"
+                        id="founded"
+                        name="founded"
+                        min="1800"
+                        max={new Date().getFullYear()}
+                        value={cheatForm.founded || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="reputation">Reputation (1-100):</label>
+                      <input
+                        type="number"
+                        id="reputation"
+                        name="reputation"
+                        min="1"
+                        max="100"
+                        value={cheatForm.reputation || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-section">
+                    <h4>Vereinsattribute</h4>
+
+                    <div className="form-group">
+                      <label htmlFor="fans">Fans:</label>
+                      <input
+                        type="number"
+                        id="fans"
+                        name="fans"
+                        min="0"
+                        step="100"
+                        value={cheatForm.fans || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="training_facilities">Trainingseinrichtungen (1-100):</label>
+                      <input
+                        type="number"
+                        id="training_facilities"
+                        name="training_facilities"
+                        min="1"
+                        max="100"
+                        value={cheatForm.training_facilities || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="coaching">Trainerqualität (1-100):</label>
+                      <input
+                        type="number"
+                        id="coaching"
+                        name="coaching"
+                        min="1"
+                        max="100"
+                        value={cheatForm.coaching || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="lane_quality">Bahnqualität (0.9-1.05):</label>
+                      <input
+                        type="number"
+                        id="lane_quality"
+                        name="lane_quality"
+                        min="0.9"
+                        max="1.05"
+                        step="0.01"
+                        value={cheatForm.lane_quality || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                      <div className="input-help">
+                        Beeinflusst die Ergebnisse aller Spieler auf dieser Bahn.
+                        Höhere Werte führen zu besseren Ergebnissen.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-actions">
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={saving}
+                  >
+                    {saving ? 'Speichern...' : 'Änderungen speichern'}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>

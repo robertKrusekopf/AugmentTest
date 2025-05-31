@@ -1,27 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { simulateMatchDay, simulateSeason, getCurrentSeason, getMatches } from '../services/api';
+import { useAppContext } from '../contexts/AppContext';
+import { simulateMatchDay, simulateSeason, getCurrentSeason, getSeasonStatus, transitionToNewSeason } from '../services/api';
+import { invalidateAfterSimulation } from '../services/apiCache';
+import GlobalSearch from './GlobalSearch';
 import './Navbar.css';
 
 const Navbar = ({ toggleSidebar, onLogout }) => {
   const navigate = useNavigate();
+  const { currentSeason, invalidateAllCache, getMatches } = useAppContext();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [simulatingSeason, setSimulatingSeason] = useState(false);
   const [simulationResult, setSimulationResult] = useState(null);
-  const [currentSeason, setCurrentSeason] = useState(null);
   const [currentDate, setCurrentDate] = useState(null);
   const [currentMatchDay, setCurrentMatchDay] = useState(null);
   const [nextMatchDay, setNextMatchDay] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [seasonCompleted, setSeasonCompleted] = useState(false);
 
   // Lade die aktuelle Saison, das aktuelle Datum und den aktuellen Spieltag
   useEffect(() => {
     const loadCurrentData = async () => {
       try {
-        // Lade die aktuelle Saison
-        const season = await getCurrentSeason();
-        setCurrentSeason(season);
+        // Verwende die Saison aus dem Context oder lade sie neu
+        let season = currentSeason;
+        if (!season) {
+          season = await getCurrentSeason();
+        }
 
         // Setze ein Datum innerhalb der Saison als aktuelles Datum
         if (season && season.start_date) {
@@ -32,7 +38,9 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
         try {
           // Lade alle Spiele, um den aktuellen und nächsten Spieltag zu bestimmen
           const matches = await getMatches();
+          console.log("=== NAVBAR DEBUG ===");
           console.log("Geladene Matches:", matches.length);
+          console.log("Erste 3 Matches:", matches.slice(0, 3));
 
           // Überprüfe, ob die Matches match_day-Werte haben
           const matchesWithMatchDay = matches.filter(match => match.match_day !== null && match.match_day !== undefined);
@@ -43,6 +51,7 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
             // Wenn keine Matches mit match_day gefunden wurden, setze den nächsten Spieltag auf 1
             setCurrentMatchDay(0);
             setNextMatchDay(1);
+            console.log("Setze nextMatchDay auf 1 (kein Spielplan vorhanden)");
           } else {
             // Finde den letzten gespielten Spieltag
             const playedMatches = matchesWithMatchDay.filter(match => match.is_played);
@@ -54,7 +63,7 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
               console.log("Letzter gespielter Spieltag:", lastPlayedMatchDay);
             } else {
               setCurrentMatchDay(0); // Noch kein Spieltag gespielt
-              console.log("Noch kein Spieltag gespielt");
+              console.log("Noch kein Spieltag gespielt - setze currentMatchDay auf 0");
             }
 
             // Finde den nächsten zu spielenden Spieltag
@@ -67,9 +76,19 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
               console.log("Nächster Spieltag:", nextMatchDay);
             } else {
               setNextMatchDay(null); // Keine ungespielte Spiele mehr
-              console.log("Keine weiteren Spieltage");
+              console.log("Keine weiteren Spieltage - setze nextMatchDay auf null");
+
+              // Prüfe den Saisonstatus, wenn keine weiteren Spieltage vorhanden sind
+              try {
+                const seasonStatus = await getSeasonStatus();
+                setSeasonCompleted(seasonStatus.is_completed);
+                console.log("Saisonstatus:", seasonStatus);
+              } catch (error) {
+                console.error("Fehler beim Laden des Saisonstatus:", error);
+              }
             }
           }
+          console.log("=== END NAVBAR DEBUG ===");
         } catch (error) {
           console.error("Fehler beim Laden der Matches:", error);
           // Im Fehlerfall setze Standardwerte
@@ -85,9 +104,9 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
     };
 
     loadCurrentData();
-  }, []);
+  }, [currentSeason]);
 
-  const handleSimulateMatchDay = async () => {
+  const handleSimulateMatchDay = useCallback(async () => {
     try {
       setSimulating(true);
       const result = await simulateMatchDay();
@@ -99,6 +118,10 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
         setNextMatchDay(result.match_day + 1);
       }
 
+      // Invalidiere Cache nach Simulation
+      invalidateAfterSimulation();
+      invalidateAllCache();
+
       // Seite neu laden, um die aktualisierten Daten anzuzeigen
       window.location.reload();
     } catch (error) {
@@ -107,7 +130,7 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
     } finally {
       setSimulating(false);
     }
-  };
+  }, [invalidateAllCache]);
 
   const handleSimulateSeason = async () => {
     // Bestätigungsdialog anzeigen
@@ -144,6 +167,41 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
     } catch (error) {
       console.error('Fehler bei der Simulation der Saison:', error);
       alert('Fehler bei der Simulation der Saison. Bitte versuche es erneut.');
+    } finally {
+      setSimulatingSeason(false);
+    }
+  };
+
+  const handleSeasonTransition = async () => {
+    // Bestätigungsdialog anzeigen
+    const confirmed = window.confirm('Bist du sicher, dass du den Saisonwechsel durchführen möchtest? Es wird eine neue Saison erstellt und Auf-/Abstieg verarbeitet.');
+
+    if (!confirmed) {
+      return; // Abbrechen, wenn der Benutzer nicht bestätigt
+    }
+
+    try {
+      setSimulatingSeason(true);
+
+      console.log('Starte Saisonwechsel...');
+
+      // Führe den Saisonwechsel durch
+      const result = await transitionToNewSeason();
+      setSimulationResult(result);
+
+      console.log('Saisonwechsel abgeschlossen:', result);
+
+      // Informiere den Benutzer über den erfolgreichen Saisonwechsel
+      alert(`Saisonwechsel erfolgreich! Neue Saison "${result.new_season}" wurde erstellt. Die Seite wird neu geladen.`);
+
+      // Kurze Verzögerung vor dem Neuladen
+      setTimeout(() => {
+        // Seite neu laden, um die neue Saison anzuzeigen
+        window.location.reload();
+      }, 500);
+    } catch (error) {
+      console.error('Fehler beim Saisonwechsel:', error);
+      alert('Fehler beim Saisonwechsel. Bitte versuche es erneut.');
     } finally {
       setSimulatingSeason(false);
     }
@@ -197,6 +255,10 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
         </div>
       </div>
 
+      <div className="navbar-search">
+        <GlobalSearch />
+      </div>
+
       <div className="navbar-right">
         <button
           className={`sim-button btn btn-primary ${simulating ? 'loading' : ''}`}
@@ -208,12 +270,12 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
         </button>
 
         <button
-          className={`sim-season-button btn btn-warning ${simulatingSeason ? 'loading' : ''}`}
-          onClick={handleSimulateSeason}
-          disabled={simulating || simulatingSeason || !nextMatchDay}
-          title={!nextMatchDay ? 'Alle Spieltage wurden bereits simuliert' : 'Gesamte Saison simulieren'}
+          className={`sim-season-button btn ${seasonCompleted ? 'btn-success' : 'btn-warning'} ${simulatingSeason ? 'loading' : ''}`}
+          onClick={seasonCompleted ? handleSeasonTransition : handleSimulateSeason}
+          disabled={simulating || simulatingSeason || (!nextMatchDay && !seasonCompleted)}
+          title={seasonCompleted ? 'Neue Saison starten' : (!nextMatchDay ? 'Alle Spieltage wurden bereits simuliert' : 'Gesamte Saison simulieren')}
         >
-          {simulatingSeason ? 'Simuliere...' : 'Saison simulieren'}
+          {simulatingSeason ? 'Simuliere...' : (seasonCompleted ? 'Saisonwechsel' : 'Saison simulieren')}
         </button>
 
         <div className="user-menu">

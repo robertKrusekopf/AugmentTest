@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getClubs } from '../services/api';
+import { useAppContext } from '../contexts/AppContext';
 import './Clubs.css';
 
 const Clubs = () => {
+  const { getClubs } = useAppContext();
   const [clubs, setClubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Lade Daten aus der Datenbank
+  // Lade Daten aus dem Context (mit Caching)
   useEffect(() => {
-    console.log('Lade Clubs aus der Datenbank...');
+    const loadClubs = async () => {
+      try {
+        console.log('Lade Clubs aus dem Context...');
+        setLoading(true);
 
-    // Lade die Daten aus der API
-    getClubs()
-      .then(data => {
-        console.log('Geladene Clubs:', data);
+        const data = await getClubs();
 
         // Wenn keine Daten zurückgegeben werden, verwende leere Liste
         if (!data || data.length === 0) {
@@ -48,14 +49,15 @@ const Clubs = () => {
 
           setClubs(processedClubs);
         }
-
-        setLoading(false);
-      })
-      .catch(error => {
+      } catch (error) {
         console.error('Fehler beim Laden der Clubs:', error);
+      } finally {
         setLoading(false);
-      });
-  }, []);
+      }
+    };
+
+    loadClubs();
+  }, [getClubs]);
 
   // Filtern der Vereine basierend auf dem Suchbegriff
   const filteredClubs = clubs.filter(club =>

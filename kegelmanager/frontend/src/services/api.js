@@ -30,6 +30,16 @@ export const getClub = async (id) => {
   }
 };
 
+export const updateClub = async (id, clubData) => {
+  try {
+    const response = await api.patch(`/clubs/${id}`, clubData);
+    return response.data;
+  } catch (error) {
+    console.error(`Error updating club ${id}:`, error);
+    throw error;
+  }
+};
+
 // Team endpoints
 export const getTeams = async () => {
   try {
@@ -198,6 +208,26 @@ export const simulateSeason = async (seasonId, createNewSeason = true) => {
   }
 };
 
+export const getSeasonStatus = async () => {
+  try {
+    const response = await api.get('/season/status');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching season status:', error);
+    throw error;
+  }
+};
+
+export const transitionToNewSeason = async () => {
+  try {
+    const response = await api.post('/season/transition');
+    return response.data;
+  } catch (error) {
+    console.error('Error transitioning to new season:', error);
+    throw error;
+  }
+};
+
 export const simulateMatchDay = async () => {
   try {
     const response = await api.post('/simulate/match_day');
@@ -215,6 +245,115 @@ export const initializeDatabase = async () => {
     return response.data;
   } catch (error) {
     console.error('Error initializing database:', error);
+    throw error;
+  }
+};
+
+// Lineup management endpoints
+export const getAvailablePlayersForMatch = async (matchId, managedClubId) => {
+  try {
+    const response = await api.get(`/matches/${matchId}/available-players`, {
+      params: { managed_club_id: managedClubId }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching available players for match:', error);
+    throw error;
+  }
+};
+
+export const saveLineup = async (matchId, lineupData) => {
+  try {
+    const response = await api.post(`/matches/${matchId}/lineup`, lineupData);
+    return response.data;
+  } catch (error) {
+    console.error('Error saving lineup:', error);
+    throw error;
+  }
+};
+
+export const getLineup = async (matchId, teamId, isHomeTeam) => {
+  try {
+    const response = await api.get(`/matches/${matchId}/lineup`, {
+      params: { team_id: teamId, is_home_team: isHomeTeam }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching lineup:', error);
+    throw error;
+  }
+};
+
+export const deleteLineup = async (matchId, teamId, isHomeTeam) => {
+  try {
+    const response = await api.delete(`/matches/${matchId}/lineup`, {
+      params: { team_id: teamId, is_home_team: isHomeTeam }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting lineup:', error);
+    throw error;
+  }
+};
+
+// Transfer endpoints
+export const getTransfers = async (managedClubId) => {
+  try {
+    const response = await api.get('/transfers', {
+      params: { managed_club_id: managedClubId }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching transfers:', error);
+    throw error;
+  }
+};
+
+export const createTransferOffer = async (playerId, offeringClubId, offerAmount) => {
+  try {
+    const response = await api.post('/transfers/offer', {
+      player_id: playerId,
+      offering_club_id: offeringClubId,
+      offer_amount: offerAmount
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating transfer offer:', error);
+    throw error;
+  }
+};
+
+export const updateTransferOffer = async (offerId, action) => {
+  try {
+    const response = await api.patch(`/transfers/offer/${offerId}`, {
+      action: action
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating transfer offer:', error);
+    throw error;
+  }
+};
+
+export const withdrawTransferOffer = async (offerId) => {
+  try {
+    const response = await api.delete(`/transfers/offer/${offerId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error withdrawing transfer offer:', error);
+    throw error;
+  }
+};
+
+// Global search endpoint
+export const globalSearch = async (query) => {
+  try {
+    const response = await api.get('/search', {
+      params: { q: query }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error performing global search:', error);
     throw error;
   }
 };

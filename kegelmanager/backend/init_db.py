@@ -234,6 +234,15 @@ def create_sample_data(custom_app=None):
                                 handler.write(img_data)
                         else:
                             print(f"INFO: Wappen für Verein {verein_id} bereits vorhanden, überspringe Download.")
+                        # Generiere eine normalverteilte Bahnqualität zwischen 0.9 und 1.05
+                        # Mittelwert 0.975, Standardabweichung so, dass 90% der Werte zwischen 0.9 und 1.05 liegen
+                        # Für eine Normalverteilung liegen 90% der Werte innerhalb von ±1.645 Standardabweichungen
+                        mean = 0.975
+                        std_dev = (1.05 - 0.9) / (2 * 1.645)
+                        lane_quality = np.random.normal(mean, std_dev)
+                        # Begrenze die Werte auf den gewünschten Bereich
+                        lane_quality = max(0.9, min(1.05, lane_quality))
+
                         # Neuen Verein erstellen
                         club = Club(
                             name=zeile_arr[1],
@@ -243,7 +252,8 @@ def create_sample_data(custom_app=None):
                             training_facilities=random.randint(30, 90),
                             coaching=random.randint(30, 90),
                             logo_path=wappen_path,
-                            verein_id=verein_id
+                            verein_id=verein_id,
+                            lane_quality=lane_quality
                         )
                         clubs.append(club)
                         db.session.add(club)
@@ -281,7 +291,7 @@ def create_sample_data(custom_app=None):
                         else:
                             team_name = f"{club.name} {team_count}"
 
-                    staerke = int(float(zeile_arr[8]) / float(zeile_arr[2]) * 3) if zeile_arr[2] != 0 else 0
+                    staerke = int(float(zeile_arr[8]) / float(zeile_arr[2]) * 4) if zeile_arr[2] != 0 else 0
 
                     # Team erstellen und mit dem Verein verknüpfen
                     team = Team(

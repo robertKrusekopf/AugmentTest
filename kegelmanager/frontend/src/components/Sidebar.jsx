@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { getClubs } from '../services/api';
+import { getClubs, getClub } from '../services/api';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen }) => {
@@ -8,23 +8,63 @@ const Sidebar = ({ isOpen }) => {
   const [loading, setLoading] = useState(true);
 
   // Lade den Verein des Benutzers
-  useEffect(() => {
-    const loadUserClub = async () => {
-      try {
-        // In einer echten Anwendung würde hier der Verein des Benutzers geladen werden
-        // Für jetzt nehmen wir einfach den ersten Verein aus der Liste
-        const clubs = await getClubs();
-        if (clubs && clubs.length > 0) {
-          setUserClub(clubs[0]);
+  const loadUserClub = async () => {
+    try {
+      setLoading(true);
+      // Lade die Einstellungen aus dem localStorage
+      const savedSettings = localStorage.getItem('gameSettings');
+      let managerClubId = null;
+
+      if (savedSettings) {
+        try {
+          const settings = JSON.parse(savedSettings);
+          managerClubId = settings.game?.managerClubId || null;
+        } catch (e) {
+          console.error('Failed to parse saved settings:', e);
         }
-        setLoading(false);
-      } catch (error) {
-        console.error('Fehler beim Laden des Vereins:', error);
-        setLoading(false);
+      }
+
+      // Wenn ein Manager-Verein ausgewählt wurde, lade diesen
+      if (managerClubId) {
+        try {
+          const club = await getClub(managerClubId);
+          setUserClub(club);
+        } catch (error) {
+          console.error(`Fehler beim Laden des Vereins mit ID ${managerClubId}:`, error);
+          // Fallback: Setze keinen Verein als aktiv
+          setUserClub(null);
+        }
+      } else {
+        // Kein Verein ausgewählt (vereinslos)
+        setUserClub(null);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Fehler beim Laden des Vereins:', error);
+      setLoading(false);
+    }
+  };
+
+  // Lade den Verein beim ersten Rendern
+  useEffect(() => {
+    loadUserClub();
+  }, []);
+
+  // Reagiere auf Änderungen im localStorage (wenn die Einstellungen geändert werden)
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'gameSettings') {
+        loadUserClub();
       }
     };
 
-    loadUserClub();
+    window.addEventListener('storage', handleStorageChange);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
   return (
     <aside className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
@@ -58,7 +98,15 @@ const Sidebar = ({ isOpen }) => {
               </div>
             </>
           ) : (
-            <div className="no-club">Kein Verein ausgewählt</div>
+            <div className="no-club">
+              <div className="no-club-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="8" y1="12" x2="16" y2="12"></line>
+                </svg>
+              </div>
+              <span>Vereinslos</span>
+            </div>
           )}
         </div>
 
@@ -155,6 +203,15 @@ const Sidebar = ({ isOpen }) => {
                 <span>Finanzen</span>
               </NavLink>
             </li>
+            <li>
+              <NavLink to="/settings" className={({ isActive }) => isActive ? 'active' : ''}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <span>Einstellungen</span>
+              </NavLink>
+            </li>
           </ul>
         </nav>
 
@@ -182,7 +239,9 @@ const Sidebar = ({ isOpen }) => {
                 </div>
               </>
             ) : (
-              <div className="no-finance">Keine Finanzdaten</div>
+              <div className="no-finance">
+                {userClub === null ? "Als vereinsloser Manager sind keine Finanzdaten verfügbar" : "Keine Finanzdaten verfügbar"}
+              </div>
             )}
           </div>
         </div>

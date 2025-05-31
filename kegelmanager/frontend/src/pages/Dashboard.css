@@ -6,6 +6,9 @@
   margin-bottom: 30px;
   font-size: 24px;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 15px;
 }
 
 .loading {
@@ -17,6 +20,98 @@
   color: var(--text-color);
 }
 
+/* Styling für "Kein Verein ausgewählt" Meldung */
+.no-club-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 50px 20px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: var(--card-shadow);
+  text-align: center;
+}
+
+.no-club-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: #f1f3f4;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.no-club-message h2 {
+  font-size: 24px;
+  margin-bottom: 15px;
+  color: var(--text-color);
+}
+
+.no-club-message p {
+  font-size: 16px;
+  color: #5f6368;
+  margin-bottom: 10px;
+}
+
+.no-club-message a {
+  color: var(--primary-color);
+  font-weight: 500;
+}
+
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: var(--card-shadow);
+  padding: 20px;
+  position: relative;
+}
+
+.stat-card h3 {
+  font-size: 16px;
+  color: #5f6368;
+  margin-bottom: 10px;
+}
+
+.stat-card .value {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.stat-card .value a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.stat-card .value a:hover {
+  text-decoration: underline;
+}
+
+.stat-card .change {
+  font-size: 14px;
+  color: #5f6368;
+}
+
+.stat-card .card-actions {
+  margin-top: 15px;
+}
+
+.stat-card .btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .dashboard-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -24,7 +119,31 @@
   margin-bottom: 20px;
 }
 
-.league-standings, .upcoming-matches, .top-players, .finances-summary {
+/* Lineup Selector Overlay */
+.lineup-selector-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.lineup-selector-container {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: var(--card-shadow);
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.league-standings, .upcoming-matches, .recent-matches, .last-match-detail {
   height: 100%;
 }
 
@@ -58,9 +177,29 @@
   font-weight: 500;
 }
 
-.vs {
+.team.home {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.vs, .result {
   margin: 0 10px;
   color: #5f6368;
+}
+
+.result.win {
+  color: var(--success-color);
+  font-weight: 700;
+}
+
+.result.draw {
+  color: #fbbc05;
+  font-weight: 700;
+}
+
+.result.loss {
+  color: var(--error-color);
+  font-weight: 700;
 }
 
 .match-league {
@@ -81,76 +220,155 @@
   object-fit: cover;
 }
 
-.player-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 15px;
+.club-emblem-medium {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
-.player-team {
-  font-size: 14px;
-  color: #5f6368;
-  margin-bottom: 10px;
+/* Hervorheben des eigenen Teams in der Tabelle */
+tr.own-team {
+  background-color: rgba(26, 115, 232, 0.1);
+  font-weight: 700;
 }
 
-.finance-overview {
+/* Styling für das letzte Spiel */
+.last-match-content {
   padding: 15px;
 }
 
-.finance-balance {
+.match-header {
   margin-bottom: 20px;
 }
 
-.finance-balance h3 {
-  font-size: 16px;
-  margin-bottom: 5px;
+.match-teams-large {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
 }
 
-.balance-amount {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--primary-color);
+.team-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 40%;
 }
 
-.chart-placeholder {
-  background-color: #f1f3f4;
-  height: 150px;
+.team-name {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.team-emblem {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.match-score {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  margin-bottom: 20px;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.score {
+  padding: 0 5px;
+}
+
+.separator {
+  margin: 0 5px;
   color: #5f6368;
 }
 
-.finance-details {
+.match-details {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: center;
 }
 
-.finance-detail-item {
-  display: flex;
-  justify-content: space-between;
-}
-
-.detail-label {
+.match-date-large {
+  font-size: 16px;
   font-weight: 500;
+  margin-bottom: 5px;
 }
 
-.detail-value {
+.match-league-large {
+  font-size: 14px;
+  color: var(--primary-color);
+}
+
+.match-stats {
+  border-top: 1px solid var(--border-color);
+  padding-top: 15px;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.stat-label {
+  font-weight: 500;
+  margin-right: 10px;
+}
+
+.stat-value {
   font-weight: 600;
 }
 
-.detail-value.positive {
-  color: var(--success-color);
+.stat-separator {
+  margin: 0 5px;
 }
 
-.detail-value.negative {
-  color: var(--error-color);
+.player-performances {
+  margin-top: 15px;
+}
+
+.player-performances h4 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.performances-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.performance-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+.player-name {
+  font-weight: 500;
+}
+
+.player-score {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.no-match-data {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  color: #5f6368;
+  font-style: italic;
 }
 
 @media (max-width: 992px) {
+  .dashboard-stats,
   .dashboard-row {
     grid-template-columns: 1fr;
   }

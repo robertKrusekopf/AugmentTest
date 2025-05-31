@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import './App.css'
 
+// Context
+import { AppProvider } from './contexts/AppContext'
+
 // Components
 import Navbar from './components/Navbar'
 import Sidebar from './components/Sidebar'
@@ -22,6 +25,7 @@ import MatchDetail from './pages/MatchDetail'
 import Finances from './pages/Finances'
 import Youth from './pages/Youth'
 import Transfers from './pages/Transfers'
+import Settings from './pages/Settings'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -48,37 +52,40 @@ function App() {
   }
 
   return (
-    <div className="app-container">
-      <Navbar
-        toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-        onLogout={() => {
-          localStorage.removeItem('selectedDatabase');
-          setDatabaseSelected(false);
-        }}
-      />
-      <div className="content-container">
-        <Sidebar isOpen={sidebarOpen} />
-        <main className={`main-content ${sidebarOpen ? 'sidebar-open' : ''}`}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/main-menu" element={<MainMenu />} />
-            <Route path="/clubs" element={<Clubs />} />
-            <Route path="/clubs/:id" element={<ClubDetail />} />
-            <Route path="/teams" element={<Teams />} />
-            <Route path="/teams/:id" element={<TeamDetail />} />
-            <Route path="/players" element={<Players />} />
-            <Route path="/players/:id" element={<PlayerDetail />} />
-            <Route path="/leagues" element={<Leagues />} />
-            <Route path="/leagues/:id" element={<LeagueDetail />} />
-            <Route path="/matches" element={<Matches />} />
-            <Route path="/matches/:id" element={<MatchDetail />} />
-            <Route path="/youth" element={<Youth />} />
-            <Route path="/transfers" element={<Transfers />} />
-            <Route path="/finances" element={<Finances />} />
-          </Routes>
-        </main>
+    <AppProvider>
+      <div className="app-container">
+        <Navbar
+          toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          onLogout={() => {
+            localStorage.removeItem('selectedDatabase');
+            setDatabaseSelected(false);
+          }}
+        />
+        <div className="content-container">
+          <Sidebar isOpen={sidebarOpen} />
+          <main className={`main-content ${sidebarOpen ? 'sidebar-open' : ''}`}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/main-menu" element={<MainMenu />} />
+              <Route path="/clubs" element={<Clubs />} />
+              <Route path="/clubs/:id" element={<ClubDetail />} />
+              <Route path="/teams" element={<Teams />} />
+              <Route path="/teams/:id" element={<TeamDetail />} />
+              <Route path="/players" element={<Players />} />
+              <Route path="/players/:id" element={<PlayerDetail />} />
+              <Route path="/leagues" element={<Leagues />} />
+              <Route path="/leagues/:id" element={<LeagueDetail />} />
+              <Route path="/matches" element={<Matches />} />
+              <Route path="/matches/:id" element={<MatchDetail />} />
+              <Route path="/youth" element={<Youth />} />
+              <Route path="/transfers" element={<Transfers />} />
+              <Route path="/finances" element={<Finances />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </main>
+        </div>
       </div>
-    </div>
+    </AppProvider>
   );
 }
 

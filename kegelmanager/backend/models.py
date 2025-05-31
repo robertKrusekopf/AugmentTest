@@ -20,11 +20,11 @@ class Player(db.Model):
     contract_end = db.Column(db.Date)
 
     # Neue Verknüpfung zum Verein
-    club_id = db.Column(db.Integer, db.ForeignKey('club.id'))
+    club_id = db.Column(db.Integer, db.ForeignKey('club.id'), index=True)
 
     # Flag, ob der Spieler am aktuellen Spieltag bereits gespielt hat
     has_played_current_matchday = db.Column(db.Boolean, default=False, index=True)
-    last_played_matchday = db.Column(db.Integer, nullable=True)  # Speichert den letzten Spieltag, an dem der Spieler gespielt hat
+    last_played_matchday = db.Column(db.Integer, nullable=True, index=True)  # Speichert den letzten Spieltag, an dem der Spieler gespielt hat
 
     # Flag, ob der Spieler am aktuellen Spieltag verfügbar ist (nicht durch Schichtarbeit o.ä. verhindert)
     is_available_current_matchday = db.Column(db.Boolean, default=True, index=True)
@@ -47,6 +47,16 @@ class Player(db.Model):
     start = db.Column(db.Integer, default=70)        # 1-99: Leistung zu Beginn eines Spiels
     mitte = db.Column(db.Integer, default=70)        # 1-99: Leistung in der Mitte eines Spiels
     schluss = db.Column(db.Integer, default=70)      # 1-99: Leistung am Ende eines Spiels
+
+    # Form-System: Modifikatoren für unterschiedliche Zeiträume
+    form_short_term = db.Column(db.Float, default=0.0)           # -20 bis +20: Kurzfristige Form (1-3 Spieltage)
+    form_medium_term = db.Column(db.Float, default=0.0)          # -15 bis +15: Mittelfristige Form (4-8 Spieltage)
+    form_long_term = db.Column(db.Float, default=0.0)            # -10 bis +10: Langfristige Form (10-20 Spieltage)
+
+    # Verbleibende Tage für Form-Modifikatoren
+    form_short_remaining_days = db.Column(db.Integer, default=0)  # Verbleibende Tage für kurzfristige Form
+    form_medium_remaining_days = db.Column(db.Integer, default=0) # Verbleibende Tage für mittelfristige Form
+    form_long_remaining_days = db.Column(db.Integer, default=0)   # Verbleibende Tage für langfristige Form
 
     # Relationships
     club = db.relationship('Club', back_populates='players')
@@ -216,6 +226,13 @@ class Player(db.Model):
             'start': self.start,
             'mitte': self.mitte,
             'schluss': self.schluss,
+            # Form-System
+            'form_short_term': self.form_short_term,
+            'form_medium_term': self.form_medium_term,
+            'form_long_term': self.form_long_term,
+            'form_short_remaining_days': self.form_short_remaining_days,
+            'form_medium_remaining_days': self.form_medium_remaining_days,
+            'form_long_remaining_days': self.form_long_remaining_days,
             'teams': [team.id for team in self.teams],
             # Spieltag-bezogene Flags
             'has_played_current_matchday': self.has_played_current_matchday,
@@ -562,6 +579,7 @@ class Club(db.Model):
     training_facilities = db.Column(db.Integer, default=50)  # Qualität der Trainingseinrichtungen (1-100)
     coaching = db.Column(db.Integer, default=50)  # Qualität der Trainer (1-100)
     logo_path = db.Column(db.String(255))  # Pfad zum Vereinswappen
+    lane_quality = db.Column(db.Float, default=1.0)  # Qualität der Kegelbahn (0.9-1.05)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -630,6 +648,36 @@ class Club(db.Model):
             }
             players_info.append(player_info)
 
+        # Get lane records for this club
+        lane_records = {
+            'team': [],
+            'individual': {
+                'Herren': [],
+                'U19': [],
+                'U14': []
+            }
+        }
+
+        # Get team records
+        team_records = LaneRecord.query.filter_by(
+            club_id=self.id,
+            record_type='team'
+        ).all()
+
+        for record in team_records:
+            lane_records['team'].append(record.to_dict())
+
+        # Get individual records by category
+        for category in ['Herren', 'U19', 'U14']:
+            individual_records = LaneRecord.query.filter_by(
+                club_id=self.id,
+                record_type='individual',
+                category=category
+            ).all()
+
+            for record in individual_records:
+                lane_records['individual'][category].append(record.to_dict())
+
         return {
             'id': self.id,
             'verein_id': self.verein_id,
@@ -640,11 +688,13 @@ class Club(db.Model):
             'training_facilities': self.training_facilities,
             'coaching': self.coaching,
             'logo_path': self.logo_path,
+            'lane_quality': self.lane_quality,
             'emblem_url': emblem_url,
             'teams': [team.id for team in self.teams],
             'teams_info': teams_info,
             'players': players_info,
-            'player_ids': [player.id for player in self.players]
+            'player_ids': [player.id for player in self.players],
+            'lane_records': lane_records
         }
 
 class League(db.Model):
@@ -892,17 +942,17 @@ class League(db.Model):
 
 class Match(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    home_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
-    away_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
-    league_id = db.Column(db.Integer, db.ForeignKey('league.id'), nullable=False)
-    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
+    home_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False, index=True)
+    away_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False, index=True)
+    league_id = db.Column(db.Integer, db.ForeignKey('league.id'), nullable=False, index=True)
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False, index=True)
     match_date = db.Column(db.DateTime)
     home_score = db.Column(db.Integer)  # Gesamtholz Heimteam
     away_score = db.Column(db.Integer)  # Gesamtholz Auswärtsteam
     home_match_points = db.Column(db.Integer, default=0)  # Mannschaftspunkte (MP) Heimteam
     away_match_points = db.Column(db.Integer, default=0)  # Mannschaftspunkte (MP) Auswärtsteam
-    is_played = db.Column(db.Boolean, default=False)
-    match_day = db.Column(db.Integer)  # Spieltag (1, 2, 3, ...)
+    is_played = db.Column(db.Boolean, default=False, index=True)
+    match_day = db.Column(db.Integer, index=True)  # Spieltag (1, 2, 3, ...)
     round = db.Column(db.Integer, default=1)  # 1 = Hinrunde, 2 = Rückrunde
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -995,6 +1045,300 @@ class Finance(db.Model):
             'date': self.date.isoformat(),
             'description': self.description
         }
+
+class TransferOffer(db.Model):
+    """Model for transfer offers between clubs."""
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Player being offered
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
+
+    # Club making the offer
+    offering_club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
+
+    # Club receiving the offer (current player's club)
+    receiving_club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
+
+    # Offer amount
+    offer_amount = db.Column(db.Integer, nullable=False)
+
+    # Status: 'pending', 'accepted', 'rejected', 'withdrawn'
+    status = db.Column(db.String(20), default='pending')
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    player = db.relationship('Player', backref='transfer_offers')
+    offering_club = db.relationship('Club', foreign_keys=[offering_club_id], backref='made_offers')
+    receiving_club = db.relationship('Club', foreign_keys=[receiving_club_id], backref='received_offers')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'player': {
+                'id': self.player.id,
+                'name': self.player.name,
+                'age': self.player.age,
+                'position': self.player.position,
+                'strength': self.player.strength,
+                'team': self.player.teams[0].name if self.player.teams else 'Vereinslos'
+            },
+            'offering_club': self.offering_club.name,
+            'receiving_club': self.receiving_club.name,
+            'offer_amount': self.offer_amount,
+            'status': self.status,
+            'date': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
+
+class TransferHistory(db.Model):
+    """Model for completed transfers."""
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Player who was transferred
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
+
+    # Clubs involved in the transfer
+    from_club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
+    to_club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
+
+    # Transfer amount
+    transfer_amount = db.Column(db.Integer, nullable=False)
+
+    # Season when the transfer happened
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
+
+    # Timestamp
+    transfer_date = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    player = db.relationship('Player', backref='transfer_history')
+    from_club = db.relationship('Club', foreign_keys=[from_club_id], backref='players_sold')
+    to_club = db.relationship('Club', foreign_keys=[to_club_id], backref='players_bought')
+    season = db.relationship('Season', backref='transfers')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'player': {
+                'id': self.player.id,
+                'name': self.player.name,
+                'age': self.player.age,
+                'position': self.player.position,
+                'strength': self.player.strength
+            },
+            'from_club': self.from_club.name,
+            'to_club': self.to_club.name,
+            'transfer_amount': self.transfer_amount,
+            'transfer_date': self.transfer_date.isoformat(),
+            'season': self.season.year
+        }
+
+
+class LaneRecord(db.Model):
+    """Model for tracking lane records (Bahnrekorde) for clubs, teams, and players."""
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Record type: 'team' or 'individual'
+    record_type = db.Column(db.String(20), nullable=False)
+
+    # Age category: 'Herren', 'U19', 'U14'
+    category = db.Column(db.String(20), nullable=False)
+
+    # Club where the lane is located
+    club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
+
+    # Player who set the record (for individual records)
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=True)
+
+    # Team that set the record (for team records)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+
+    # Score achieved (total across all 4 lanes)
+    score = db.Column(db.Integer, nullable=False)
+
+    # Match where the record was set
+    match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=False)
+
+    # Date when the record was set
+    record_date = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    club = db.relationship('Club', backref=db.backref('lane_records', lazy='dynamic'))
+    player = db.relationship('Player', backref=db.backref('lane_records', lazy='dynamic'))
+    team = db.relationship('Team', backref=db.backref('lane_records', lazy='dynamic'))
+    match = db.relationship('Match', backref=db.backref('lane_records', lazy='dynamic'))
+
+    def to_dict(self):
+        """Convert the record to a dictionary for API responses."""
+        result = {
+            'id': self.id,
+            'record_type': self.record_type,
+            'category': self.category,
+            'club_id': self.club_id,
+            'club_name': self.club.name,
+            'score': self.score,
+            'match_id': self.match_id,
+            'record_date': self.record_date.isoformat() if self.record_date else None
+        }
+
+        # Add player or team information based on record type
+        if self.record_type == 'individual' and self.player:
+            result['player_id'] = self.player_id
+            result['player_name'] = self.player.name
+            result['player_age'] = self.player.age
+        elif self.record_type == 'team' and self.team:
+            result['team_id'] = self.team_id
+            result['team_name'] = self.team.name
+
+        return result
+
+    @staticmethod
+    def get_age_category(age):
+        """Determine the age category based on player age."""
+        if age < 14:
+            return 'U14'
+        elif age < 19:
+            return 'U19'
+        else:
+            return 'Herren'
+
+    @staticmethod
+    def check_and_update_record(club_id, score, player=None, team=None, match_id=None):
+        """
+        Check if a new record has been set and update the database if needed.
+
+        Args:
+            club_id: ID of the club where the lane is located
+            score: Total score achieved across all 4 lanes
+            player: Player object (for individual records)
+            team: Team object (for team records)
+            match_id: ID of the match where the record was set
+
+        Returns:
+            True if a new record was set, False otherwise
+        """
+        if player:
+            # Individual record
+            record_type = 'individual'
+            category = LaneRecord.get_age_category(player.age)
+
+            # Check if there's an existing record
+            existing_record = LaneRecord.query.filter_by(
+                record_type=record_type,
+                category=category,
+                club_id=club_id
+            ).first()
+
+            if not existing_record or score > existing_record.score:
+                # New record!
+                if existing_record:
+                    # Update existing record
+                    existing_record.score = score
+                    existing_record.player_id = player.id
+                    existing_record.match_id = match_id
+                    existing_record.record_date = datetime.utcnow()
+                else:
+                    # Create new record
+                    new_record = LaneRecord(
+                        record_type=record_type,
+                        category=category,
+                        club_id=club_id,
+                        player_id=player.id,
+                        score=score,
+                        match_id=match_id
+                    )
+                    db.session.add(new_record)
+
+                db.session.commit()
+                return True
+
+        elif team:
+            # Team record
+            record_type = 'team'
+
+            # Check if there's an existing record
+            existing_record = LaneRecord.query.filter_by(
+                record_type=record_type,
+                club_id=club_id
+            ).first()
+
+            if not existing_record or score > existing_record.score:
+                # New record!
+                if existing_record:
+                    # Update existing record
+                    existing_record.score = score
+                    existing_record.team_id = team.id
+                    existing_record.match_id = match_id
+                    existing_record.record_date = datetime.utcnow()
+                else:
+                    # Create new record
+                    new_record = LaneRecord(
+                        record_type=record_type,
+                        category='Herren',  # Default category for team records
+                        club_id=club_id,
+                        team_id=team.id,
+                        score=score,
+                        match_id=match_id
+                    )
+                    db.session.add(new_record)
+
+                db.session.commit()
+                return True
+
+        return False
+
+
+class UserLineup(db.Model):
+    """Model for storing user-selected lineups for matches."""
+    id = db.Column(db.Integer, primary_key=True)
+    match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+    is_home_team = db.Column(db.Boolean, nullable=False)  # True für Heimteam, False für Auswärtsteam
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    match = db.relationship('Match', backref=db.backref('lineups', lazy='dynamic'))
+    team = db.relationship('Team')
+    positions = db.relationship('LineupPosition', back_populates='lineup', cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'match_id': self.match_id,
+            'team_id': self.team_id,
+            'team_name': self.team.name,
+            'is_home_team': self.is_home_team,
+            'positions': [pos.to_dict() for pos in self.positions]
+        }
+
+
+class LineupPosition(db.Model):
+    """Model for storing player positions in a user-selected lineup."""
+    id = db.Column(db.Integer, primary_key=True)
+    lineup_id = db.Column(db.Integer, db.ForeignKey('user_lineup.id'), nullable=False)
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
+    position_number = db.Column(db.Integer, nullable=False)  # Position im Team (1-6)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    lineup = db.relationship('UserLineup', back_populates='positions')
+    player = db.relationship('Player')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'lineup_id': self.lineup_id,
+            'player_id': self.player_id,
+            'player_name': self.player.name,
+            'position_number': self.position_number
+        }
+
 
 class PlayerMatchPerformance(db.Model):
     id = db.Column(db.Integer, primary_key=True)

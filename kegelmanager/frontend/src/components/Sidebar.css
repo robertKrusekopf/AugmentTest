@@ -53,6 +53,33 @@
   color: #5f6368;
 }
 
+.no-club {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px;
+}
+
+.no-club-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: #f1f3f4;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.no-club span {
+  font-size: 16px;
+  font-weight: 500;
+  color: #5f6368;
+}
+
 .sidebar-nav {
   flex: 1;
   padding: 20px 0;
@@ -124,6 +151,14 @@
 
 .finance-value.negative {
   color: var(--error-color);
+}
+
+.no-finance {
+  text-align: center;
+  color: #5f6368;
+  font-size: 14px;
+  padding: 10px;
+  font-style: italic;
 }
 
 @media (max-width: 768px) {

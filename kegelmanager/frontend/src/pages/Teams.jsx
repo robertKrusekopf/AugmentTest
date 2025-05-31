@@ -1,22 +1,23 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getTeams } from '../services/api';
+import { useAppContext } from '../contexts/AppContext';
 import './Teams.css';
 
 const Teams = () => {
+  const { getTeams } = useAppContext();
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLeague, setFilterLeague] = useState('');
 
-  // Lade Daten aus der Datenbank
+  // Lade Daten aus dem Context (mit Caching)
   useEffect(() => {
-    console.log('Lade Teams aus der Datenbank...');
+    const loadTeams = async () => {
+      try {
+        console.log('Lade Teams aus dem Context...');
+        setLoading(true);
 
-    // Lade die Daten aus der API
-    getTeams()
-      .then(data => {
-        console.log('Geladene Teams:', data);
+        const data = await getTeams();
 
         // Wenn keine Daten zurückgegeben werden, verwende leere Liste
         if (!data || data.length === 0) {
@@ -74,14 +75,15 @@ const Teams = () => {
 
           setTeams(processedTeams);
         }
-
-        setLoading(false);
-      })
-      .catch(error => {
+      } catch (error) {
         console.error('Fehler beim Laden der Teams:', error);
+      } finally {
         setLoading(false);
-      });
-  }, []);
+      }
+    };
+
+    loadTeams();
+  }, [getTeams]);
 
   // Filtern der Teams basierend auf dem Suchbegriff und der Liga
   const filteredTeams = teams.filter(team => {

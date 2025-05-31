@@ -53,11 +53,14 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     # Sort teams by league level (lower level number = higher league)
     teams_with_matches.sort(key=lambda t: t.league.level if t.league else 999)
 
-    # Get all available players from this club
+    # Get all available players from this club with optimized query
+    # Load only the attributes we need for sorting to reduce memory usage
     available_players = Player.query.filter_by(
         club_id=club_id,
         is_available_current_matchday=True,
         has_played_current_matchday=False
+    ).options(
+        db.load_only(Player.id, Player.strength, Player.konstanz, Player.drucksicherheit, Player.volle, Player.raeumer)
     ).all()
 
     # Sort players by a weighted rating of their attributes
@@ -96,22 +99,146 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
                     break
 
 
-    # Mark all assigned players as having played on this match day using bulk update
-    all_assigned_player_ids = []
-    for team_id, players in team_players.items():
-        all_assigned_player_ids.extend([p.id for p in players])
-
-    if all_assigned_player_ids:
-        db.session.execute(
-            db.update(Player)
-            .where(Player.id.in_(all_assigned_player_ids))
-            .values(
-                has_played_current_matchday=True,
-                last_played_matchday=match_day
-            )
-        )
-
-    # Commit changes to database
-    db.session.commit()
+    # Note: Player flags (has_played_current_matchday, last_played_matchday)
+    # are now updated in the simulation functions using batch operations
+    # for better performance
 
     return team_players
+
+
+def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cache_manager):
+    """
+    Optimized batch assignment of players to teams for multiple clubs.
+
+    Args:
+        clubs_with_matches: Set of club IDs that have matches
+        match_day: The match day number
+        season_id: The ID of the season
+        cache_manager: CacheManager instance for caching
+
+    Returns:
+        dict: A dictionary mapping club_id -> team_id -> list of players
+    """
+    from sqlalchemy import text
+    import time
+
+    start_time = time.time()
+
+    # Get all teams with matches for all clubs in one query
+    if not clubs_with_matches:
+        return {}
+
+    # Single query to get all teams and their matches
+    teams_query = text("""
+        SELECT DISTINCT
+            t.id as team_id,
+            t.club_id,
+            t.name as team_name,
+            l.level as league_level,
+            CASE
+                WHEN m.home_team_id = t.id THEN 'home'
+                WHEN m.away_team_id = t.id THEN 'away'
+            END as match_type
+        FROM team t
+        JOIN match m ON (m.home_team_id = t.id OR m.away_team_id = t.id)
+        JOIN league l ON t.league_id = l.id
+        WHERE t.club_id IN :club_ids
+            AND m.season_id = :season_id
+            AND m.match_day = :match_day
+            AND m.is_played = 0
+        ORDER BY t.club_id, l.level, t.id
+    """)
+
+    teams_data = db.session.execute(teams_query, {
+        "club_ids": tuple(clubs_with_matches),
+        "season_id": season_id,
+        "match_day": match_day
+    }).fetchall()
+
+    # Group teams by club
+    club_teams = {}
+    for row in teams_data:
+        club_id = row.club_id
+        if club_id not in club_teams:
+            club_teams[club_id] = []
+
+        team_info = {
+            'id': row.team_id,
+            'name': row.team_name,
+            'league_level': row.league_level,
+            'match_type': row.match_type
+        }
+
+        # Avoid duplicates
+        if team_info not in club_teams[club_id]:
+            club_teams[club_id].append(team_info)
+
+    # Get all available players for all clubs in one query
+    players_query = text("""
+        SELECT
+            id, club_id, strength, konstanz, drucksicherheit, volle, raeumer
+        FROM player
+        WHERE club_id IN :club_ids
+            AND is_available_current_matchday = 1
+            AND has_played_current_matchday = 0
+        ORDER BY club_id, (strength * 0.5 + konstanz * 0.1 + drucksicherheit * 0.1 + volle * 0.15 + raeumer * 0.15) DESC
+    """)
+
+    players_data = db.session.execute(players_query, {
+        "club_ids": tuple(clubs_with_matches)
+    }).fetchall()
+
+    # Group players by club
+    club_players = {}
+    for row in players_data:
+        club_id = row.club_id
+        if club_id not in club_players:
+            club_players[club_id] = []
+
+        # Create player object-like structure for compatibility
+        player_data = {
+            'id': row.id,
+            'strength': row.strength,
+            'konstanz': row.konstanz,
+            'drucksicherheit': row.drucksicherheit,
+            'volle': row.volle,
+            'raeumer': row.raeumer
+        }
+        club_players[club_id].append(player_data)
+
+    # Assign players to teams for each club
+    result = {}
+
+    for club_id in clubs_with_matches:
+        result[club_id] = {}
+
+        teams = club_teams.get(club_id, [])
+        available_players = club_players.get(club_id, [])
+
+        if not teams or not available_players:
+            continue
+
+        # Sort teams by league level (lower level = higher priority)
+        teams.sort(key=lambda t: t['league_level'])
+
+        used_players = set()
+
+        # Assign 6 players to each team
+        for team in teams:
+            team_id = team['id']
+            result[club_id][team_id] = []
+
+            assigned_count = 0
+            for player_data in available_players:
+                if player_data['id'] not in used_players and assigned_count < 6:
+                    result[club_id][team_id].append(player_data)
+                    used_players.add(player_data['id'])
+                    assigned_count += 1
+
+                if assigned_count >= 6:
+                    break
+
+    end_time = time.time()
+    print(f"Batch assigned players for {len(clubs_with_matches)} clubs in {end_time - start_time:.3f}s")
+
+    return result

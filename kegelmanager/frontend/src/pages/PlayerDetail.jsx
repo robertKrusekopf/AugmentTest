@@ -92,7 +92,14 @@ const PlayerDetail = () => {
             start: processedPlayer.attributes.start,
             mitte: processedPlayer.attributes.mitte,
             schluss: processedPlayer.attributes.schluss,
-            ausdauer: processedPlayer.attributes.ausdauer
+            ausdauer: processedPlayer.attributes.ausdauer,
+            // Form system attributes
+            form_short_term: processedPlayer.form_short_term || 0,
+            form_medium_term: processedPlayer.form_medium_term || 0,
+            form_long_term: processedPlayer.form_long_term || 0,
+            form_short_remaining_days: processedPlayer.form_short_remaining_days || 0,
+            form_medium_remaining_days: processedPlayer.form_medium_remaining_days || 0,
+            form_long_remaining_days: processedPlayer.form_long_remaining_days || 0
           });
         } else {
           console.error(`Keine Daten für Spieler ${id} gefunden`);
@@ -705,6 +712,91 @@ const PlayerDetail = () => {
                         min="1"
                         max="99"
                         value={cheatForm.ausdauer || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-section">
+                    <h4>Form-System (Unsichtbar im normalen Spiel)</h4>
+
+                    <div className="form-group">
+                      <label htmlFor="form_short_term">Kurzfristige Form (-20 bis +20):</label>
+                      <input
+                        type="number"
+                        id="form_short_term"
+                        name="form_short_term"
+                        min="-20"
+                        max="20"
+                        step="0.1"
+                        value={cheatForm.form_short_term || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="form_short_remaining_days">Kurzfristige Form - Verbleibende Tage:</label>
+                      <input
+                        type="number"
+                        id="form_short_remaining_days"
+                        name="form_short_remaining_days"
+                        min="0"
+                        max="10"
+                        value={cheatForm.form_short_remaining_days || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="form_medium_term">Mittelfristige Form (-15 bis +15):</label>
+                      <input
+                        type="number"
+                        id="form_medium_term"
+                        name="form_medium_term"
+                        min="-15"
+                        max="15"
+                        step="0.1"
+                        value={cheatForm.form_medium_term || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="form_medium_remaining_days">Mittelfristige Form - Verbleibende Tage:</label>
+                      <input
+                        type="number"
+                        id="form_medium_remaining_days"
+                        name="form_medium_remaining_days"
+                        min="0"
+                        max="15"
+                        value={cheatForm.form_medium_remaining_days || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="form_long_term">Langfristige Form (-10 bis +10):</label>
+                      <input
+                        type="number"
+                        id="form_long_term"
+                        name="form_long_term"
+                        min="-10"
+                        max="10"
+                        step="0.1"
+                        value={cheatForm.form_long_term || ''}
+                        onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="form_long_remaining_days">Langfristige Form - Verbleibende Tage:</label>
+                      <input
+                        type="number"
+                        id="form_long_remaining_days"
+                        name="form_long_remaining_days"
+                        min="0"
+                        max="25"
+                        value={cheatForm.form_long_remaining_days || ''}
                         onChange={handleCheatInputChange}
                       />
                     </div>

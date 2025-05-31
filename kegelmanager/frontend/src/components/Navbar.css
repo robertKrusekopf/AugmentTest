@@ -11,6 +11,7 @@
   padding: 0 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   z-index: 1000;
+  gap: 20px;
 }
 
 .navbar-left {
@@ -41,6 +42,13 @@
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+.navbar-search {
+  flex: 1;
+  max-width: 400px;
+  display: flex;
+  justify-content: center;
 }
 
 .season-info, .date-info, .matchday-info {
@@ -83,6 +91,17 @@
 .sim-season-button {
   min-width: 150px;
   margin-left: 10px;
+}
+
+.sim-season-button.btn-success {
+  background-color: #28a745;
+  border-color: #28a745;
+  color: white;
+}
+
+.sim-season-button.btn-success:hover {
+  background-color: #218838;
+  border-color: #1e7e34;
 }
 
 .sim-button.loading, .sim-season-button.loading {
@@ -166,7 +185,22 @@
     display: none;
   }
 
+  .navbar-search {
+    max-width: 250px;
+  }
+
   .sim-button, .sim-season-button {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .navbar {
+    padding: 0 10px;
+    gap: 10px;
+  }
+
+  .navbar-search {
+    max-width: 200px;
   }
 }

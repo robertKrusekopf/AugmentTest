@@ -162,6 +162,7 @@ const TeamDetail = () => {
           </div>
           <div className="team-actions">
             <button className="btn btn-primary">Mannschaft verwalten</button>
+            <Link to={`/clubs/${team.club.id}`} className="btn btn-secondary">Zum Verein</Link>
           </div>
         </div>
 
