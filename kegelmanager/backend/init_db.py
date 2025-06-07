@@ -444,6 +444,15 @@ def create_sample_data(custom_app=None):
             import simulation
             simulation.generate_fixtures(league, season)
 
+        # Generate cups for the season
+        print("Generating cup competitions...")
+        try:
+            from app import auto_initialize_cups
+            auto_initialize_cups(season.id)
+            print("Cup competitions generated successfully!")
+        except Exception as e:
+            print(f"Error generating cup competitions: {str(e)}")
+
         # Final commit
         db.session.commit()
         print("Match fixtures created successfully!")

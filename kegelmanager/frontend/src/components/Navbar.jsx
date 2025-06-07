@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { simulateMatchDay, simulateSeason, getCurrentSeason, getSeasonStatus, transitionToNewSeason } from '../services/api';
-import { invalidateAfterSimulation } from '../services/apiCache';
+import { invalidateAfterSimulation, invalidateAfterSeasonTransition } from '../services/apiCache';
 import GlobalSearch from './GlobalSearch';
 import './Navbar.css';
 
@@ -77,15 +77,24 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
             } else {
               setNextMatchDay(null); // Keine ungespielte Spiele mehr
               console.log("Keine weiteren Spieltage - setze nextMatchDay auf null");
+            }
 
-              // Prüfe den Saisonstatus, wenn keine weiteren Spieltage vorhanden sind
-              try {
-                const seasonStatus = await getSeasonStatus();
-                setSeasonCompleted(seasonStatus.is_completed);
-                console.log("Saisonstatus:", seasonStatus);
-              } catch (error) {
-                console.error("Fehler beim Laden des Saisonstatus:", error);
-              }
+            // Prüfe den Saisonstatus immer, nicht nur wenn keine ungespielte Spiele vorhanden sind
+            try {
+              const seasonStatus = await getSeasonStatus();
+              setSeasonCompleted(seasonStatus.is_completed);
+              console.log("=== SAISONSTATUS DEBUG ===");
+              console.log("Saisonstatus:", seasonStatus);
+              console.log("is_completed:", seasonStatus.is_completed);
+              console.log("total_matches:", seasonStatus.total_matches);
+              console.log("played_matches:", seasonStatus.played_matches);
+              console.log("unplayed_matches:", seasonStatus.unplayed_matches);
+              console.log("matches_without_match_day:", seasonStatus.matches_without_match_day);
+              console.log("seasonCompleted wird gesetzt auf:", seasonStatus.is_completed);
+              console.log("=== END SAISONSTATUS DEBUG ===");
+            } catch (error) {
+              console.error("Fehler beim Laden des Saisonstatus:", error);
+              setSeasonCompleted(false); // Fallback auf false bei Fehlern
             }
           }
           console.log("=== END NAVBAR DEBUG ===");
@@ -118,12 +127,40 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
         setNextMatchDay(result.match_day + 1);
       }
 
+      // Prüfe den Saisonstatus nach der Spieltag-Simulation
+      try {
+        const seasonStatus = await getSeasonStatus();
+        setSeasonCompleted(seasonStatus.is_completed);
+        console.log("=== SAISONSTATUS NACH SPIELTAG-SIMULATION ===");
+        console.log("Saisonstatus nach Spieltag-Simulation:", seasonStatus);
+        console.log("is_completed:", seasonStatus.is_completed);
+        console.log("seasonCompleted wird gesetzt auf:", seasonStatus.is_completed);
+        console.log("=== END SAISONSTATUS NACH SPIELTAG-SIMULATION ===");
+      } catch (error) {
+        console.error("Fehler beim Laden des Saisonstatus nach Spieltag-Simulation:", error);
+      }
+
       // Invalidiere Cache nach Simulation
       invalidateAfterSimulation();
       invalidateAllCache();
 
-      // Seite neu laden, um die aktualisierten Daten anzuzeigen
-      window.location.reload();
+      // Aktualisiere die Match-Daten ohne Seitenreload
+      try {
+        const matches = await getMatches();
+        const matchesWithMatchDay = matches.filter(match => match.match_day !== null && match.match_day !== undefined);
+
+        if (matchesWithMatchDay.length > 0) {
+          const unplayedMatches = matchesWithMatchDay.filter(match => !match.is_played);
+          if (unplayedMatches.length > 0) {
+            const nextMatchDay = Math.min(...unplayedMatches.map(match => match.match_day));
+            setNextMatchDay(nextMatchDay);
+          } else {
+            setNextMatchDay(null);
+          }
+        }
+      } catch (error) {
+        console.error("Fehler beim Aktualisieren der Match-Daten:", error);
+      }
     } catch (error) {
       console.error('Fehler bei der Simulation des Spieltags:', error);
       alert('Fehler bei der Simulation des Spieltags. Bitte versuche es erneut.');
@@ -156,14 +193,28 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
 
       console.log('Saison-Simulation abgeschlossen:', result);
 
-      // Informiere den Benutzer, dass die Saison simuliert wurde
-      alert('Die Saison wurde vollständig simuliert. Die Seite wird neu geladen, um die aktualisierten Daten anzuzeigen.');
+      // Prüfe den Saisonstatus nach der Simulation
+      try {
+        const seasonStatus = await getSeasonStatus();
+        setSeasonCompleted(seasonStatus.is_completed);
+        console.log("=== SAISONSTATUS NACH SAISON-SIMULATION ===");
+        console.log("Saisonstatus nach Simulation:", seasonStatus);
+        console.log("is_completed:", seasonStatus.is_completed);
+        console.log("total_matches:", seasonStatus.total_matches);
+        console.log("played_matches:", seasonStatus.played_matches);
+        console.log("unplayed_matches:", seasonStatus.unplayed_matches);
+        console.log("seasonCompleted wird gesetzt auf:", seasonStatus.is_completed);
+        console.log("=== END SAISONSTATUS NACH SAISON-SIMULATION ===");
+      } catch (error) {
+        console.error("Fehler beim Laden des Saisonstatus nach Simulation:", error);
+      }
 
-      // Kurze Verzögerung vor dem Neuladen, um sicherzustellen, dass alle DB-Operationen abgeschlossen sind
-      setTimeout(() => {
-        // Seite neu laden, um die aktualisierten Daten anzuzeigen
-        window.location.reload();
-      }, 500);
+      // Invalidiere Cache nach Simulation
+      invalidateAfterSimulation();
+      invalidateAllCache();
+
+      // Informiere den Benutzer, dass die Saison simuliert wurde
+      alert('Die Saison wurde vollständig simuliert. Der Button sollte jetzt "Saisonwechsel" anzeigen.');
     } catch (error) {
       console.error('Fehler bei der Simulation der Saison:', error);
       alert('Fehler bei der Simulation der Saison. Bitte versuche es erneut.');
@@ -190,6 +241,9 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
       setSimulationResult(result);
 
       console.log('Saisonwechsel abgeschlossen:', result);
+
+      // Invalidate all cache after season transition
+      invalidateAfterSeasonTransition();
 
       // Informiere den Benutzer über den erfolgreichen Saisonwechsel
       alert(`Saisonwechsel erfolgreich! Neue Saison "${result.new_season}" wurde erstellt. Die Seite wird neu geladen.`);

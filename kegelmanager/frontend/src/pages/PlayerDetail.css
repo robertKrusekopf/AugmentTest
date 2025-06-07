@@ -434,3 +434,124 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Player History Table Styles */
+.history-table-container {
+  overflow-x: auto;
+  margin-top: 15px;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.history-table th,
+.history-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.history-table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #5f6368;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.history-table tbody tr:hover {
+  background-color: var(--hover-color);
+}
+
+.history-row .season-name {
+  font-weight: 500;
+}
+
+.history-row .team-name {
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.history-row .league-name {
+  color: #5f6368;
+}
+
+.history-row .league-level {
+  text-align: center;
+  font-weight: 500;
+}
+
+.history-row .position {
+  text-align: center;
+  font-weight: 600;
+}
+
+.history-row .position.top-position {
+  color: #34a853;
+}
+
+.history-row .position.current-season {
+  color: #1a73e8;
+  font-style: italic;
+}
+
+.history-row .appearances {
+  text-align: center;
+}
+
+.history-row .avg-score {
+  text-align: center;
+  font-weight: 500;
+}
+
+.history-row .avg-score.home {
+  color: #34a853;
+}
+
+.history-row .avg-score.away {
+  color: #ea4335;
+}
+
+.history-row .avg-score.total {
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+.history-row .avg-errors {
+  text-align: center;
+  color: #f9ab00;
+  font-weight: 500;
+}
+
+.no-history {
+  text-align: center;
+  color: #5f6368;
+  font-style: italic;
+  padding: 20px;
+}
+
+/* Responsive table for player history */
+@media (max-width: 1200px) {
+  .history-table {
+    font-size: 12px;
+  }
+
+  .history-table th,
+  .history-table td {
+    padding: 6px 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .history-table-container {
+    overflow-x: scroll;
+  }
+
+  .history-table {
+    min-width: 800px;
+  }
+}

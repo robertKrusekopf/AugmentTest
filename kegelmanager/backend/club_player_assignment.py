@@ -129,7 +129,18 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         return {}
 
     # Single query to get all teams and their matches
-    teams_query = text("""
+    # Convert set to list for proper parameter binding
+    club_ids_list = list(clubs_with_matches)
+
+    # Create placeholders for IN clause
+    placeholders = ','.join([':param' + str(i) for i in range(len(club_ids_list))])
+
+    # Create parameter dictionary
+    params = {f'param{i}': club_id for i, club_id in enumerate(club_ids_list)}
+    params['season_id'] = season_id
+    params['match_day'] = match_day
+
+    teams_query = text(f"""
         SELECT DISTINCT
             t.id as team_id,
             t.club_id,
@@ -142,31 +153,50 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         FROM team t
         JOIN match m ON (m.home_team_id = t.id OR m.away_team_id = t.id)
         JOIN league l ON t.league_id = l.id
-        WHERE t.club_id IN :club_ids
+        WHERE t.club_id IN ({placeholders})
             AND m.season_id = :season_id
             AND m.match_day = :match_day
             AND m.is_played = 0
-        ORDER BY t.club_id, l.level, t.id
+
+        UNION
+
+        SELECT DISTINCT
+            t.id as team_id,
+            t.club_id,
+            t.name as team_name,
+            l.level as league_level,
+            CASE
+                WHEN cm.home_team_id = t.id THEN 'home'
+                WHEN cm.away_team_id = t.id THEN 'away'
+            END as match_type
+        FROM team t
+        JOIN cup_match cm ON (cm.home_team_id = t.id OR cm.away_team_id = t.id)
+        JOIN league l ON t.league_id = l.id
+        JOIN cup c ON cm.cup_id = c.id
+        WHERE t.club_id IN ({placeholders})
+            AND c.season_id = :season_id
+            AND cm.cup_match_day = :match_day
+            AND cm.is_played = 0
+        ORDER BY club_id, league_level, team_id
     """)
 
-    teams_data = db.session.execute(teams_query, {
-        "club_ids": tuple(clubs_with_matches),
-        "season_id": season_id,
-        "match_day": match_day
-    }).fetchall()
+    teams_data = db.session.execute(teams_query, params).fetchall()
 
     # Group teams by club
     club_teams = {}
     for row in teams_data:
-        club_id = row.club_id
+        # Access columns by index or name - use _asdict() for named access
+        row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
+        club_id = row_dict['club_id']
+
         if club_id not in club_teams:
             club_teams[club_id] = []
 
         team_info = {
-            'id': row.team_id,
-            'name': row.team_name,
-            'league_level': row.league_level,
-            'match_type': row.match_type
+            'id': row_dict['team_id'],
+            'name': row_dict['team_name'],
+            'league_level': row_dict['league_level'],
+            'match_type': row_dict['match_type']
         }
 
         # Avoid duplicates
@@ -174,35 +204,51 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             club_teams[club_id].append(team_info)
 
     # Get all available players for all clubs in one query
-    players_query = text("""
+    # Use the same placeholders as above
+    players_query = text(f"""
         SELECT
-            id, club_id, strength, konstanz, drucksicherheit, volle, raeumer
+            id, club_id, strength, konstanz, drucksicherheit, volle, raeumer,
+            ausdauer, sicherheit, auswaerts, start, mitte, schluss,
+            form_short_term, form_medium_term, form_long_term
         FROM player
-        WHERE club_id IN :club_ids
+        WHERE club_id IN ({placeholders})
             AND is_available_current_matchday = 1
-            AND has_played_current_matchday = 0
+            AND (last_played_matchday IS NULL OR last_played_matchday != :match_day)
         ORDER BY club_id, (strength * 0.5 + konstanz * 0.1 + drucksicherheit * 0.1 + volle * 0.15 + raeumer * 0.15) DESC
     """)
 
-    players_data = db.session.execute(players_query, {
-        "club_ids": tuple(clubs_with_matches)
-    }).fetchall()
+    # Use only the club parameters for the players query, plus match_day
+    players_params = {f'param{i}': club_id for i, club_id in enumerate(club_ids_list)}
+    players_params['match_day'] = match_day
+    players_data = db.session.execute(players_query, players_params).fetchall()
 
     # Group players by club
     club_players = {}
     for row in players_data:
-        club_id = row.club_id
+        # Access columns by index or name - use _asdict() for named access
+        row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
+        club_id = row_dict['club_id']
+
         if club_id not in club_players:
             club_players[club_id] = []
 
         # Create player object-like structure for compatibility
         player_data = {
-            'id': row.id,
-            'strength': row.strength,
-            'konstanz': row.konstanz,
-            'drucksicherheit': row.drucksicherheit,
-            'volle': row.volle,
-            'raeumer': row.raeumer
+            'id': row_dict['id'],
+            'strength': row_dict['strength'],
+            'konstanz': row_dict['konstanz'],
+            'drucksicherheit': row_dict['drucksicherheit'],
+            'volle': row_dict['volle'],
+            'raeumer': row_dict['raeumer'],
+            'ausdauer': row_dict['ausdauer'],
+            'sicherheit': row_dict['sicherheit'],
+            'auswaerts': row_dict['auswaerts'],
+            'start': row_dict['start'],
+            'mitte': row_dict['mitte'],
+            'schluss': row_dict['schluss'],
+            'form_short_term': row_dict['form_short_term'],
+            'form_medium_term': row_dict['form_medium_term'],
+            'form_long_term': row_dict['form_long_term']
         }
         club_players[club_id].append(player_data)
 

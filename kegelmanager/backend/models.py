@@ -248,6 +248,12 @@ class Team(db.Model):
     league_id = db.Column(db.Integer, db.ForeignKey('league.id'))
     is_youth_team = db.Column(db.Boolean, default=False)
     staerke = db.Column(db.Integer, default=0)  # Stärke des Teams, wird bei Spielergenerierung aufaddiert
+
+    # Status from previous season for display in league tables
+    previous_season_status = db.Column(db.String(20), nullable=True)  # 'promoted', 'relegated', 'champion', or None
+    previous_season_position = db.Column(db.Integer, nullable=True)  # Position in previous season
+    previous_season_league_level = db.Column(db.Integer, nullable=True)  # League level in previous season
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -893,10 +899,20 @@ class League(db.Model):
             avg_home_score = round(team_stats['avgHomeScore'], 1) if played_matches_count > 0 else 0
             avg_away_score = round(team_stats['avgAwayScore'], 1) if played_matches_count > 0 else 0
 
+            # Determine team display name with status suffix
+            team_display_name = team.name
+            if team.previous_season_status == 'promoted':
+                team_display_name += ' (Au)'
+            elif team.previous_season_status == 'relegated':
+                team_display_name += ' (Ab)'
+            elif team.previous_season_status == 'champion':
+                team_display_name += ' (Me)'
+
             standings.append({
                 'position': i + 1,
                 'team_id': team.id,
-                'team': team.name,
+                'team': team_display_name,
+                'team_name_base': team.name,  # Original name without suffix
                 'club_name': team.club.name if team.club else 'Unbekannt',
                 'emblem_url': f"/api/club-emblem/{team.club.verein_id}" if team.club and team.club.verein_id else None,
                 'played': standing['wins'] + standing['draws'] + standing['losses'],
@@ -908,7 +924,8 @@ class League(db.Model):
                 'goals_against': standing['goals_against'],
                 'goal_difference': standing['goal_difference'],
                 'avg_home_score': avg_home_score,
-                'avg_away_score': avg_away_score
+                'avg_away_score': avg_away_score,
+                'previous_season_status': team.previous_season_status
             })
 
         # Get fixtures (match schedule)
@@ -1019,6 +1036,470 @@ class Season(db.Model):
             'start_date': self.start_date.isoformat(),
             'end_date': self.end_date.isoformat(),
             'is_current': self.is_current
+        }
+
+class Cup(db.Model):
+    """Pokalwettbewerbe: DKBC-Pokal, Landespokal, Kreispokal."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)  # z.B. "DKBC-Pokal", "Sachsen-Anhalt-Pokal", "Landkreis Harz-Pokal"
+    cup_type = db.Column(db.String(20), nullable=False)  # "DKBC", "Landespokal", "Kreispokal"
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
+
+    # Geografische Zuordnung
+    bundesland = db.Column(db.String(50))  # Nur für Landespokal und Kreispokal
+    landkreis = db.Column(db.String(100))  # Nur für Kreispokal
+
+    # Status
+    is_active = db.Column(db.Boolean, default=True)
+    current_round = db.Column(db.String(50), default="1. Runde")  # "1. Runde", "Achtelfinale", "Viertelfinale", etc.
+    total_rounds = db.Column(db.Integer, default=1)  # Gesamtanzahl der Runden
+    current_round_number = db.Column(db.Integer, default=1)  # Aktuelle Rundennummer
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    season = db.relationship('Season', backref='cups')
+    cup_matches = db.relationship('CupMatch', back_populates='cup', cascade='all, delete-orphan')
+
+    def get_eligible_teams(self):
+        """Ermittelt alle teilnahmeberechtigten Teams für diesen Pokal."""
+        from sqlalchemy import and_, or_
+
+        if self.cup_type == "DKBC":
+            # Teams aus Ligen ohne Bundesland und Landkreis
+            eligible_teams = Team.query.join(League).filter(
+                and_(
+                    League.season_id == self.season_id,
+                    or_(League.bundesland.is_(None), League.bundesland == ''),
+                    or_(League.landkreis.is_(None), League.landkreis == '')
+                )
+            ).all()
+        elif self.cup_type == "Landespokal":
+            # Teams aus Ligen mit Bundesland aber ohne Landkreis
+            eligible_teams = Team.query.join(League).filter(
+                and_(
+                    League.season_id == self.season_id,
+                    League.bundesland == self.bundesland,
+                    or_(League.landkreis.is_(None), League.landkreis == '')
+                )
+            ).all()
+        elif self.cup_type == "Kreispokal":
+            # Teams aus Ligen mit Landkreis
+            eligible_teams = Team.query.join(League).filter(
+                and_(
+                    League.season_id == self.season_id,
+                    League.landkreis == self.landkreis
+                )
+            ).all()
+        else:
+            eligible_teams = []
+
+        return eligible_teams
+
+    def calculate_total_rounds(self, num_teams):
+        """Berechnet die Gesamtanzahl der Runden basierend auf der Anzahl der Teams."""
+        import math
+        if num_teams <= 1:
+            return 1
+        return math.ceil(math.log2(num_teams))
+
+    def get_round_name(self, round_number, total_rounds):
+        """Gibt den Namen der Runde basierend auf der Rundennummer zurück."""
+        # Berechne wie viele Teams in dieser Runde noch übrig sind
+        # In Runde 1 sind es die ursprünglichen Teams
+        # In Runde 2 sind es die Hälfte, usw.
+        teams_in_round = 2 ** (total_rounds - round_number + 1)
+
+        if teams_in_round == 2:
+            return "Finale"
+        elif teams_in_round == 4:
+            return "Halbfinale"
+        elif teams_in_round == 8:
+            return "Viertelfinale"
+        elif teams_in_round == 16:
+            return "Achtelfinale"
+        elif teams_in_round == 32:
+            return "Sechzehntelfinale"
+        else:
+            return f"{round_number}. Runde"
+
+    def generate_cup_fixtures(self):
+        """Generiert die Pokalspiele für alle Runden mit korrekter Freilos-Logik."""
+        import random
+        import math
+
+        eligible_teams = self.get_eligible_teams()
+        if len(eligible_teams) < 2:
+            return
+
+        # Berechne die nächsthöhere 2er-Potenz für die zweite Runde
+        next_power_of_2 = 2 ** math.ceil(math.log2(len(eligible_teams)))
+
+        # Berechne die Gesamtanzahl der Runden basierend auf der nächsthöheren 2er-Potenz
+        total_rounds = int(math.log2(next_power_of_2))
+        self.total_rounds = total_rounds
+
+        # Mische die Teams zufällig
+        teams = eligible_teams.copy()
+        random.shuffle(teams)
+
+        # Berechne Anzahl der Freilose und Spiele in der ersten Runde
+        num_byes = next_power_of_2 - len(eligible_teams)
+        num_first_round_matches = (len(eligible_teams) - num_byes) // 2
+
+        print(f"Cup {self.name}: {len(eligible_teams)} Teams, {num_byes} Freilose, {num_first_round_matches} Spiele in Runde 1")
+
+        # Teams für die erste Runde (die spielen müssen)
+        teams_to_play = teams[:num_first_round_matches * 2]
+
+        # Teams mit Freilosen (kommen direkt in die zweite Runde)
+        teams_with_byes = teams[num_first_round_matches * 2:]
+
+        # Erstelle Spiele für die erste Runde
+        for i in range(0, len(teams_to_play), 2):
+            if i + 1 < len(teams_to_play):
+                home_team = teams_to_play[i]
+                away_team = teams_to_play[i + 1]
+
+                cup_match_day = self.calculate_cup_match_day(1, total_rounds)
+                print(f"POKAL: Creating match {home_team.name} vs {away_team.name} for match day {cup_match_day}")
+
+                cup_match = CupMatch(
+                    cup_id=self.id,
+                    home_team_id=home_team.id,
+                    away_team_id=away_team.id,
+                    round_name=self.get_round_name(1, total_rounds),
+                    round_number=1,
+                    cup_match_day=cup_match_day
+                )
+                db.session.add(cup_match)
+
+        # Speichere Teams mit Freilosen für die nächste Runde
+        # Diese werden in advance_to_next_round() berücksichtigt
+        for team in teams_with_byes:
+            # Erstelle einen "Dummy"-Match für Teams mit Freilosen
+            # Diese werden als bereits "gewonnen" markiert
+            cup_match_day = self.calculate_cup_match_day(1, total_rounds)
+            print(f"POKAL: Creating bye match for {team.name} for match day {cup_match_day}")
+
+            bye_match = CupMatch(
+                cup_id=self.id,
+                home_team_id=team.id,
+                away_team_id=None,  # Kein Gegner = Freilos
+                round_name=self.get_round_name(1, total_rounds),
+                round_number=1,
+                cup_match_day=cup_match_day,
+                is_played=True,  # Freilos ist automatisch "gespielt"
+                winner_team_id=team.id,  # Team gewinnt automatisch
+                home_score=0,
+                away_score=0
+            )
+            db.session.add(bye_match)
+
+        # Aktualisiere Cup-Status
+        self.current_round = self.get_round_name(1, total_rounds)
+        self.current_round_number = 1
+
+        db.session.commit()
+
+    def calculate_cup_match_day(self, round_number, total_rounds):
+        """Berechnet den Pokalspieltag basierend auf der Rundennummer und der tatsächlichen Saisonlänge."""
+        from sqlalchemy import func
+
+        # Ermittle die maximale Anzahl der Ligaspieltage in dieser Saison
+        max_league_match_day = db.session.query(func.max(Match.match_day)).join(League).filter(
+            League.season_id == self.season_id,
+            Match.match_day.isnot(None)
+        ).scalar()
+
+        print(f"POKAL: Cup {self.name} - max_league_match_day from DB: {max_league_match_day}")
+
+        if not max_league_match_day or max_league_match_day < 10:
+            # Fallback: Annahme von 34 Ligaspieltagen
+            max_league_match_day = 34
+            print(f"POKAL: Cup {self.name} - Using fallback max_league_match_day: {max_league_match_day}")
+
+        # Einfache Verteilung: Pokale zwischen Spieltag 5 und 30
+        start_match_day = 5
+        end_match_day = min(30, max_league_match_day - 2)
+
+        # Sicherstellen, dass wir mindestens einen gültigen Bereich haben
+        if end_match_day <= start_match_day:
+            end_match_day = start_match_day + 10
+
+        print(f"POKAL: Cup {self.name} - Match day range: {start_match_day} to {end_match_day}")
+
+        if total_rounds == 1:
+            cup_match_day = (start_match_day + end_match_day) // 2
+            print(f"POKAL: Cup {self.name} - Single round, match day: {cup_match_day}")
+            return cup_match_day
+
+        # Einfache gleichmäßige Verteilung
+        if total_rounds > 1:
+            interval = (end_match_day - start_match_day) / total_rounds
+            cup_match_day = start_match_day + int(round_number * interval)
+            print(f"POKAL: Cup {self.name} - Round {round_number}/{total_rounds}, interval: {interval:.2f}, calculated match day: {cup_match_day}")
+        else:
+            cup_match_day = start_match_day
+            print(f"POKAL: Cup {self.name} - Default to start match day: {cup_match_day}")
+
+        # Sicherstellen, dass der Pokalspieltag im gültigen Bereich liegt
+        cup_match_day = max(start_match_day, min(cup_match_day, end_match_day))
+        print(f"POKAL: Cup {self.name} - Final match day after range check: {cup_match_day}")
+
+        return cup_match_day
+
+    def advance_to_next_round(self):
+        """Lässt Teams zur nächsten Runde aufsteigen basierend auf den Ergebnissen."""
+        print(f"DEBUG: Checking advancement for Cup {self.name}, current round {self.current_round_number}")
+
+        current_round_matches = CupMatch.query.filter_by(
+            cup_id=self.id,
+            round_number=self.current_round_number,
+            is_played=True
+        ).all()
+
+        # Prüfe, ob alle Spiele der aktuellen Runde gespielt wurden
+        total_current_round_matches = CupMatch.query.filter_by(
+            cup_id=self.id,
+            round_number=self.current_round_number
+        ).count()
+
+        print(f"DEBUG: Cup {self.name} - Played matches: {len(current_round_matches)}, Total matches: {total_current_round_matches}")
+
+        if len(current_round_matches) < total_current_round_matches:
+            print(f"DEBUG: Cup {self.name} - Not all matches played yet, cannot advance")
+            return False  # Noch nicht alle Spiele gespielt
+
+        # Wenn wir im Finale sind, ist der Pokal beendet
+        if self.current_round_number >= self.total_rounds:
+            print(f"DEBUG: Cup {self.name} - Final round completed, cup finished")
+            self.is_active = False
+            db.session.commit()
+            return True
+
+        # Sammle alle Gewinner für die nächste Runde (inklusive Freilose)
+        winners = []
+        matches_without_winner = []
+        for match in current_round_matches:
+            if match.winner_team_id:
+                winners.append(Team.query.get(match.winner_team_id))
+            else:
+                matches_without_winner.append(match.id)
+
+        print(f"DEBUG: Cup {self.name}: {len(winners)} Gewinner aus Runde {self.current_round_number}")
+        if matches_without_winner:
+            print(f"DEBUG: Cup {self.name}: Matches without winner: {matches_without_winner}")
+
+        # Alle Teams für die nächste Runde sind die Gewinner
+        # (Freilose wurden bereits in der ersten Runde als "gewonnene" Matches erstellt)
+        all_next_round_teams = winners
+
+        # Prüfe, ob wir eine 2er-Potenz haben (sollte nach der ersten Runde immer der Fall sein)
+        if len(all_next_round_teams) % 2 != 0:
+            print(f"WARNUNG: Ungerade Anzahl Teams ({len(all_next_round_teams)}) in Runde {self.current_round_number + 1}")
+            # Entferne das letzte Team (bekommt Freilos)
+            all_next_round_teams = all_next_round_teams[:-1]
+
+        if len(all_next_round_teams) == 0:
+            print(f"ERROR: Cup {self.name} - No teams for next round!")
+            return False
+
+        # Erstelle Spiele für die nächste Runde
+        next_round_number = self.current_round_number + 1
+        next_round_name = self.get_round_name(next_round_number, self.total_rounds)
+
+        print(f"DEBUG: Cup {self.name} - Creating {len(all_next_round_teams)//2} matches for round {next_round_number} ({next_round_name})")
+
+        # Mische die Teams für faire Paarungen
+        import random
+        random.shuffle(all_next_round_teams)
+
+        matches_created = 0
+        for i in range(0, len(all_next_round_teams), 2):
+            if i + 1 < len(all_next_round_teams):
+                home_team = all_next_round_teams[i]
+                away_team = all_next_round_teams[i + 1]
+
+                cup_match_day = self.calculate_cup_match_day(next_round_number, self.total_rounds)
+                print(f"DEBUG: Creating match {home_team.name} vs {away_team.name} for match day {cup_match_day}")
+
+                cup_match = CupMatch(
+                    cup_id=self.id,
+                    home_team_id=home_team.id,
+                    away_team_id=away_team.id,
+                    round_name=next_round_name,
+                    round_number=next_round_number,
+                    cup_match_day=cup_match_day
+                )
+                db.session.add(cup_match)
+                matches_created += 1
+
+        # Aktualisiere Cup-Status
+        self.current_round = next_round_name
+        self.current_round_number = next_round_number
+
+        print(f"DEBUG: Cup {self.name} - Advanced to round {next_round_number}, created {matches_created} matches")
+
+        db.session.commit()
+        return True
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'cup_type': self.cup_type,
+            'season_id': self.season_id,
+            'bundesland': self.bundesland,
+            'landkreis': self.landkreis,
+            'is_active': self.is_active,
+            'current_round': self.current_round,
+            'current_round_number': self.current_round_number,
+            'total_rounds': self.total_rounds,
+            'eligible_teams_count': len(self.get_eligible_teams()),
+            'matches_count': len(self.cup_matches)
+        }
+
+
+class CupMatch(db.Model):
+    """Pokalspiele."""
+    id = db.Column(db.Integer, primary_key=True)
+    cup_id = db.Column(db.Integer, db.ForeignKey('cup.id'), nullable=False)
+    home_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+    away_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)  # NULL für Freilose
+
+    # Spielinformationen
+    round_name = db.Column(db.String(50), nullable=False)  # "1. Runde", "Achtelfinale", etc.
+    round_number = db.Column(db.Integer, nullable=False)  # 1, 2, 3, etc.
+    cup_match_day = db.Column(db.Integer)  # Pokalspieltag (zwischen normalen Ligaspieltagen verteilt)
+    match_date = db.Column(db.Date)
+    is_played = db.Column(db.Boolean, default=False)
+
+    # Ergebnisse
+    home_score = db.Column(db.Integer)
+    away_score = db.Column(db.Integer)
+    home_set_points = db.Column(db.Float)
+    away_set_points = db.Column(db.Float)
+    winner_team_id = db.Column(db.Integer, db.ForeignKey('team.id'))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    cup = db.relationship('Cup', back_populates='cup_matches')
+    home_team = db.relationship('Team', foreign_keys=[home_team_id], backref='home_cup_matches')
+    away_team = db.relationship('Team', foreign_keys=[away_team_id], backref='away_cup_matches')
+    winner_team = db.relationship('Team', foreign_keys=[winner_team_id], backref='won_cup_matches')
+
+    def to_dict(self):
+        # Handle bye matches (away_team_id is None)
+        away_team_data = None
+        if self.away_team_id and self.away_team:
+            away_team_data = {
+                'id': self.away_team.id,
+                'name': self.away_team.name,
+                'club_name': self.away_team.club.name if self.away_team.club else None,
+                'league_level': self.away_team.league.level if self.away_team.league else None,
+                'emblem_url': f"/api/club-emblem/{self.away_team.club.verein_id}" if self.away_team.club and self.away_team.club.verein_id else None
+            }
+
+        return {
+            'id': self.id,
+            'cup_id': self.cup_id,
+            'home_team_id': self.home_team.id,
+            'away_team_id': self.away_team.id if self.away_team else None,
+            'home_team_name': self.home_team.name,
+            'away_team_name': self.away_team.name if self.away_team else None,
+            'home_team_league_level': self.home_team.league.level if self.home_team.league else None,
+            'away_team_league_level': self.away_team.league.level if self.away_team and self.away_team.league else None,
+            'home_team_emblem_url': f"/api/club-emblem/{self.home_team.club.verein_id}" if self.home_team.club and self.home_team.club.verein_id else None,
+            'away_team_emblem_url': f"/api/club-emblem/{self.away_team.club.verein_id}" if self.away_team and self.away_team.club and self.away_team.club.verein_id else None,
+            'home_team': {
+                'id': self.home_team.id,
+                'name': self.home_team.name,
+                'club_name': self.home_team.club.name if self.home_team.club else None,
+                'league_level': self.home_team.league.level if self.home_team.league else None,
+                'emblem_url': f"/api/club-emblem/{self.home_team.club.verein_id}" if self.home_team.club and self.home_team.club.verein_id else None
+            },
+            'away_team': away_team_data,
+            'is_bye': self.away_team_id is None,  # Freilos-Flag
+            'round_name': self.round_name,
+            'round_number': self.round_number,
+            'cup_match_day': self.cup_match_day,
+            'match_date': self.match_date.isoformat() if self.match_date else None,
+            'is_played': self.is_played,
+            'home_score': self.home_score,
+            'away_score': self.away_score,
+            'home_set_points': self.home_set_points,
+            'away_set_points': self.away_set_points,
+            'winner_team_id': self.winner_team_id
+        }
+
+
+class LeagueHistory(db.Model):
+    """Speichert die Endtabellen vergangener Saisons für jede Liga."""
+    id = db.Column(db.Integer, primary_key=True)
+    league_name = db.Column(db.String(100), nullable=False)  # Name der Liga
+    league_level = db.Column(db.Integer, nullable=False)  # Level der Liga
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
+    season_name = db.Column(db.String(100), nullable=False)  # Name der Saison für einfachere Abfragen
+
+    # Team-Informationen
+    team_id = db.Column(db.Integer, nullable=False)  # Original Team ID
+    team_name = db.Column(db.String(100), nullable=False)
+    club_name = db.Column(db.String(100))
+    club_id = db.Column(db.Integer)
+    verein_id = db.Column(db.Integer)  # Für Wappen
+
+    # Tabellenplatz und Statistiken
+    position = db.Column(db.Integer, nullable=False)
+    games_played = db.Column(db.Integer, default=0)
+    wins = db.Column(db.Integer, default=0)
+    draws = db.Column(db.Integer, default=0)
+    losses = db.Column(db.Integer, default=0)
+    table_points = db.Column(db.Integer, default=0)  # Tabellenpunkte
+    match_points_for = db.Column(db.Integer, default=0)  # Mannschaftspunkte für
+    match_points_against = db.Column(db.Integer, default=0)  # Mannschaftspunkte gegen
+    pins_for = db.Column(db.Integer, default=0)  # Holz für
+    pins_against = db.Column(db.Integer, default=0)  # Holz gegen
+    avg_home_score = db.Column(db.Float, default=0.0)  # Durchschnitt Heim
+    avg_away_score = db.Column(db.Float, default=0.0)  # Durchschnitt Auswärts
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    season = db.relationship('Season', backref='league_histories')
+
+    def to_dict(self):
+        emblem_url = None
+        if self.verein_id:
+            emblem_url = f"/api/club-emblem/{self.verein_id}"
+
+        return {
+            'id': self.id,
+            'league_name': self.league_name,
+            'league_level': self.league_level,
+            'season_id': self.season_id,
+            'season_name': self.season_name,
+            'team_id': self.team_id,
+            'team_name': self.team_name,
+            'club_name': self.club_name,
+            'club_id': self.club_id,
+            'verein_id': self.verein_id,
+            'emblem_url': emblem_url,
+            'position': self.position,
+            'games_played': self.games_played,
+            'wins': self.wins,
+            'draws': self.draws,
+            'losses': self.losses,
+            'table_points': self.table_points,
+            'match_points_for': self.match_points_for,
+            'match_points_against': self.match_points_against,
+            'pins_for': self.pins_for,
+            'pins_against': self.pins_against,
+            'avg_home_score': self.avg_home_score,
+            'avg_away_score': self.avg_away_score
         }
 
 class Finance(db.Model):

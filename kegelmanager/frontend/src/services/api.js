@@ -61,6 +61,16 @@ export const getTeam = async (id) => {
   }
 };
 
+export const getTeamHistory = async (id) => {
+  try {
+    const response = await api.get(`/teams/${id}/history`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching team history for team ${id}:`, error);
+    throw error;
+  }
+};
+
 export const updateTeam = async (id, teamData) => {
   try {
     const response = await api.patch(`/teams/${id}`, teamData);
@@ -92,6 +102,16 @@ export const getPlayer = async (id) => {
   }
 };
 
+export const getPlayerHistory = async (id) => {
+  try {
+    const response = await api.get(`/players/${id}/history`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching player history for ${id}:`, error);
+    throw error;
+  }
+};
+
 export const updatePlayer = async (id, playerData) => {
   try {
     const response = await api.patch(`/players/${id}`, playerData);
@@ -119,6 +139,26 @@ export const getLeague = async (id) => {
     return response.data;
   } catch (error) {
     console.error(`Error fetching league ${id}:`, error);
+    throw error;
+  }
+};
+
+export const getLeagueHistory = async (id) => {
+  try {
+    const response = await api.get(`/leagues/${id}/history`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching league history for league ${id}:`, error);
+    throw error;
+  }
+};
+
+export const getLeagueHistorySeason = async (leagueId, seasonId) => {
+  try {
+    const response = await api.get(`/leagues/${leagueId}/history/${seasonId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching league history for league ${leagueId} and season ${seasonId}:`, error);
     throw error;
   }
 };

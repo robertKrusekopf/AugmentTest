@@ -1,0 +1,329 @@
+.cup-match-days-page {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 30px;
+}
+
+.page-title {
+  margin: 0 0 10px 0;
+  color: var(--text-color);
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+.page-description {
+  margin: 0;
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.2rem;
+  color: #666;
+}
+
+.error-message {
+  background-color: #fee;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  color: #c33;
+  text-align: center;
+}
+
+.error-message p {
+  margin: 0 0 15px 0;
+}
+
+.no-match-days {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+}
+
+.no-match-days-content {
+  text-align: center;
+  padding: 40px;
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  max-width: 500px;
+}
+
+.no-match-days-content h3 {
+  margin: 0 0 15px 0;
+  color: var(--text-color);
+  font-size: 1.5rem;
+}
+
+.no-match-days-content p {
+  margin: 0 0 25px 0;
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.match-days-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.match-day-card {
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  padding: 25px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.match-day-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.match-day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.match-day-title {
+  margin: 0;
+  color: var(--primary-color);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.match-day-stats {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.stat {
+  color: #666;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.progress-indicator {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.progress-indicator.complete {
+  background-color: #e8f5e8;
+  color: #2e7d32;
+}
+
+.progress-indicator.incomplete {
+  background-color: #fff3e0;
+  color: #f57c00;
+}
+
+.cups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.cup-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 20px;
+  align-items: center;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid var(--primary-color);
+}
+
+.cup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cup-name {
+  font-weight: 600;
+  color: var(--text-color);
+  font-size: 1.1rem;
+}
+
+.cup-round {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.cup-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+}
+
+.matches-count {
+  color: #666;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.cup-type {
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.cup-type.dkbc {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.cup-type.landespokal {
+  background-color: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.cup-type.kreispokal {
+  background-color: #e8f5e8;
+  color: #388e3c;
+}
+
+.progress-bar {
+  height: 6px;
+  background-color: #f0f0f0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: var(--primary-color);
+  transition: width 0.3s ease;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #1565c0;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background-color: #f5f5f5;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background-color: #e0e0e0;
+  transform: translateY(-1px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .cup-match-days-page {
+    padding: 15px;
+  }
+  
+  .page-title {
+    font-size: 1.5rem;
+  }
+  
+  .page-description {
+    font-size: 1rem;
+  }
+  
+  .match-day-card {
+    padding: 20px;
+  }
+  
+  .match-day-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .match-day-stats {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .cup-item {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  
+  .cup-stats {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .cup-match-days-page {
+    padding: 10px;
+  }
+  
+  .no-match-days-content {
+    padding: 30px 20px;
+  }
+  
+  .match-day-card {
+    padding: 15px;
+  }
+  
+  .match-day-title {
+    font-size: 1.3rem;
+  }
+  
+  .cup-item {
+    padding: 12px;
+  }
+  
+  .btn {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+  }
+}

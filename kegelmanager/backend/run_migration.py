@@ -1,57 +1,49 @@
 """
-Script to run database migrations.
+Script to run the team status fields migration through Flask app context.
 """
-import os
-import sys
-import importlib.util
 
-def run_migration(migration_file, db_path):
-    """
-    Run a specific migration script.
-    
-    Args:
-        migration_file: Path to the migration script
-        db_path: Path to the database file
-    """
-    # Import the migration module dynamically
-    spec = importlib.util.spec_from_file_location("migration", migration_file)
-    migration = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(migration)
-    
-    # Run the migration
-    return migration.run_migration(db_path)
+from app import app, db
+from sqlalchemy import text
+
+def add_team_status_fields():
+    """Add new fields to Team table for tracking previous season status."""
+    with app.app_context():
+        try:
+            # Check if columns already exist
+            inspector = db.inspect(db.engine)
+            columns = [col['name'] for col in inspector.get_columns('team')]
+            
+            if 'previous_season_status' in columns:
+                print("Team status fields already exist in database")
+                return
+            
+            # Add the new columns to the Team table
+            with db.engine.connect() as conn:
+                # Add previous_season_status column
+                conn.execute(text("""
+                    ALTER TABLE team 
+                    ADD COLUMN previous_season_status VARCHAR(20)
+                """))
+                
+                # Add previous_season_position column
+                conn.execute(text("""
+                    ALTER TABLE team 
+                    ADD COLUMN previous_season_position INTEGER
+                """))
+                
+                # Add previous_season_league_level column
+                conn.execute(text("""
+                    ALTER TABLE team 
+                    ADD COLUMN previous_season_league_level INTEGER
+                """))
+                
+                conn.commit()
+                
+            print("Successfully added team status fields to database")
+            
+        except Exception as e:
+            print(f"Error adding team status fields: {e}")
+            raise e
 
 if __name__ == "__main__":
-    # Get the migration file and database path from command line arguments
-    if len(sys.argv) < 2:
-        print("Usage: python run_migration.py <migration_file> [db_path]")
-        sys.exit(1)
-    
-    migration_file = sys.argv[1]
-    
-    # Use provided database path or default
-    if len(sys.argv) > 2:
-        db_path = sys.argv[2]
-    else:
-        # Default database path
-        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kegelmanager.db")
-    
-    # Check if the migration file exists
-    if not os.path.exists(migration_file):
-        print(f"Migration file not found: {migration_file}")
-        sys.exit(1)
-    
-    # Check if the database file exists
-    if not os.path.exists(db_path):
-        print(f"Database file not found: {db_path}")
-        sys.exit(1)
-    
-    # Run the migration
-    success = run_migration(migration_file, db_path)
-    
-    if success:
-        print("Migration completed successfully.")
-        sys.exit(0)
-    else:
-        print("Migration failed.")
-        sys.exit(1)
+    add_team_status_fields()

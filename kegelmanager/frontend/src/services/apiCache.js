@@ -124,8 +124,20 @@ export const getLeaguesOptimized = (useCache = true) =>
 export const getPlayersOptimized = (useCache = true) => 
   cachedRequest('/players', {}, useCache);
 
-export const getMatchesOptimized = (useCache = true) => 
+export const getMatchesOptimized = (useCache = true) =>
   cachedRequest('/matches', {}, useCache);
+
+export const getCupsOptimized = (useCache = true) =>
+  cachedRequest('/cups', {}, useCache);
+
+export const getCupsByTypeOptimized = (cupType, useCache = true) =>
+  cachedRequest(`/cups/by-type/${cupType}`, {}, useCache);
+
+export const getCupDetailOptimized = (cupId, useCache = true) =>
+  cachedRequest(`/cups/${cupId}`, {}, useCache);
+
+export const getCupMatchDaysOptimized = (useCache = true) =>
+  cachedRequest('/cups/match-days', {}, useCache);
 
 // Parallel data loading for common combinations
 export const loadDashboardData = async () => {
@@ -188,6 +200,7 @@ export const invalidateAfterSimulation = () => {
   invalidateCache('/teams');
   invalidateCache('/leagues');
   invalidateCache('/players');
+  invalidateCache('/cups'); // Invalidate cup data after simulation
 };
 
 export const invalidateAfterPlayerUpdate = () => {
@@ -198,6 +211,11 @@ export const invalidateAfterPlayerUpdate = () => {
 export const invalidateAfterClubUpdate = () => {
   invalidateCache('/clubs');
   invalidateCache('/teams');
+};
+
+export const invalidateAfterSeasonTransition = () => {
+  // Clear all cache after season transition since leagues, teams, and matches change
+  clearAllCache();
 };
 
 // Export the cache instance for direct access if needed

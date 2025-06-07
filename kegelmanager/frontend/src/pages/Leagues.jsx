@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
-import { getLeague } from '../services/api';
+import { getLeague, getLeagueHistory } from '../services/api';
 import './Leagues.css';
 
 const Leagues = () => {
@@ -12,6 +12,9 @@ const Leagues = () => {
   const [loadingLeague, setLoadingLeague] = useState(false);
   const [activeTab, setActiveTab] = useState('standings');
   const [selectedStat, setSelectedStat] = useState('avg_score'); // Default statistic is average score
+  const [leagueHistory, setLeagueHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [selectedHistorySeason, setSelectedHistorySeason] = useState('');
 
   // Lade Daten aus dem Context (mit Caching)
   useEffect(() => {
@@ -106,13 +109,42 @@ const Leagues = () => {
       });
   };
 
+  // Funktion zum Laden der Liga-Historie
+  const loadLeagueHistory = async (leagueId) => {
+    if (!leagueId) return;
+
+    console.log('Loading league history for league ID:', leagueId);
+    setLoadingHistory(true);
+    try {
+      const historyData = await getLeagueHistory(leagueId);
+      console.log('League history data received:', historyData);
+      setLeagueHistory(historyData);
+
+      // Setze die erste verfügbare Saison als Standard
+      if (historyData.seasons && historyData.seasons.length > 0) {
+        console.log('Setting default season:', historyData.seasons[0].season_id);
+        setSelectedHistorySeason(historyData.seasons[0].season_id.toString());
+      } else {
+        console.log('No seasons found in history data');
+      }
+    } catch (error) {
+      console.error('Fehler beim Laden der Liga-Historie:', error);
+      setLeagueHistory(null);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   // Handler für die Änderung der ausgewählten Liga
   const handleLeagueChange = (e) => {
     const leagueId = parseInt(e.target.value);
     if (leagueId) {
       loadLeagueDetails(leagueId);
+      // Lade auch die Historie für diese Liga
+      loadLeagueHistory(leagueId);
     } else {
       setSelectedLeague(null);
+      setLeagueHistory(null);
     }
   };
 
@@ -183,6 +215,12 @@ const Leagues = () => {
             >
               Teams
             </div>
+            <div
+              className={`tab ${activeTab === 'history' ? 'active' : ''}`}
+              onClick={() => setActiveTab('history')}
+            >
+              Historie
+            </div>
           </div>
 
           <div className="league-content">
@@ -215,7 +253,7 @@ const Leagues = () => {
                               {team.emblem_url ? (
                                 <img
                                   src={team.emblem_url}
-                                  alt={`${team.team} Wappen`}
+                                  alt={`${team.team_name_base || team.team} Wappen`}
                                   className="club-emblem-small"
                                   onError={(e) => {
                                     console.log(`Fehler beim Laden des Emblems für ${team.team}:`, e);
@@ -493,6 +531,112 @@ const Leagues = () => {
                     </Link>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'history' && (
+              <div className="history-tab">
+                {loadingHistory ? (
+                  <div className="loading">Lade Historie...</div>
+                ) : leagueHistory && leagueHistory.seasons && leagueHistory.seasons.length > 0 ? (
+                  <div className="history-content">
+                    <div className="history-controls">
+                      <label htmlFor="season-select">Saison auswählen:</label>
+                      <select
+                        id="season-select"
+                        value={selectedHistorySeason}
+                        onChange={(e) => setSelectedHistorySeason(e.target.value)}
+                        className="season-select"
+                      >
+                        {leagueHistory.seasons.map(season => (
+                          <option key={season.season_id} value={season.season_id}>
+                            {season.season_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {selectedHistorySeason && (
+                      <div className="historical-standings">
+                        {(() => {
+                          const selectedSeason = leagueHistory.seasons.find(
+                            s => s.season_id.toString() === selectedHistorySeason
+                          );
+
+                          if (!selectedSeason) return null;
+
+                          return (
+                            <div>
+                              <h3>Endtabelle {selectedSeason.season_name}</h3>
+                              <table className="table standings-table">
+                                <thead>
+                                  <tr>
+                                    <th>Pos</th>
+                                    <th>Team</th>
+                                    <th>Sp</th>
+                                    <th>S</th>
+                                    <th>U</th>
+                                    <th>N</th>
+                                    <th>Pkt</th>
+                                    <th>Ø Heim</th>
+                                    <th>Ø Ausw</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {selectedSeason.standings.map(team => (
+                                    <tr key={team.position} className={
+                                      team.position <= 2 ? 'promotion-zone' :
+                                      team.position >= selectedSeason.standings.length - 1 ? 'relegation-zone' : ''
+                                    }>
+                                      <td>{team.position}</td>
+                                      <td>
+                                        <div className="club-row-info">
+                                          {team.emblem_url ? (
+                                            <img
+                                              src={team.emblem_url}
+                                              alt={`${team.team_name} Wappen`}
+                                              className="club-emblem-small"
+                                              onError={(e) => {
+                                                e.target.style.display = 'none';
+                                              }}
+                                            />
+                                          ) : null}
+                                          <span>{team.team_name}</span>
+                                        </div>
+                                      </td>
+                                      <td>{team.games_played}</td>
+                                      <td>{team.wins}</td>
+                                      <td>{team.draws}</td>
+                                      <td>{team.losses}</td>
+                                      <td><strong>{team.table_points}</strong></td>
+                                      <td>{team.avg_home_score ? team.avg_home_score.toFixed(1) : '0.0'}</td>
+                                      <td>{team.avg_away_score ? team.avg_away_score.toFixed(1) : '0.0'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+
+                              <div className="standings-legend">
+                                <div className="legend-item promotion">
+                                  <div className="legend-color"></div>
+                                  <span>Aufstiegsplätze</span>
+                                </div>
+                                <div className="legend-item relegation">
+                                  <div className="legend-color"></div>
+                                  <span>Abstiegsplätze</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="no-history">
+                    <p>Keine historischen Daten verfügbar. Historische Tabellen werden nach dem ersten Saisonwechsel angezeigt.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>

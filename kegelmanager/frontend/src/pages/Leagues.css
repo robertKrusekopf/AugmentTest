@@ -436,6 +436,64 @@
   color: #5f6368;
 }
 
+/* History Tab Styles */
+.history-tab {
+  padding: 20px;
+}
+
+.history-content {
+  max-width: 100%;
+}
+
+.history-controls {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.history-controls label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.season-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  min-width: 200px;
+}
+
+.season-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.historical-standings {
+  margin-top: 20px;
+}
+
+.historical-standings h3 {
+  margin-bottom: 15px;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+}
+
+.no-history {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+}
+
+.no-history p {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
 /* Responsive Styles */
 @media (max-width: 768px) {
   .league-header {
@@ -488,6 +546,16 @@
   }
 
   .stat-select {
+    width: 100%;
+  }
+
+  .history-controls {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .season-select {
     width: 100%;
   }
 }

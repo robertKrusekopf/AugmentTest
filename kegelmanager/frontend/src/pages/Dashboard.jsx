@@ -249,7 +249,7 @@ const Dashboard = () => {
                         {team.emblem_url ? (
                           <img
                             src={team.emblem_url}
-                            alt={`${team.team} Wappen`}
+                            alt={`${team.team_name_base || team.team} Wappen`}
                             className="club-emblem-small"
                             onError={(e) => {
                               console.log(`Fehler beim Laden des Emblems für ${team.team}:`, e);

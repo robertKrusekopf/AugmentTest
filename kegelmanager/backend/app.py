@@ -1,6 +1,6 @@
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, abort
 from flask_cors import CORS
-from models import db, Player, Team, Club, League, Match, Season, Finance, UserLineup, LineupPosition, TransferOffer, TransferHistory
+from models import db, Player, Team, Club, League, Match, Season, Finance, UserLineup, LineupPosition, TransferOffer, TransferHistory, Cup, CupMatch
 import os
 import sys
 import subprocess
@@ -208,6 +208,66 @@ def update_team(team_id):
         "team": team.to_dict()
     })
 
+@app.route('/api/teams/<int:team_id>/history', methods=['GET'])
+def get_team_history(team_id):
+    """Get historical league positions for a team across all seasons."""
+    try:
+        from models import LeagueHistory, Season
+
+        # Verify team exists
+        team = Team.query.get_or_404(team_id)
+
+        # Check if LeagueHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'league_history' not in existing_tables:
+            return jsonify({
+                'team_name': team.name,
+                'club_name': team.club.name if team.club else 'Unbekannt',
+                'history': []
+            })
+
+        # Get historical data for this team
+        history_entries = LeagueHistory.query.filter_by(
+            team_id=team_id
+        ).order_by(LeagueHistory.season_id.desc()).all()
+
+        # Group by season and format data
+        history_data = []
+        for entry in history_entries:
+            history_data.append({
+                'season_name': entry.season_name,
+                'season_id': entry.season_id,
+                'league_name': entry.league_name,
+                'league_level': entry.league_level,
+                'position': entry.position,
+                'games_played': entry.games_played,
+                'wins': entry.wins,
+                'draws': entry.draws,
+                'losses': entry.losses,
+                'table_points': entry.table_points,
+                'match_points_for': entry.match_points_for,
+                'match_points_against': entry.match_points_against,
+                'pins_for': entry.pins_for,
+                'pins_against': entry.pins_against,
+                'avg_home_score': entry.avg_home_score,
+                'avg_away_score': entry.avg_away_score,
+                'emblem_url': f"/api/club-emblem/{entry.verein_id}" if entry.verein_id else None
+            })
+
+        return jsonify({
+            'team_name': team.name,
+            'club_name': team.club.name if team.club else 'Unbekannt',
+            'history': history_data
+        })
+
+    except Exception as e:
+        print(f"Error getting team history: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden der Team-Historie"}), 500
+
 # Player endpoints
 @app.route('/api/players', methods=['GET'])
 def get_players():
@@ -218,6 +278,219 @@ def get_players():
 def get_player(player_id):
     player = Player.query.get_or_404(player_id)
     return jsonify(player.to_dict())
+
+@app.route('/api/players/<int:player_id>/history', methods=['GET'])
+def get_player_history(player_id):
+    """Get historical team assignments and league positions for a player across all seasons."""
+    try:
+        from models import PlayerMatchPerformance, LeagueHistory, Season
+        from sqlalchemy import func, distinct
+
+        # Verify player exists
+        player = Player.query.get_or_404(player_id)
+
+        # Check if LeagueHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'league_history' not in existing_tables:
+            return jsonify({
+                'player_name': player.name,
+                'history': []
+            })
+
+        # Get all seasons where the player played
+        seasons_with_performances = db.session.query(
+            PlayerMatchPerformance.team_id,
+            Match.season_id,
+            func.count(PlayerMatchPerformance.id).label('appearances')
+        ).join(
+            Match, PlayerMatchPerformance.match_id == Match.id
+        ).filter(
+            PlayerMatchPerformance.player_id == player_id
+        ).group_by(
+            PlayerMatchPerformance.team_id,
+            Match.season_id
+        ).all()
+
+        history_data = []
+
+        for team_id, season_id, appearances in seasons_with_performances:
+            # Get team information
+            team = Team.query.get(team_id)
+            if not team:
+                continue
+
+            # Get season information
+            season = Season.query.get(season_id)
+            if not season:
+                continue
+
+            # Calculate player statistics for this team/season combination
+            player_performances = PlayerMatchPerformance.query.join(
+                Match, PlayerMatchPerformance.match_id == Match.id
+            ).filter(
+                PlayerMatchPerformance.player_id == player_id,
+                PlayerMatchPerformance.team_id == team_id,
+                Match.season_id == season_id
+            ).all()
+
+            # Calculate statistics
+            home_performances = [p for p in player_performances if p.is_home_team]
+            away_performances = [p for p in player_performances if not p.is_home_team]
+
+            # Calculate averages
+            avg_home_score = round(sum(p.total_score for p in home_performances) / len(home_performances), 1) if home_performances else 0
+            avg_away_score = round(sum(p.total_score for p in away_performances) / len(away_performances), 1) if away_performances else 0
+            avg_total_score = round(sum(p.total_score for p in player_performances) / len(player_performances), 1) if player_performances else 0
+
+            # Calculate error averages
+            avg_home_errors = round(sum(p.fehler_count for p in home_performances) / len(home_performances), 1) if home_performances else 0
+            avg_away_errors = round(sum(p.fehler_count for p in away_performances) / len(away_performances), 1) if away_performances else 0
+            avg_total_errors = round(sum(p.fehler_count for p in player_performances) / len(player_performances), 1) if player_performances else 0
+
+            # Calculate Volle and Räumer averages
+            avg_home_volle = round(sum(p.volle_score for p in home_performances) / len(home_performances), 1) if home_performances else 0
+            avg_away_volle = round(sum(p.volle_score for p in away_performances) / len(away_performances), 1) if away_performances else 0
+            avg_total_volle = round(sum(p.volle_score for p in player_performances) / len(player_performances), 1) if player_performances else 0
+
+            avg_home_raeumer = round(sum(p.raeumer_score for p in home_performances) / len(home_performances), 1) if home_performances else 0
+            avg_away_raeumer = round(sum(p.raeumer_score for p in away_performances) / len(away_performances), 1) if away_performances else 0
+            avg_total_raeumer = round(sum(p.raeumer_score for p in player_performances) / len(player_performances), 1) if player_performances else 0
+
+            # Get league history for this team and season
+            league_history = LeagueHistory.query.filter_by(
+                team_id=team_id,
+                season_id=season_id
+            ).first()
+
+            if league_history:
+                history_entry = {
+                    'season_id': season_id,
+                    'season_name': season.name,
+                    'team_id': team_id,
+                    'team_name': team.name,
+                    'club_name': team.club.name if team.club else 'Unbekannt',
+                    'league_name': league_history.league_name,
+                    'league_level': league_history.league_level,
+                    'final_position': league_history.position,
+                    'appearances': appearances,
+                    'games_played': league_history.games_played,
+                    'wins': league_history.wins,
+                    'draws': league_history.draws,
+                    'losses': league_history.losses,
+                    'table_points': league_history.table_points,
+                    # Player statistics
+                    'avg_home_score': avg_home_score,
+                    'avg_away_score': avg_away_score,
+                    'avg_total_score': avg_total_score,
+                    'avg_home_errors': avg_home_errors,
+                    'avg_away_errors': avg_away_errors,
+                    'avg_total_errors': avg_total_errors,
+                    'avg_home_volle': avg_home_volle,
+                    'avg_away_volle': avg_away_volle,
+                    'avg_total_volle': avg_total_volle,
+                    'avg_home_raeumer': avg_home_raeumer,
+                    'avg_away_raeumer': avg_away_raeumer,
+                    'avg_total_raeumer': avg_total_raeumer,
+                    'home_matches': len(home_performances),
+                    'away_matches': len(away_performances)
+                }
+            else:
+                # Fallback if no league history exists yet (current season)
+                history_entry = {
+                    'season_id': season_id,
+                    'season_name': season.name,
+                    'team_id': team_id,
+                    'team_name': team.name,
+                    'club_name': team.club.name if team.club else 'Unbekannt',
+                    'league_name': team.league.name if team.league else 'Unbekannt',
+                    'league_level': team.league.level if team.league else 0,
+                    'final_position': None,  # Current season, no final position yet
+                    'appearances': appearances,
+                    'games_played': None,
+                    'wins': None,
+                    'draws': None,
+                    'losses': None,
+                    'table_points': None,
+                    # Player statistics
+                    'avg_home_score': avg_home_score,
+                    'avg_away_score': avg_away_score,
+                    'avg_total_score': avg_total_score,
+                    'avg_home_errors': avg_home_errors,
+                    'avg_away_errors': avg_away_errors,
+                    'avg_total_errors': avg_total_errors,
+                    'avg_home_volle': avg_home_volle,
+                    'avg_away_volle': avg_away_volle,
+                    'avg_total_volle': avg_total_volle,
+                    'avg_home_raeumer': avg_home_raeumer,
+                    'avg_away_raeumer': avg_away_raeumer,
+                    'avg_total_raeumer': avg_total_raeumer,
+                    'home_matches': len(home_performances),
+                    'away_matches': len(away_performances)
+                }
+
+            history_data.append(history_entry)
+
+        # Sort by season (newest first), then by team name
+        history_data.sort(key=lambda x: (x['season_id'], x['team_name']), reverse=True)
+
+        # If no history data exists, create sample data for demonstration
+        if not history_data:
+            # Check if this is a demo request
+            demo_mode = request.args.get('demo', 'false').lower() == 'true'
+            if demo_mode:
+                history_data = [
+                    {
+                        'season_id': 1,
+                        'season_name': 'Season 2024',
+                        'team_id': 1,
+                        'team_name': 'FC Bayern München I',
+                        'club_name': 'FC Bayern München',
+                        'league_name': 'Bundesliga',
+                        'league_level': 1,
+                        'final_position': 2,
+                        'appearances': 18,
+                        'avg_home_score': 645.2,
+                        'avg_away_score': 612.8,
+                        'avg_total_score': 629.0,
+                        'avg_home_errors': 2.1,
+                        'avg_away_errors': 3.4,
+                        'avg_total_errors': 2.8,
+                        'home_matches': 9,
+                        'away_matches': 9
+                    },
+                    {
+                        'season_id': 1,
+                        'season_name': 'Season 2024',
+                        'team_id': 2,
+                        'team_name': 'FC Bayern München II',
+                        'club_name': 'FC Bayern München',
+                        'league_name': 'Regionalliga',
+                        'league_level': 4,
+                        'final_position': 1,
+                        'appearances': 4,
+                        'avg_home_score': 598.5,
+                        'avg_away_score': 587.2,
+                        'avg_total_score': 592.9,
+                        'avg_home_errors': 3.5,
+                        'avg_away_errors': 4.1,
+                        'avg_total_errors': 3.8,
+                        'home_matches': 2,
+                        'away_matches': 2
+                    }
+                ]
+
+        return jsonify({
+            'player_name': player.name,
+            'history': history_data
+        })
+
+    except Exception as e:
+        print(f"Error getting player history: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden der Spieler-Historie"}), 500
 
 @app.route('/api/players/<int:player_id>', methods=['PATCH'])
 def update_player(player_id):
@@ -296,13 +569,139 @@ def update_player(player_id):
 # League endpoints
 @app.route('/api/leagues', methods=['GET'])
 def get_leagues():
-    leagues = League.query.all()
+    # Get current season
+    current_season = Season.query.filter_by(is_current=True).first()
+    if not current_season:
+        return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+    # Filter leagues by current season
+    leagues = League.query.filter_by(season_id=current_season.id).all()
     return jsonify([league.to_dict() for league in leagues])
 
 @app.route('/api/leagues/<int:league_id>', methods=['GET'])
 def get_league(league_id):
     league = League.query.get_or_404(league_id)
     return jsonify(league.to_dict())
+
+@app.route('/api/leagues/<int:league_id>/history', methods=['GET'])
+def get_league_history(league_id):
+    """Get historical standings for a league across all seasons."""
+    try:
+        from models import LeagueHistory, Season
+
+        print(f"Getting history for league ID: {league_id}")
+
+        # Get the current league to get its name and level
+        current_league = League.query.get_or_404(league_id)
+        print(f"League found: {current_league.name} (Level {current_league.level})")
+
+        # Check if LeagueHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'league_history' not in existing_tables:
+            print("LeagueHistory table does not exist")
+            # Return empty history if table doesn't exist yet
+            return jsonify({
+                'league_name': current_league.name,
+                'league_level': current_league.level,
+                'seasons': []
+            })
+
+        print("LeagueHistory table exists, querying for data...")
+
+        # Find all historical data for leagues with the same name and level
+        # This handles the case where league IDs change between seasons
+        history_entries = LeagueHistory.query.filter_by(
+            league_name=current_league.name,
+            league_level=current_league.level
+        ).order_by(LeagueHistory.season_id.desc()).all()
+
+        print(f"Found {len(history_entries)} history entries")
+
+        # Group by season
+        seasons_data = {}
+        for entry in history_entries:
+            season_id = entry.season_id
+            if season_id not in seasons_data:
+                seasons_data[season_id] = {
+                    'season_id': season_id,
+                    'season_name': entry.season_name,
+                    'standings': []
+                }
+            seasons_data[season_id]['standings'].append(entry.to_dict())
+
+        print(f"Grouped into {len(seasons_data)} seasons")
+
+        # Sort standings within each season by position
+        for season_data in seasons_data.values():
+            season_data['standings'].sort(key=lambda x: x['position'])
+
+        # Convert to list and sort by season (newest first)
+        seasons_list = list(seasons_data.values())
+        seasons_list.sort(key=lambda x: x['season_id'], reverse=True)
+
+        result = {
+            'league_name': current_league.name,
+            'league_level': current_league.level,
+            'seasons': seasons_list
+        }
+
+        print(f"Returning result with {len(seasons_list)} seasons")
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"Error getting league history: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty history on error
+        try:
+            current_league = League.query.get_or_404(league_id)
+            return jsonify({
+                'league_name': current_league.name,
+                'league_level': current_league.level,
+                'seasons': []
+            })
+        except:
+            return jsonify({"error": "League not found"}), 404
+
+@app.route('/api/leagues/<int:league_id>/history/<int:season_id>', methods=['GET'])
+def get_league_history_season(league_id, season_id):
+    """Get historical standings for a specific league and season."""
+    try:
+        from models import LeagueHistory
+
+        # Get the current league to get its name and level
+        current_league = League.query.get_or_404(league_id)
+
+        # Check if LeagueHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'league_history' not in existing_tables:
+            return jsonify({"error": "Keine historischen Daten verfügbar"}), 404
+
+        # Get historical data for this specific season
+        history_entries = LeagueHistory.query.filter_by(
+            league_name=current_league.name,
+            league_level=current_league.level,
+            season_id=season_id
+        ).order_by(LeagueHistory.position).all()
+
+        if not history_entries:
+            return jsonify({"error": "Keine historischen Daten für diese Liga und Saison gefunden"}), 404
+
+        return jsonify({
+            'league_name': current_league.name,
+            'league_level': current_league.level,
+            'season_id': season_id,
+            'season_name': history_entries[0].season_name,
+            'standings': [entry.to_dict() for entry in history_entries]
+        })
+
+    except Exception as e:
+        print(f"Error getting league history for season: {e}")
+        return jsonify({"error": "Fehler beim Laden der historischen Daten"}), 500
 
 # Match endpoints
 @app.route('/api/matches', methods=['GET'])
@@ -312,8 +711,249 @@ def get_matches():
 
 @app.route('/api/matches/<int:match_id>', methods=['GET'])
 def get_match(match_id):
-    match = Match.query.get_or_404(match_id)
-    return jsonify(match.to_dict())
+    # First try to find a regular league match
+    match = Match.query.get(match_id)
+    if match:
+        return jsonify(match.to_dict())
+
+    # If not found, try to find a cup match
+    cup_match = CupMatch.query.get(match_id)
+    if cup_match:
+        # Convert CupMatch to Match-like format for compatibility
+        cup_match_data = cup_match.to_dict()
+
+        # Add additional fields that MatchDetail expects
+        cup_match_data.update({
+            'league_id': None,  # Cup matches don't have a league
+            'league_name': f"{cup_match.cup.name} - {cup_match.round_name}",
+            'match_day': cup_match.cup_match_day,
+            'date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+            'venue': cup_match.home_team.club.name if cup_match.home_team and cup_match.home_team.club else 'Unbekannt',
+            'attendance': 0,  # Cup matches don't track attendance yet
+            'referee': 'Unbekannt',  # Cup matches don't track referee yet
+            'round': cup_match.cup_match_day or 0,
+            'performances': []  # Cup matches don't have detailed performances yet
+        })
+
+        return jsonify(cup_match_data)
+
+    # If neither found, return 404
+    abort(404)
+
+# Helper function for auto-initialization
+def auto_initialize_cups(season_id):
+    """Automatically initialize cups and generate fixtures for a season."""
+    from models import Cup, League
+
+    created_cups = []
+
+    # Create DKBC-Pokal (for leagues without bundesland and landkreis)
+    dkbc_cup = Cup(
+        name="DKBC-Pokal",
+        cup_type="DKBC",
+        season_id=season_id
+    )
+    db.session.add(dkbc_cup)
+    created_cups.append(dkbc_cup)
+
+    # Get all unique bundesland values (excluding None and empty strings)
+    bundeslaender = db.session.query(League.bundesland).filter(
+        League.season_id == season_id,
+        League.bundesland.isnot(None),
+        League.bundesland != ''
+    ).distinct().all()
+
+    # Create Landespokal for each Bundesland
+    for (bundesland,) in bundeslaender:
+        landespokal = Cup(
+            name=f"{bundesland}-Pokal",
+            cup_type="Landespokal",
+            season_id=season_id,
+            bundesland=bundesland
+        )
+        db.session.add(landespokal)
+        created_cups.append(landespokal)
+
+    # Get all unique landkreis values (excluding None and empty strings)
+    landkreise = db.session.query(League.landkreis).filter(
+        League.season_id == season_id,
+        League.landkreis.isnot(None),
+        League.landkreis != ''
+    ).distinct().all()
+
+    # Create Kreispokal for each Landkreis
+    for (landkreis,) in landkreise:
+        # Get the bundesland for this landkreis
+        league_with_landkreis = League.query.filter_by(
+            season_id=season_id,
+            landkreis=landkreis
+        ).first()
+
+        if league_with_landkreis:
+            kreispokal = Cup(
+                name=f"Landkreis {landkreis}-Pokal",
+                cup_type="Kreispokal",
+                season_id=season_id,
+                bundesland=league_with_landkreis.bundesland,
+                landkreis=landkreis
+            )
+            db.session.add(kreispokal)
+            created_cups.append(kreispokal)
+
+    db.session.commit()
+
+    # Auto-generate fixtures for all created cups
+    for cup in created_cups:
+        eligible_teams = cup.get_eligible_teams()
+        if len(eligible_teams) >= 2:
+            try:
+                cup.generate_cup_fixtures()
+                print(f"Generated fixtures for {cup.name} with {len(eligible_teams)} teams")
+            except Exception as e:
+                print(f"Error generating fixtures for {cup.name}: {e}")
+
+    print(f"Auto-initialized {len(created_cups)} cups for season {season_id}")
+
+# Cup endpoints
+@app.route('/api/cups', methods=['GET'])
+def get_cups():
+    """Get all cups for the current season."""
+    # Get current season
+    current_season = Season.query.filter_by(is_current=True).first()
+    if not current_season:
+        return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+    # Filter cups by current season
+    cups = Cup.query.filter_by(season_id=current_season.id).all()
+    return jsonify([cup.to_dict() for cup in cups])
+
+@app.route('/api/cups/<int:cup_id>', methods=['GET'])
+def get_cup(cup_id):
+    """Get detailed information about a specific cup."""
+    cup = Cup.query.get_or_404(cup_id)
+    cup_data = cup.to_dict()
+
+    # Add eligible teams
+    eligible_teams = cup.get_eligible_teams()
+    cup_data['eligible_teams'] = [
+        {
+            'id': team.id,
+            'name': team.name,
+            'club_name': team.club.name if team.club else None,
+            'league_name': team.league.name if team.league else None,
+            'emblem_url': f"/api/club-emblem/{team.club.verein_id}" if team.club and team.club.verein_id else None
+        }
+        for team in eligible_teams
+    ]
+
+    # Add cup matches
+    cup_matches = CupMatch.query.filter_by(cup_id=cup_id).order_by(CupMatch.round_number, CupMatch.id).all()
+    cup_data['matches'] = [match.to_dict() for match in cup_matches]
+
+    return jsonify(cup_data)
+
+@app.route('/api/cups/by-type/<cup_type>', methods=['GET'])
+def get_cups_by_type(cup_type):
+    """Get all cups of a specific type (DKBC, Landespokal, Kreispokal)."""
+    # Get current season
+    current_season = Season.query.filter_by(is_current=True).first()
+    if not current_season:
+        return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+    # Validate cup type
+    valid_types = ['DKBC', 'Landespokal', 'Kreispokal']
+    if cup_type not in valid_types:
+        return jsonify({"error": f"Ungültiger Pokaltyp. Erlaubt: {', '.join(valid_types)}"}), 400
+
+    # Filter cups by type and current season
+    cups = Cup.query.filter_by(season_id=current_season.id, cup_type=cup_type).all()
+    return jsonify([cup.to_dict() for cup in cups])
+
+
+
+@app.route('/api/cups/<int:cup_id>/advance-round', methods=['POST'])
+def advance_cup_round(cup_id):
+    """Advance cup to next round based on match results."""
+    cup = Cup.query.get_or_404(cup_id)
+
+    try:
+        success = cup.advance_to_next_round()
+        if success:
+            if cup.is_active:
+                return jsonify({
+                    "success": True,
+                    "message": f"Erfolgreich zur nächsten Runde aufgestiegen: {cup.current_round}",
+                    "current_round": cup.current_round,
+                    "current_round_number": cup.current_round_number,
+                    "is_active": cup.is_active
+                })
+            else:
+                return jsonify({
+                    "success": True,
+                    "message": f"Pokal {cup.name} ist beendet!",
+                    "current_round": cup.current_round,
+                    "current_round_number": cup.current_round_number,
+                    "is_active": cup.is_active
+                })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Nicht alle Spiele der aktuellen Runde wurden gespielt"
+            })
+    except Exception as e:
+        return jsonify({"error": f"Fehler beim Aufstieg zur nächsten Runde: {str(e)}"}), 500
+
+@app.route('/api/cups/match-days', methods=['GET'])
+def get_cup_match_days():
+    """Get all cup match days for the current season."""
+    # Get current season
+    current_season = Season.query.filter_by(is_current=True).first()
+    if not current_season:
+        return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+
+
+    # Get all cup matches with their match days
+    cup_matches = db.session.query(
+        CupMatch.cup_match_day,
+        Cup.name.label('cup_name'),
+        Cup.cup_type,
+        CupMatch.round_name,
+        db.func.count(CupMatch.id).label('matches_count'),
+        db.func.sum(db.case([(CupMatch.is_played == True, 1)], else_=0)).label('played_count')
+    ).join(Cup).filter(
+        Cup.season_id == current_season.id,
+        CupMatch.cup_match_day.isnot(None)
+    ).group_by(
+        CupMatch.cup_match_day,
+        Cup.name,
+        Cup.cup_type,
+        CupMatch.round_name
+    ).order_by(CupMatch.cup_match_day).all()
+
+    # Group by match day
+    match_days = {}
+    for match in cup_matches:
+        match_day = match.cup_match_day
+        if match_day not in match_days:
+            match_days[match_day] = {
+                'match_day': match_day,
+                'cups': [],
+                'total_matches': 0,
+                'total_played': 0
+            }
+
+        match_days[match_day]['cups'].append({
+            'name': match.cup_name,
+            'type': match.cup_type,
+            'round': match.round_name,
+            'matches': match.matches_count,
+            'played': match.played_count
+        })
+        match_days[match_day]['total_matches'] += match.matches_count
+        match_days[match_day]['total_played'] += match.played_count
+
+    return jsonify(list(match_days.values()))
 
 # Season endpoints
 @app.route('/api/seasons', methods=['GET'])
@@ -386,11 +1026,59 @@ def get_season_status():
         if not current_season:
             return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
 
-        # Check if all matches in the season are played
-        total_matches = Match.query.filter_by(season_id=current_season.id).count()
-        played_matches = Match.query.filter_by(season_id=current_season.id, is_played=True).count()
+        # Check if all matches in the season are played (both league and cup matches)
+        total_league_matches = Match.query.filter_by(season_id=current_season.id).count()
+        played_league_matches = Match.query.filter_by(season_id=current_season.id, is_played=True).count()
+
+        # Check cup matches
+        from models import CupMatch, Cup
+        total_cup_matches = db.session.query(CupMatch).join(Cup).filter(
+            Cup.season_id == current_season.id
+        ).count()
+        played_cup_matches = db.session.query(CupMatch).join(Cup).filter(
+            Cup.season_id == current_season.id,
+            CupMatch.is_played == True
+        ).count()
+
+        # Total matches = league matches + cup matches
+        total_matches = total_league_matches + total_cup_matches
+        played_matches = played_league_matches + played_cup_matches
+
+        # Additional debug: Check matches without match_day
+        matches_without_match_day = Match.query.filter_by(season_id=current_season.id).filter(Match.match_day.is_(None)).count()
+        unplayed_league_matches = Match.query.filter_by(season_id=current_season.id, is_played=False).count()
+        unplayed_cup_matches = db.session.query(CupMatch).join(Cup).filter(
+            Cup.season_id == current_season.id,
+            CupMatch.is_played == False
+        ).count()
+        unplayed_matches = unplayed_league_matches + unplayed_cup_matches
 
         is_completed = total_matches > 0 and total_matches == played_matches
+
+        # Debug logging
+        print(f"DEBUG: Season status check for {current_season.name} (ID: {current_season.id})")
+        print(f"DEBUG: League matches: {played_league_matches}/{total_league_matches} played")
+        print(f"DEBUG: Cup matches: {played_cup_matches}/{total_cup_matches} played")
+        print(f"DEBUG: Total matches: {played_matches}/{total_matches} played")
+        print(f"DEBUG: Unplayed league matches: {unplayed_league_matches}")
+        print(f"DEBUG: Unplayed cup matches: {unplayed_cup_matches}")
+        print(f"DEBUG: Matches without match_day: {matches_without_match_day}")
+        print(f"DEBUG: Season completed: {is_completed}")
+
+        # Get some sample unplayed matches for debugging
+        sample_unplayed_league = Match.query.filter_by(season_id=current_season.id, is_played=False).limit(3).all()
+        sample_unplayed_cup = db.session.query(CupMatch).join(Cup).filter(
+            Cup.season_id == current_season.id,
+            CupMatch.is_played == False
+        ).limit(3).all()
+
+        print(f"DEBUG: Sample unplayed league matches:")
+        for match in sample_unplayed_league:
+            print(f"  Match {match.id}: {match.home_team.name} vs {match.away_team.name}, match_day: {match.match_day}, league: {match.league.name}")
+
+        print(f"DEBUG: Sample unplayed cup matches:")
+        for match in sample_unplayed_cup:
+            print(f"  Cup Match {match.id}: {match.home_team.name} vs {match.away_team.name}, cup_match_day: {match.cup_match_day}, round: {match.round_name}")
 
         return jsonify({
             "season_id": current_season.id,
@@ -398,6 +1086,18 @@ def get_season_status():
             "is_completed": is_completed,
             "total_matches": total_matches,
             "played_matches": played_matches,
+            "unplayed_matches": unplayed_matches,
+            "league_matches": {
+                "total": total_league_matches,
+                "played": played_league_matches,
+                "unplayed": unplayed_league_matches
+            },
+            "cup_matches": {
+                "total": total_cup_matches,
+                "played": played_cup_matches,
+                "unplayed": unplayed_cup_matches
+            },
+            "matches_without_match_day": matches_without_match_day,
             "remaining_matches": total_matches - played_matches
         })
     except Exception as e:
@@ -411,12 +1111,29 @@ def transition_to_new_season():
         if not current_season:
             return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
 
-        # Check if all matches are played
-        total_matches = Match.query.filter_by(season_id=current_season.id).count()
-        played_matches = Match.query.filter_by(season_id=current_season.id, is_played=True).count()
+        # Check if all matches are played (both league and cup matches)
+        total_league_matches = Match.query.filter_by(season_id=current_season.id).count()
+        played_league_matches = Match.query.filter_by(season_id=current_season.id, is_played=True).count()
+
+        # Check cup matches
+        from models import CupMatch, Cup
+        total_cup_matches = db.session.query(CupMatch).join(Cup).filter(
+            Cup.season_id == current_season.id
+        ).count()
+        played_cup_matches = db.session.query(CupMatch).join(Cup).filter(
+            Cup.season_id == current_season.id,
+            CupMatch.is_played == True
+        ).count()
+
+        total_matches = total_league_matches + total_cup_matches
+        played_matches = played_league_matches + played_cup_matches
 
         if total_matches == 0 or total_matches != played_matches:
-            return jsonify({"error": "Die Saison ist noch nicht abgeschlossen"}), 400
+            unplayed_league = total_league_matches - played_league_matches
+            unplayed_cup = total_cup_matches - played_cup_matches
+            return jsonify({
+                "error": f"Die Saison ist noch nicht abgeschlossen. Noch {unplayed_league} Liga-Spiele und {unplayed_cup} Pokal-Spiele ausstehend."
+            }), 400
 
         # Process end of season and create new season
         print("Processing season transition...")
@@ -448,6 +1165,34 @@ def simulate_match_day():
         if not current_season:
             return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
 
+        # Check if leagues exist and have teams
+        leagues = League.query.filter_by(season_id=current_season.id).all()
+        if not leagues:
+            return jsonify({"error": "Keine Ligen in der aktuellen Saison gefunden"}), 404
+
+        # Check for empty leagues and generate fixtures if needed
+        empty_leagues = []
+        leagues_fixed = 0
+
+        for league in leagues:
+            teams = Team.query.filter_by(league_id=league.id).all()
+            matches = Match.query.filter_by(league_id=league.id, season_id=current_season.id).count()
+
+            if len(teams) == 0:
+                empty_leagues.append(league.name)
+            elif len(teams) >= 2 and matches == 0:
+                print(f"Generating missing fixtures for league {league.name}")
+                simulation.generate_fixtures(league, current_season)
+                leagues_fixed += 1
+
+        if empty_leagues:
+            return jsonify({
+                "error": f"Folgende Ligen haben keine Teams: {', '.join(empty_leagues)}. Bitte überprüfen Sie die Saisonwechsel-Logik."
+            }), 400
+
+        if leagues_fixed > 0:
+            print(f"Fixed {leagues_fixed} leagues by generating missing fixtures")
+
         # Zähle die gespielten Spiele vor der Simulation
         played_matches_before = Match.query.filter_by(is_played=True).count()
         print(f"DEBUG: Anzahl gespielter Spiele VOR der Simulation: {played_matches_before}")
@@ -464,6 +1209,8 @@ def simulate_match_day():
 
     except Exception as e:
         print(f"ERROR in simulation: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": f"Fehler bei der Simulation: {str(e)}"}), 500
 
 # Initialize database
@@ -556,21 +1303,28 @@ def get_club_emblem(verein_id):
 @app.route('/api/debug/matches', methods=['GET'])
 def debug_matches():
     """Debug endpoint to check match data."""
-    played_matches = Match.query.filter_by(is_played=True).all()
-    unplayed_matches = Match.query.filter_by(is_played=False).all()
-    all_matches = Match.query.all()
+    current_season = Season.query.filter_by(is_current=True).first()
+    if not current_season:
+        return jsonify({"error": "No current season found"}), 404
+
+    played_matches = Match.query.filter_by(season_id=current_season.id, is_played=True).all()
+    unplayed_matches = Match.query.filter_by(season_id=current_season.id, is_played=False).all()
+    all_matches = Match.query.filter_by(season_id=current_season.id).all()
 
     # Check match_day distribution
-    matches_with_match_day = Match.query.filter(Match.match_day.isnot(None)).all()
-    matches_without_match_day = Match.query.filter(Match.match_day.is_(None)).all()
+    matches_with_match_day = Match.query.filter_by(season_id=current_season.id).filter(Match.match_day.isnot(None)).all()
+    matches_without_match_day = Match.query.filter_by(season_id=current_season.id).filter(Match.match_day.is_(None)).all()
 
     return jsonify({
+        'season_id': current_season.id,
+        'season_name': current_season.name,
         'total_matches': len(all_matches),
         'played_matches_count': len(played_matches),
         'unplayed_matches_count': len(unplayed_matches),
         'matches_with_match_day': len(matches_with_match_day),
         'matches_without_match_day': len(matches_without_match_day),
-        'sample_matches': [
+        'is_season_completed': len(all_matches) > 0 and len(all_matches) == len(played_matches),
+        'sample_unplayed_matches': [
             {
                 'id': match.id,
                 'home_team': match.home_team.name,
@@ -582,7 +1336,7 @@ def debug_matches():
                 'is_played': match.is_played,
                 'date': match.match_date.isoformat() if match.match_date else None
             }
-            for match in all_matches[:10]  # Limit to 10 matches
+            for match in unplayed_matches[:10]  # Limit to 10 unplayed matches
         ]
     })
 

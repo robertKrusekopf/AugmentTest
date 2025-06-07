@@ -26,6 +26,10 @@ import Finances from './pages/Finances'
 import Youth from './pages/Youth'
 import Transfers from './pages/Transfers'
 import Settings from './pages/Settings'
+import CupsOverview from './pages/CupsOverview'
+import Cups from './pages/Cups'
+
+import CupMatchDays from './pages/CupMatchDays'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -77,6 +81,10 @@ function App() {
               <Route path="/leagues/:id" element={<LeagueDetail />} />
               <Route path="/matches" element={<Matches />} />
               <Route path="/matches/:id" element={<MatchDetail />} />
+              <Route path="/cups" element={<CupsOverview />} />
+              <Route path="/cups/:cupType" element={<Cups />} />
+
+              <Route path="/cup-match-days" element={<CupMatchDays />} />
               <Route path="/youth" element={<Youth />} />
               <Route path="/transfers" element={<Transfers />} />
               <Route path="/finances" element={<Finances />} />

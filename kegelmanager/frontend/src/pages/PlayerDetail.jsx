@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPlayer, updatePlayer } from '../services/api';
+import { getPlayer, updatePlayer, getPlayerHistory } from '../services/api';
 import './PlayerDetail.css';
 
 const PlayerDetail = () => {
   const { id } = useParams();
   const [player, setPlayer] = useState(null);
+  const [playerHistory, setPlayerHistory] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [cheatForm, setCheatForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -110,6 +112,33 @@ const PlayerDetail = () => {
       .catch(error => {
         console.error(`Fehler beim Laden des Spielers ${id}:`, error);
         setLoading(false);
+      });
+  }, [id]);
+
+  // Lade Spieler-Historie aus der API
+  useEffect(() => {
+    console.log(`Lade Spieler-Historie für ID ${id} aus der API...`);
+
+    getPlayerHistory(id)
+      .then(data => {
+        console.log('Geladene Spieler-Historie:', data);
+
+        // If no history data exists, try to load demo data
+        if (!data.history || data.history.length === 0) {
+          console.log('Keine Historie gefunden, lade Demo-Daten...');
+          return fetch(`http://localhost:5000/api/players/${id}/history?demo=true`)
+            .then(response => response.json());
+        }
+        return data;
+      })
+      .then(data => {
+        console.log('Finale Spieler-Historie:', data);
+        setPlayerHistory(data);
+        setHistoryLoading(false);
+      })
+      .catch(error => {
+        console.error('Fehler beim Laden der Spieler-Historie:', error);
+        setHistoryLoading(false);
       });
   }, [id]);
 
@@ -309,26 +338,73 @@ const PlayerDetail = () => {
                 </div>
 
                 <div className="overview-card">
-                  <h3>Statistiken</h3>
+                  <h3>Aktuelle Saison</h3>
                   <div className="info-list">
                     <div className="info-item">
                       <span className="info-label">Spiele:</span>
                       <span className="info-value">{player.stats.matches}</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">Tore:</span>
-                      <span className="info-value">{player.stats.goals}</span>
+                      <span className="info-label">Durchschnitt:</span>
+                      <span className="info-value">{player.statistics?.avg_total_score || 0}</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">Vorlagen:</span>
-                      <span className="info-value">{player.stats.assists}</span>
+                      <span className="info-label">Heim-Durchschnitt:</span>
+                      <span className="info-value">{player.statistics?.avg_home_score || 0}</span>
                     </div>
                     <div className="info-item">
-                      <span className="info-label">Durchschnittliche Bewertung:</span>
-                      <span className="info-value">{player.stats.rating}</span>
+                      <span className="info-label">Auswärts-Durchschnitt:</span>
+                      <span className="info-value">{player.statistics?.avg_away_score || 0}</span>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Spieler-Historie Tabelle */}
+              <div className="overview-card" style={{ marginTop: '20px' }}>
+                <h3>Spieler-Historie {playerHistory && playerHistory.history && playerHistory.history.length > 0 && playerHistory.history[0].season_name === 'Season 2024' ? '(Demo-Daten)' : ''}</h3>
+                {historyLoading ? (
+                  <div className="loading">Lade Historie...</div>
+                ) : playerHistory && playerHistory.history && playerHistory.history.length > 0 ? (
+                  <div className="history-table-container">
+                    <table className="table history-table">
+                      <thead>
+                        <tr>
+                          <th>Saison</th>
+                          <th>Mannschaft</th>
+                          <th>Liga</th>
+                          <th>Level</th>
+                          <th>Platz</th>
+                          <th>Einsätze</th>
+                          <th>Ø Heim</th>
+                          <th>Ø Auswärts</th>
+                          <th>Ø Gesamt</th>
+                          <th>Ø Fehler</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {playerHistory.history.map((entry, index) => (
+                          <tr key={`${entry.season_id}-${entry.team_id}-${index}`} className="history-row">
+                            <td className="season-name">{entry.season_name}</td>
+                            <td className="team-name">{entry.team_name}</td>
+                            <td className="league-name">{entry.league_name}</td>
+                            <td className="league-level">{entry.league_level}</td>
+                            <td className={`position ${entry.final_position ? (entry.final_position <= 3 ? 'top-position' : '') : 'current-season'}`}>
+                              {entry.final_position ? `${entry.final_position}.` : 'Laufend'}
+                            </td>
+                            <td className="appearances">{entry.appearances}</td>
+                            <td className="avg-score home">{entry.avg_home_score ? entry.avg_home_score.toFixed(1) : '-'}</td>
+                            <td className="avg-score away">{entry.avg_away_score ? entry.avg_away_score.toFixed(1) : '-'}</td>
+                            <td className="avg-score total">{entry.avg_total_score ? entry.avg_total_score.toFixed(1) : '-'}</td>
+                            <td className="avg-errors">{entry.avg_total_errors ? entry.avg_total_errors.toFixed(1) : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="no-history">Keine Historie verfügbar</div>
+                )}
               </div>
             </div>
           )}

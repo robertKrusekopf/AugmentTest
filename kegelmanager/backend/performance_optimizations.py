@@ -118,10 +118,11 @@ def optimized_player_availability(club_id, teams_playing):
             )
 
             if unavailable_ids:
-                placeholders = ','.join(['?' for _ in unavailable_ids])
+                placeholders = ','.join([':id' + str(i) for i in range(len(unavailable_ids))])
+                params = {f'id{i}': player_id for i, player_id in enumerate(unavailable_ids)}
                 db.session.execute(
                     text(f"UPDATE player SET is_available_current_matchday = 0 WHERE id IN ({placeholders})"),
-                    unavailable_ids
+                    params
                 )
         else:
             # All players available
@@ -371,17 +372,30 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
         from sqlalchemy import text
         club_player_counts = {}
         if clubs_with_matches:
+            # Convert set to list for proper parameter binding
+            club_ids_list = list(clubs_with_matches)
+
+            # Create placeholders for IN clause
+            placeholders = ','.join([':param' + str(i) for i in range(len(club_ids_list))])
+
+            # Create parameter dictionary
+            params = {f'param{i}': club_id for i, club_id in enumerate(club_ids_list)}
+
             result = db.session.execute(
-                text("""
+                text(f"""
                     SELECT club_id, COUNT(*) as player_count
                     FROM player
-                    WHERE club_id IN :club_ids
+                    WHERE club_id IN ({placeholders})
                     GROUP BY club_id
                 """),
-                {"club_ids": tuple(clubs_with_matches)}
+                params
             ).fetchall()
 
-            club_player_counts = {row.club_id: row.player_count for row in result}
+            # Access columns by index or name - use _asdict() for named access
+            club_player_counts = {}
+            for row in result:
+                row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
+                club_player_counts[row_dict['club_id']] = row_dict['player_count']
 
         # Process each club
         import random

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getTeam, updateTeam } from '../services/api';
+import { getTeam, getTeamHistory, updateTeam } from '../services/api';
 import './TeamDetail.css';
 
 const TeamDetail = () => {
@@ -13,6 +13,8 @@ const TeamDetail = () => {
   const [isEditingStaerke, setIsEditingStaerke] = useState(false);
   const [staerkeValue, setStaerkeValue] = useState(0);
   const [savingStaerke, setSavingStaerke] = useState(false);
+  const [teamHistory, setTeamHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Lade Teamdaten aus der API
   useEffect(() => {
@@ -73,6 +75,28 @@ const TeamDetail = () => {
         setLoading(false);
       });
   }, [id]);
+
+  // Lade Team-Historie wenn der Historie-Tab aktiv ist
+  useEffect(() => {
+    if (activeTab === 'history' && !teamHistory && !loadingHistory) {
+      loadTeamHistory();
+    }
+  }, [activeTab, id]);
+
+  const loadTeamHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      console.log(`Lade Team-Historie für Team ${id}...`);
+      const historyData = await getTeamHistory(id);
+      setTeamHistory(historyData);
+      console.log('Team-Historie geladen:', historyData);
+    } catch (error) {
+      console.error('Fehler beim Laden der Team-Historie:', error);
+      setTeamHistory({ team_name: '', club_name: '', history: [] });
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   if (loading) {
     return <div className="loading">Lade Teamdaten...</div>;
@@ -190,6 +214,12 @@ const TeamDetail = () => {
             onClick={() => setActiveTab('stats')}
           >
             Statistiken
+          </div>
+          <div
+            className={`tab ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => setActiveTab('history')}
+          >
+            Historie
           </div>
         </div>
 
@@ -919,6 +949,288 @@ const TeamDetail = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            <div className="history-tab">
+              {loadingHistory ? (
+                <div className="loading">Lade Team-Historie...</div>
+              ) : teamHistory && teamHistory.history && teamHistory.history.length > 0 ? (
+                <div className="history-content">
+                  <div className="history-header">
+                    <h3>Ligaplatzierungen von {teamHistory.team_name}</h3>
+                    <p className="history-subtitle">Verein: {teamHistory.club_name}</p>
+                  </div>
+
+                  {/* History Chart */}
+                  <div className="history-chart-container">
+                    <h4>Saisonverlauf</h4>
+                    <div className="history-chart">
+                      <svg width="100%" height="350" viewBox="0 0 900 350">
+                        {/* Background */}
+                        <rect width="100%" height="100%" fill="#fafafa" />
+
+                        {(() => {
+                          // Calculate chart dimensions and data
+                          const margin = { top: 30, right: 50, bottom: 80, left: 80 };
+                          const chartWidth = 900 - margin.left - margin.right;
+                          const chartHeight = 350 - margin.top - margin.bottom;
+
+                          // Get unique league levels and sort them (Level 1 = highest)
+                          const levels = Array.from(new Set(teamHistory.history.map(entry => entry.league_level)))
+                            .sort((a, b) => a - b);
+
+                          // Sort history by season
+                          const sortedHistory = teamHistory.history.sort((a, b) => a.season_id - b.season_id);
+
+                          return (
+                            <g>
+                              {/* Y-Axis labels and grid lines */}
+                              {levels.map((level, index) => {
+                                const y = margin.top + (index / Math.max(levels.length - 1, 1)) * chartHeight;
+                                return (
+                                  <g key={level}>
+                                    <line
+                                      x1={margin.left}
+                                      y1={y}
+                                      x2={margin.left + chartWidth}
+                                      y2={y}
+                                      stroke="#e0e0e0"
+                                      strokeWidth="1"
+                                    />
+                                    <text
+                                      x={margin.left - 10}
+                                      y={y + 4}
+                                      textAnchor="end"
+                                      fontSize="12"
+                                      fill="#5f6368"
+                                    >
+                                      Level {level}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+
+                              {/* X-Axis labels */}
+                              {sortedHistory.map((entry, index) => {
+                                const x = margin.left + (index / Math.max(sortedHistory.length - 1, 1)) * chartWidth;
+                                return (
+                                  <text
+                                    key={`x-label-${entry.season_id}`}
+                                    x={x}
+                                    y={margin.top + chartHeight + 20}
+                                    textAnchor="middle"
+                                    fontSize="11"
+                                    fill="#5f6368"
+                                  >
+                                    {entry.season_name.replace('Season ', 'S')}
+                                  </text>
+                                );
+                              })}
+
+                              {/* Data line and points */}
+                              {sortedHistory.length > 1 && (
+                                <>
+                                  {/* Connecting line */}
+                                  <polyline
+                                    fill="none"
+                                    stroke="var(--primary-color)"
+                                    strokeWidth="2"
+                                    points={sortedHistory.map((entry, index) => {
+                                      const x = margin.left + (index / Math.max(sortedHistory.length - 1, 1)) * chartWidth;
+                                      const levelIndex = levels.indexOf(entry.league_level);
+                                      const baseY = margin.top + (levelIndex / Math.max(levels.length - 1, 1)) * chartHeight;
+
+                                      // Add small offset based on position within league (max ±15px)
+                                      const positionOffset = ((entry.position - 1) / Math.max(entry.position, 10)) * 20 - 10;
+                                      const y = baseY + positionOffset;
+
+                                      return `${x},${y}`;
+                                    }).join(' ')}
+                                  />
+
+                                  {/* Data points */}
+                                  {sortedHistory.map((entry, index) => {
+                                    const x = margin.left + (index / Math.max(sortedHistory.length - 1, 1)) * chartWidth;
+                                    const levelIndex = levels.indexOf(entry.league_level);
+                                    const baseY = margin.top + (levelIndex / Math.max(levels.length - 1, 1)) * chartHeight;
+
+                                    // Add small offset based on position within league
+                                    const positionOffset = ((entry.position - 1) / Math.max(entry.position, 10)) * 20 - 10;
+                                    const y = baseY + positionOffset;
+
+                                    // Color based on position
+                                    const color = entry.position === 1 ? '#4caf50' :
+                                                 entry.position <= 3 ? '#ff9800' :
+                                                 entry.position >= 15 ? '#f44336' :
+                                                 '#2196f3';
+
+                                    return (
+                                      <g key={`point-${entry.season_id}-${index}`}>
+                                        <circle
+                                          cx={x}
+                                          cy={y}
+                                          r="8"
+                                          fill={color}
+                                          stroke="#fff"
+                                          strokeWidth="2"
+                                        />
+                                        <text
+                                          x={x}
+                                          y={y + 3}
+                                          textAnchor="middle"
+                                          fontSize="10"
+                                          fill="#fff"
+                                          fontWeight="bold"
+                                        >
+                                          {entry.position}
+                                        </text>
+                                      </g>
+                                    );
+                                  })}
+                                </>
+                              )}
+                              {/* Single point for single season */}
+                              {sortedHistory.length === 1 && (
+                                <g>
+                                  <circle
+                                    cx={margin.left + chartWidth / 2}
+                                    cy={margin.top + chartHeight / 2}
+                                    r="10"
+                                    fill="#2196f3"
+                                    stroke="#fff"
+                                    strokeWidth="2"
+                                  />
+                                  <text
+                                    x={margin.left + chartWidth / 2}
+                                    y={margin.top + chartHeight / 2 + 4}
+                                    textAnchor="middle"
+                                    fontSize="12"
+                                    fill="#fff"
+                                    fontWeight="bold"
+                                  >
+                                    {sortedHistory[0].position}
+                                  </text>
+                                  <text
+                                    x={margin.left + chartWidth / 2}
+                                    y={margin.top + chartHeight + 20}
+                                    textAnchor="middle"
+                                    fontSize="12"
+                                    fill="#5f6368"
+                                  >
+                                    {sortedHistory[0].season_name}
+                                  </text>
+                                </g>
+                              )}
+                            </g>
+                          );
+                        })()}
+                      </svg>
+                    </div>
+                    <div className="chart-legend">
+                      <div className="legend-item">
+                        <div className="legend-color" style={{backgroundColor: '#4caf50'}}></div>
+                        <span>1. Platz (Meister)</span>
+                      </div>
+                      <div className="legend-item">
+                        <div className="legend-color" style={{backgroundColor: '#ff9800'}}></div>
+                        <span>2.-3. Platz</span>
+                      </div>
+                      <div className="legend-item">
+                        <div className="legend-color" style={{backgroundColor: '#2196f3'}}></div>
+                        <span>Mittlere Plätze</span>
+                      </div>
+                      <div className="legend-item">
+                        <div className="legend-color" style={{backgroundColor: '#f44336'}}></div>
+                        <span>Abstiegsplätze (15+)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="history-table-container">
+                    <table className="table history-table">
+                      <thead>
+                        <tr>
+                          <th>Saison</th>
+                          <th>Liga</th>
+                          <th>Level</th>
+                          <th>Platz</th>
+                          <th>Spiele</th>
+                          <th>S</th>
+                          <th>U</th>
+                          <th>N</th>
+                          <th>Punkte</th>
+                          <th>MP</th>
+                          <th>Holz</th>
+                          <th>Ø Heim</th>
+                          <th>Ø Auswärts</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teamHistory.history.map((entry, index) => (
+                          <tr key={`${entry.season_id}-${index}`} className="history-row">
+                            <td className="season-name">{entry.season_name}</td>
+                            <td className="league-name">{entry.league_name}</td>
+                            <td className="league-level">{entry.league_level}</td>
+                            <td className={`position ${entry.position <= 3 ? 'top-position' : entry.position >= (teamHistory.history.length - 2) ? 'bottom-position' : ''}`}>
+                              {entry.position}.
+                            </td>
+                            <td>{entry.games_played}</td>
+                            <td className="wins">{entry.wins}</td>
+                            <td className="draws">{entry.draws}</td>
+                            <td className="losses">{entry.losses}</td>
+                            <td className="table-points">{entry.table_points}</td>
+                            <td className="match-points">
+                              {entry.match_points_for}:{entry.match_points_against}
+                            </td>
+                            <td className="pins">
+                              {entry.pins_for}:{entry.pins_against}
+                            </td>
+                            <td className="avg-home">{entry.avg_home_score?.toFixed(1) || '0.0'}</td>
+                            <td className="avg-away">{entry.avg_away_score?.toFixed(1) || '0.0'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="history-summary">
+                    <div className="summary-stats">
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">{teamHistory.history.length}</div>
+                        <div className="summary-stat-label">Saisons</div>
+                      </div>
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">
+                          {teamHistory.history.filter(entry => entry.position === 1).length}
+                        </div>
+                        <div className="summary-stat-label">Meisterschaften</div>
+                      </div>
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">
+                          {teamHistory.history.filter(entry => entry.position <= 3).length}
+                        </div>
+                        <div className="summary-stat-label">Top 3 Plätze</div>
+                      </div>
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">
+                          {teamHistory.history.length > 0
+                            ? (teamHistory.history.reduce((sum, entry) => sum + entry.position, 0) / teamHistory.history.length).toFixed(1)
+                            : '0.0'}
+                        </div>
+                        <div className="summary-stat-label">Ø Platzierung</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="no-history">
+                  <h3>Keine historischen Daten verfügbar</h3>
+                  <p>Historische Ligaplatzierungen werden nach dem ersten Saisonwechsel angezeigt.</p>
+                  <p>Die Historie wird automatisch beim Übergang zur nächsten Saison gespeichert.</p>
+                </div>
+              )}
             </div>
           )}
         </div>

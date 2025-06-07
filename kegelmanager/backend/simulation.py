@@ -172,7 +172,16 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             away_team_players[team.id] = []
 
         # Get the current match day if a match is provided
-        current_match_day = match.match_day if match else None
+        # Handle both regular matches and cup matches
+        if match:
+            if hasattr(match, 'match_day'):
+                current_match_day = match.match_day
+            elif hasattr(match, 'cup_match_day'):
+                current_match_day = match.cup_match_day
+            else:
+                current_match_day = None
+        else:
+            current_match_day = None
 
         # Filter out players who have already played on this match day
         # We use the has_played_current_matchday flag and last_played_matchday to check
@@ -590,14 +599,17 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
         # Mark all players as having played on this match day using bulk update
         player_ids = [p.id for p in home_players + away_players]
         if player_ids:
-            db.session.execute(
-                db.update(Player)
-                .where(Player.id.in_(player_ids))
-                .values(
-                    has_played_current_matchday=True,
-                    last_played_matchday=match.match_day
+            # Get the match day value (handle both regular matches and cup matches)
+            match_day_value = current_match_day if 'current_match_day' in locals() else None
+            if match_day_value is not None:
+                db.session.execute(
+                    db.update(Player)
+                    .where(Player.id.in_(player_ids))
+                    .values(
+                        has_played_current_matchday=True,
+                        last_played_matchday=match_day_value
+                    )
                 )
-            )
 
         # Check for lane records
         from models import LaneRecord
@@ -676,6 +688,20 @@ def simulate_match_day(season):
     # Create performance indexes if they don't exist
     create_performance_indexes()
 
+    # Check if leagues have fixtures, generate if missing
+    leagues = season.leagues
+    print(f"Checking {len(leagues)} leagues for fixtures...")
+
+    for league in leagues:
+        teams_in_league = Team.query.filter_by(league_id=league.id).all()
+        matches_in_league = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
+
+        print(f"League {league.name}: {len(teams_in_league)} teams, {matches_in_league} matches")
+
+        if len(teams_in_league) >= 2 and matches_in_league == 0:
+            print(f"Generating missing fixtures for league {league.name}")
+            generate_fixtures(league, season)
+
     # Step 1: Find the next match day to simulate
     next_match_day = find_next_match_day(season.id)
     if not next_match_day:
@@ -694,7 +720,9 @@ def simulate_match_day(season):
     # Step 3: Get all matches for this match day with optimized query
     try:
         matches_data = optimized_match_queries(season.id, next_match_day)
-        if not matches_data:
+        cup_matches_data = get_cup_matches_for_match_day(season.id, next_match_day)
+
+        if not matches_data and not cup_matches_data:
             return {
                 'season': season.name,
                 'matches_simulated': 0,
@@ -706,19 +734,33 @@ def simulate_match_day(season):
         # Fallback to original method
         return simulate_match_day_fallback(season)
 
-    # Step 4: Determine clubs and teams playing
+    # Step 4: Determine clubs and teams playing (from both league and cup matches)
     clubs_with_matches = set()
     teams_playing = {}
 
-    for match_data in matches_data:
-        home_club_id = match_data.home_club_id
-        away_club_id = match_data.away_club_id
+    # Process league matches
+    if matches_data:
+        for match_data in matches_data:
+            home_club_id = match_data.home_club_id
+            away_club_id = match_data.away_club_id
 
-        clubs_with_matches.add(home_club_id)
-        clubs_with_matches.add(away_club_id)
+            clubs_with_matches.add(home_club_id)
+            clubs_with_matches.add(away_club_id)
 
-        teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
-        teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
+            teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
+            teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
+
+    # Process cup matches
+    if cup_matches_data:
+        for cup_match_data in cup_matches_data:
+            home_club_id = cup_match_data['home_club_id']
+            away_club_id = cup_match_data['away_club_id']
+
+            clubs_with_matches.add(home_club_id)
+            clubs_with_matches.add(away_club_id)
+
+            teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
+            teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
 
     # Step 5: Batch set player availability for all clubs
     try:
@@ -744,15 +786,23 @@ def simulate_match_day(season):
     )
     print(f"Assigned players to teams in {time.time() - assignment_start:.3f}s")
 
-    # Step 7: Simulate all matches in parallel
+    # Step 7: Simulate all matches in parallel (league and cup matches)
     simulation_start = time.time()
+
+    # Combine league and cup matches for simulation
+    all_matches_data = []
+    if matches_data:
+        all_matches_data.extend(matches_data)
+    if cup_matches_data:
+        all_matches_data.extend(cup_matches_data)
+
     results, all_performances, all_player_updates, all_lane_records = simulate_matches_parallel(
-        matches_data,
+        all_matches_data,
         club_team_players,
         next_match_day,
         cache
     )
-    print(f"Simulated {len(results)} matches in parallel in {time.time() - simulation_start:.3f}s")
+    print(f"Simulated {len(results)} matches ({len(matches_data or [])} league, {len(cup_matches_data or [])} cup) in parallel in {time.time() - simulation_start:.3f}s")
 
     # Step 8: Batch commit all database changes
     commit_start = time.time()
@@ -769,6 +819,13 @@ def simulate_match_day(season):
     end_time = time.time()
     print(f"Optimized simulation completed in {end_time - start_time:.3f}s: {len(results)} matches")
 
+    # Step 9: Check for completed cup rounds and advance if necessary
+    if cup_matches_data:
+        try:
+            advance_completed_cup_rounds(season.id, next_match_day)
+        except Exception as e:
+            print(f"Error advancing cup rounds: {str(e)}")
+
     return {
         'season': season.name,
         'matches_simulated': len(results),
@@ -778,10 +835,11 @@ def simulate_match_day(season):
 
 
 def find_next_match_day(season_id):
-    """Find the next match day to simulate."""
-    from sqlalchemy import text
+    """Find the next match day to simulate (including cup matches)."""
+    from sqlalchemy import text, union
 
-    result = db.session.execute(
+    # Find next league match day
+    league_result = db.session.execute(
         text("""
             SELECT MIN(match_day)
             FROM match
@@ -792,7 +850,142 @@ def find_next_match_day(season_id):
         {"season_id": season_id}
     ).scalar()
 
-    return result
+    # Find next cup match day
+    cup_result = db.session.execute(
+        text("""
+            SELECT MIN(cm.cup_match_day)
+            FROM cup_match cm
+            JOIN cup c ON cm.cup_id = c.id
+            WHERE c.season_id = :season_id
+                AND cm.is_played = 0
+                AND cm.cup_match_day IS NOT NULL
+        """),
+        {"season_id": season_id}
+    ).scalar()
+
+    # Return the earliest match day
+    match_days = [day for day in [league_result, cup_result] if day is not None]
+    if match_days:
+        next_day = min(match_days)
+        # Determine what type of matches are on this day
+        has_league = league_result == next_day if league_result else False
+        has_cup = cup_result == next_day if cup_result else False
+
+        if has_league and has_cup:
+            print(f"Next match day {next_day}: Both league and cup matches")
+        elif has_league:
+            print(f"Next match day {next_day}: League matches only")
+        elif has_cup:
+            print(f"Next match day {next_day}: Cup matches only")
+
+        return next_day
+    return None
+
+
+def get_cup_matches_for_match_day(season_id, match_day):
+    """Get all cup matches for a specific match day."""
+    from models import CupMatch, Cup, Team, Club
+    from sqlalchemy import text
+
+    # Query cup matches for the specific match day
+    cup_matches = db.session.execute(
+        text("""
+            SELECT
+                cm.id as match_id,
+                cm.cup_id,
+                cm.home_team_id,
+                cm.away_team_id,
+                cm.round_name,
+                cm.round_number,
+                ht.name as home_team_name,
+                at.name as away_team_name,
+                hc.id as home_club_id,
+                ac.id as away_club_id,
+                c.name as cup_name,
+                c.cup_type
+            FROM cup_match cm
+            JOIN cup c ON cm.cup_id = c.id
+            JOIN team ht ON cm.home_team_id = ht.id
+            JOIN team at ON cm.away_team_id = at.id
+            LEFT JOIN club hc ON ht.club_id = hc.id
+            LEFT JOIN club ac ON at.club_id = ac.id
+            WHERE c.season_id = :season_id
+                AND cm.cup_match_day = :match_day
+                AND cm.is_played = 0
+        """),
+        {"season_id": season_id, "match_day": match_day}
+    ).fetchall()
+
+    # Convert to list of dictionaries for easier handling
+    cup_matches_data = []
+    for match in cup_matches:
+        # Access columns by index or name - use _asdict() for named access
+        match_dict = match._asdict() if hasattr(match, '_asdict') else dict(match)
+        cup_matches_data.append({
+            'match_id': match_dict['match_id'],
+            'cup_id': match_dict['cup_id'],
+            'home_team_id': match_dict['home_team_id'],
+            'away_team_id': match_dict['away_team_id'],
+            'home_team_name': match_dict['home_team_name'],
+            'away_team_name': match_dict['away_team_name'],
+            'home_club_id': match_dict['home_club_id'],
+            'away_club_id': match_dict['away_club_id'],
+            'cup_name': match_dict['cup_name'],
+            'cup_type': match_dict['cup_type'],
+            'round_name': match_dict['round_name'],
+            'round_number': match_dict['round_number'],
+            'match_day': match_day,
+            'is_cup_match': True
+        })
+
+    return cup_matches_data
+
+
+def advance_completed_cup_rounds(season_id, match_day):
+    """Check for completed cup rounds and advance to next round if all matches are played."""
+    from models import Cup, CupMatch
+    from sqlalchemy import text
+
+    # Get all cups for this season
+    cups = Cup.query.filter_by(season_id=season_id, is_active=True).all()
+
+    for cup in cups:
+        try:
+            # Check if any matches were played on this match day for this cup
+            played_matches_today = db.session.execute(
+                text("""
+                    SELECT COUNT(*)
+                    FROM cup_match cm
+                    WHERE cm.cup_id = :cup_id
+                        AND cm.cup_match_day = :match_day
+                        AND cm.is_played = 1
+                """),
+                {"cup_id": cup.id, "match_day": match_day}
+            ).scalar()
+
+            # Only try to advance if matches were played today for this cup
+            if played_matches_today > 0:
+                print(f"POKAL: Cup {cup.name}: {played_matches_today} matches played on match day {match_day}")
+
+                # Check if this cup can advance to the next round
+                # This will check ALL matches in the current round, not just today's
+                success = cup.advance_to_next_round()
+                if success:
+                    if cup.is_active:
+                        print(f"POKAL: Cup {cup.name} advanced to {cup.current_round}")
+                    else:
+                        print(f"POKAL: Cup {cup.name} completed!")
+                else:
+                    print(f"POKAL: Cup {cup.name}: Not all matches in round {cup.current_round_number} completed yet")
+
+        except Exception as e:
+            print(f"Error advancing cup {cup.name}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+    # Commit any changes made during cup advancement
+    db.session.commit()
 
 
 def simulate_matches_parallel(matches_data, club_team_players, next_match_day, cache_manager):
@@ -810,6 +1003,21 @@ def simulate_matches_parallel(matches_data, club_team_players, next_match_day, c
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import threading
+    from flask import current_app
+
+    # For now, use sequential simulation to avoid context issues
+    # TODO: Fix parallel simulation context issues in future version
+    print("Using sequential simulation to avoid context issues")
+    return _simulate_matches_sequential(matches_data, club_team_players, next_match_day, cache_manager)
+
+
+def _simulate_matches_parallel_with_context(matches_data, club_team_players, next_match_day, cache_manager):
+    """
+    Simulate matches in parallel with proper Flask application context.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+    from flask import current_app
 
     results = []
     all_performances = []
@@ -823,71 +1031,73 @@ def simulate_matches_parallel(matches_data, club_team_players, next_match_day, c
     records_lock = threading.Lock()
 
     def simulate_single_match(match_data):
-        """Simulate a single match in a thread."""
-        try:
-            # Get match object (we'll need to load this in each thread)
-            match = Match.query.get(match_data.match_id)
-            if not match:
+        """Simulate a single match in a thread with proper Flask context."""
+        # Create application context for this thread
+        with current_app.app_context():
+            try:
+                # Get match object (we'll need to load this in each thread)
+                match = Match.query.get(match_data.match_id)
+                if not match:
+                    return None
+
+                # Get assigned players
+                home_players = club_team_players.get(match_data.home_club_id, {}).get(match_data.home_team_id, [])
+                away_players = club_team_players.get(match_data.away_club_id, {}).get(match_data.away_team_id, [])
+
+                # Convert player data dictionaries to objects for compatibility
+                home_player_objects = []
+                away_player_objects = []
+
+                for player_data in home_players:
+                    if isinstance(player_data, dict):
+                        # Create a simple object from dictionary
+                        player_obj = type('Player', (), player_data)()
+                        home_player_objects.append(player_obj)
+                    else:
+                        home_player_objects.append(player_data)
+
+                for player_data in away_players:
+                    if isinstance(player_data, dict):
+                        # Create a simple object from dictionary
+                        player_obj = type('Player', (), player_data)()
+                        away_player_objects.append(player_obj)
+                    else:
+                        away_player_objects.append(player_data)
+
+                # Simulate the match without database operations
+                match_result = simulate_match_optimized(
+                    match.home_team,
+                    match.away_team,
+                    home_player_objects,
+                    away_player_objects,
+                    cache_manager
+                )
+
+                # Prepare match result data
+                match_result.update({
+                    'match_id': match_data.match_id,
+                    'home_team_name': match_data.home_team_name,
+                    'away_team_name': match_data.away_team_name,
+                    'league_name': match_data.league_name,
+                    'match_day': next_match_day
+                })
+
+                # Collect player updates
+                player_updates = []
+                for player in home_player_objects + away_player_objects:
+                    player_id = player.id if hasattr(player, 'id') else player['id']
+                    player_updates.append((player_id, True, next_match_day))
+
+                return {
+                    'result': match_result,
+                    'player_updates': player_updates,
+                    'performances': match_result.get('performances', []),
+                    'lane_records': match_result.get('lane_records', [])
+                }
+
+            except Exception as e:
+                print(f"Error simulating match {match_data.match_id}: {str(e)}")
                 return None
-
-            # Get assigned players
-            home_players = club_team_players.get(match_data.home_club_id, {}).get(match_data.home_team_id, [])
-            away_players = club_team_players.get(match_data.away_club_id, {}).get(match_data.away_team_id, [])
-
-            # Convert player data dictionaries to objects for compatibility
-            home_player_objects = []
-            away_player_objects = []
-
-            for player_data in home_players:
-                if isinstance(player_data, dict):
-                    # Create a simple object from dictionary
-                    player_obj = type('Player', (), player_data)()
-                    home_player_objects.append(player_obj)
-                else:
-                    home_player_objects.append(player_data)
-
-            for player_data in away_players:
-                if isinstance(player_data, dict):
-                    # Create a simple object from dictionary
-                    player_obj = type('Player', (), player_data)()
-                    away_player_objects.append(player_obj)
-                else:
-                    away_player_objects.append(player_data)
-
-            # Simulate the match without database operations
-            match_result = simulate_match_optimized(
-                match.home_team,
-                match.away_team,
-                home_player_objects,
-                away_player_objects,
-                cache_manager
-            )
-
-            # Prepare match result data
-            match_result.update({
-                'match_id': match_data.match_id,
-                'home_team_name': match_data.home_team_name,
-                'away_team_name': match_data.away_team_name,
-                'league_name': match_data.league_name,
-                'match_day': next_match_day
-            })
-
-            # Collect player updates
-            player_updates = []
-            for player in home_player_objects + away_player_objects:
-                player_id = player.id if hasattr(player, 'id') else player['id']
-                player_updates.append((player_id, True, next_match_day))
-
-            return {
-                'result': match_result,
-                'player_updates': player_updates,
-                'performances': match_result.get('performances', []),
-                'lane_records': match_result.get('lane_records', [])
-            }
-
-        except Exception as e:
-            print(f"Error simulating match {match_data.match_id}: {str(e)}")
-            return None
 
     # Determine optimal number of threads (max 4 to avoid overwhelming the database)
     max_workers = min(4, len(matches_data))
@@ -920,6 +1130,174 @@ def simulate_matches_parallel(matches_data, club_team_players, next_match_day, c
 
             except Exception as e:
                 print(f"Error processing match result for {match_data.match_id}: {str(e)}")
+
+    return results, all_performances, all_player_updates, all_lane_records
+
+
+def _simulate_matches_sequential(matches_data, club_team_players, next_match_day, cache_manager):
+    """
+    Sequential simulation fallback when parallel simulation fails.
+    """
+    results = []
+    all_performances = []
+    all_player_updates = []
+    all_lane_records = []
+
+    for match_data in matches_data:
+        try:
+            # Convert match_data to dictionary if it's a SQLAlchemy row
+            if hasattr(match_data, '_asdict'):
+                match_dict = match_data._asdict()
+            elif hasattr(match_data, 'keys'):
+                match_dict = dict(match_data)
+            elif isinstance(match_data, dict):
+                match_dict = match_data
+            else:
+                # Fallback: assume it's a tuple from the SQL query
+                # Based on the query in optimized_match_queries: (id, league_id, home_team_id, away_team_id, home_team_name, away_team_name, home_club_id, away_club_id, league_name)
+                match_dict = {
+                    'match_id': match_data[0],
+                    'league_id': match_data[1],
+                    'home_team_id': match_data[2],
+                    'away_team_id': match_data[3],
+                    'home_team_name': match_data[4],
+                    'away_team_name': match_data[5],
+                    'home_club_id': match_data[6],
+                    'away_club_id': match_data[7],
+                    'league_name': match_data[8],
+                    'is_cup_match': False  # League matches don't have this field
+                }
+
+            # Determine if this is a cup match or league match
+            is_cup_match = match_dict.get('is_cup_match', False)
+
+            if is_cup_match:
+                # Get cup match object
+                from models import CupMatch
+                match = CupMatch.query.get(match_dict['match_id'])
+                if not match:
+                    continue
+                # Get teams from the cup match
+                home_team = match.home_team
+                away_team = match.away_team
+            else:
+                # Get league match object
+                match = Match.query.get(match_dict['match_id'])
+                if not match:
+                    continue
+                home_team = match.home_team
+                away_team = match.away_team
+
+            # Get assigned players
+            home_team_id = match_dict.get('home_team_id') or home_team.id
+            away_team_id = match_dict.get('away_team_id') or away_team.id
+            home_club_id = match_dict.get('home_club_id') or home_team.club_id
+            away_club_id = match_dict.get('away_club_id') or away_team.club_id
+
+            home_players = club_team_players.get(home_club_id, {}).get(home_team_id, [])
+            away_players = club_team_players.get(away_club_id, {}).get(away_team_id, [])
+
+            # Convert player data dictionaries to objects for compatibility
+            home_player_objects = []
+            away_player_objects = []
+
+            for player_data in home_players:
+                if isinstance(player_data, dict):
+                    # Create a simple object from dictionary
+                    player_obj = type('Player', (), player_data)()
+                    home_player_objects.append(player_obj)
+                else:
+                    home_player_objects.append(player_data)
+
+            for player_data in away_players:
+                if isinstance(player_data, dict):
+                    # Create a simple object from dictionary
+                    player_obj = type('Player', (), player_data)()
+                    away_player_objects.append(player_obj)
+                else:
+                    away_player_objects.append(player_data)
+
+            # Simulate the match without database operations
+            match_result = simulate_match_optimized(
+                home_team,
+                away_team,
+                home_player_objects,
+                away_player_objects,
+                cache_manager
+            )
+
+            # Prepare match result data
+            match_result.update({
+                'match_id': match_dict.get('match_id'),
+                'home_team_id': home_team_id,
+                'away_team_id': away_team_id,
+                'home_team_name': match_dict.get('home_team_name') or home_team.name,
+                'away_team_name': match_dict.get('away_team_name') or away_team.name,
+                'league_name': match_dict.get('league_name') or (match_dict.get('cup_name') if is_cup_match else ''),
+                'match_day': next_match_day,
+                'is_cup_match': is_cup_match
+            })
+
+            # Print cup match results
+            if is_cup_match:
+                home_team_name = match_dict.get('home_team_name') or home_team.name
+                away_team_name = match_dict.get('away_team_name') or away_team.name
+                cup_name = match_dict.get('cup_name', 'Unknown Cup')
+                round_name = match_dict.get('round_name', 'Unknown Round')
+                home_score = match_result['home_score']
+                away_score = match_result['away_score']
+                home_match_points = match_result['home_match_points']
+                away_match_points = match_result['away_match_points']
+
+                # Determine winner
+                if home_match_points > away_match_points:
+                    winner_name = home_team_name
+                elif away_match_points > home_match_points:
+                    winner_name = away_team_name
+                else:
+                    # In case of a tie on match points, the team with more total pins wins
+                    if home_score > away_score:
+                        winner_name = home_team_name
+                    else:
+                        winner_name = away_team_name
+
+                print(f"POKAL: {cup_name} {round_name} - {home_team_name} {home_score}:{away_score} {away_team_name} ({home_match_points}:{away_match_points} SP) - Winner: {winner_name}")
+
+            # Collect data
+            results.append(match_result)
+            all_performances.extend(match_result.get('performances', []))
+            all_lane_records.extend(match_result.get('lane_records', []))
+
+            # Collect player updates
+            for player in home_player_objects + away_player_objects:
+                try:
+                    if hasattr(player, 'id'):
+                        player_id = player.id
+                    elif isinstance(player, dict) and 'id' in player:
+                        player_id = player['id']
+                    else:
+                        print(f"Warning: Player object has no 'id' attribute. Type: {type(player)}")
+                        if isinstance(player, dict):
+                            print(f"Available keys: {list(player.keys())}")
+                        continue
+                    all_player_updates.append((player_id, True, next_match_day))
+                except Exception as e:
+                    print(f"Error getting player ID: {str(e)}")
+                    print(f"Player object: {player}")
+                    continue
+
+        except Exception as e:
+            match_id = getattr(match_data, 'match_id', match_data[0] if hasattr(match_data, '__getitem__') else 'unknown')
+            print(f"Error simulating match {match_id} in sequential mode: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print(f"Match data: {match_data}")
+            # Only print player data if variables exist
+            try:
+                print(f"Home players: {home_players}")
+                print(f"Away players: {away_players}")
+            except NameError:
+                print("Player data not available (error occurred before assignment)")
 
     return results, all_performances, all_player_updates, all_lane_records
 
@@ -1067,11 +1445,20 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
     """
     # Get player attributes (handle both objects and dictionaries)
     def get_attr(obj, attr, default=50):
-        if hasattr(obj, attr):
-            return getattr(obj, attr)
-        elif isinstance(obj, dict):
-            return obj.get(attr, default)
-        return default
+        try:
+            if hasattr(obj, attr):
+                return getattr(obj, attr)
+            elif isinstance(obj, dict):
+                return obj.get(attr, default)
+            else:
+                print(f"Warning: Player object is neither dict nor has attributes. Type: {type(obj)}, Attr: {attr}")
+                return default
+        except Exception as e:
+            print(f"Error accessing attribute '{attr}' from player object: {str(e)}")
+            print(f"Player object type: {type(obj)}")
+            if isinstance(obj, dict):
+                print(f"Available keys: {list(obj.keys())}")
+            return default
 
     player_id = get_attr(player, 'id')
     strength = get_attr(player, 'strength', 50)
@@ -1161,6 +1548,7 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
     # Create performance data structure
     performance_data = {
         'player_id': player_id,
+        'team_id': None,  # Will be set later in batch_commit_simulation_results
         'position_number': position + 1,
         'is_substitute': False,  # We'll handle substitutes separately
         'lane1_score': lane_scores[0],
@@ -1204,32 +1592,86 @@ def batch_commit_simulation_results(matches_data, results, all_performances, all
     start_time = time.time()
 
     try:
-        # Update match records
-        match_updates = {}
+        # Update match records (both league and cup matches)
+        league_match_updates = {}
+        cup_match_updates = {}
+
         for i, result in enumerate(results):
             match_id = result.get('match_id')
+            is_cup_match = result.get('is_cup_match', False)
+
             if match_id:
-                match_updates[match_id] = {
+                update_data = {
                     'home_score': result['home_score'],
                     'away_score': result['away_score'],
-                    'home_match_points': result['home_match_points'],
-                    'away_match_points': result['away_match_points'],
-                    'is_played': True,
-                    'match_date': datetime.now(timezone.utc)
+                    'is_played': True
                 }
 
-        # Batch update matches
-        for match_id, updates in match_updates.items():
+                if is_cup_match:
+                    # For cup matches, we also need to determine the winner
+                    from models import CupMatch
+                    if result['home_match_points'] > result['away_match_points']:
+                        update_data['winner_team_id'] = result.get('home_team_id')
+                    elif result['away_match_points'] > result['home_match_points']:
+                        update_data['winner_team_id'] = result.get('away_team_id')
+                    else:
+                        # In case of a tie in cup matches, home team wins (or we could use total pins)
+                        if result['home_score'] >= result['away_score']:
+                            update_data['winner_team_id'] = result.get('home_team_id')
+                        else:
+                            update_data['winner_team_id'] = result.get('away_team_id')
+
+                    # Add set points for cup matches
+                    update_data['home_set_points'] = result['home_match_points']
+                    update_data['away_set_points'] = result['away_match_points']
+
+                    cup_match_updates[match_id] = update_data
+                else:
+                    # For league matches, add match points and date
+                    update_data['home_match_points'] = result['home_match_points']
+                    update_data['away_match_points'] = result['away_match_points']
+                    update_data['match_date'] = datetime.now(timezone.utc)
+
+                    league_match_updates[match_id] = update_data
+
+        # Batch update league matches
+        for match_id, updates in league_match_updates.items():
             db.session.execute(
                 db.update(Match)
                 .where(Match.id == match_id)
                 .values(**updates)
             )
 
+        # Batch update cup matches
+        if cup_match_updates:
+            from models import CupMatch
+            print(f"POKAL: Updating {len(cup_match_updates)} cup matches in database")
+            for match_id, updates in cup_match_updates.items():
+                db.session.execute(
+                    db.update(CupMatch)
+                    .where(CupMatch.id == match_id)
+                    .values(**updates)
+                )
+                print(f"POKAL: Updated cup match {match_id} with winner_team_id={updates.get('winner_team_id')}")
+
         # Batch create performances
         if all_performances:
             # Convert performance data to proper format and add missing fields
             performance_dicts = []
+
+            # Create a mapping from match_id to team_ids for quick lookup
+            match_team_mapping = {}
+            for result in results:
+                match_id = result.get('match_id')
+                if match_id:
+                    # Get the match to find team IDs
+                    match = Match.query.get(match_id)
+                    if match:
+                        match_team_mapping[match_id] = {
+                            'home_team_id': match.home_team_id,
+                            'away_team_id': match.away_team_id
+                        }
+
             for i, perf in enumerate(all_performances):
                 if isinstance(perf, dict):
                     # Add missing required fields
@@ -1238,15 +1680,19 @@ def batch_commit_simulation_results(matches_data, results, all_performances, all
                     # Find the corresponding match_id from results
                     result_index = i // 12  # 12 performances per match (6 home + 6 away)
                     if result_index < len(results):
-                        perf_dict['match_id'] = results[result_index].get('match_id')
+                        match_id = results[result_index].get('match_id')
+                        perf_dict['match_id'] = match_id
 
-                    # Determine team_id and is_home_team based on position in list
-                    player_index_in_match = i % 12
-                    perf_dict['is_home_team'] = player_index_in_match < 6
+                        # Determine team_id and is_home_team based on position in list
+                        player_index_in_match = i % 12
+                        perf_dict['is_home_team'] = player_index_in_match < 6
 
-                    # We'll need to get team_id from the match data
-                    # For now, set a placeholder - this should be improved
-                    perf_dict['team_id'] = None
+                        # Set the correct team_id
+                        if match_id in match_team_mapping:
+                            if perf_dict['is_home_team']:
+                                perf_dict['team_id'] = match_team_mapping[match_id]['home_team_id']
+                            else:
+                                perf_dict['team_id'] = match_team_mapping[match_id]['away_team_id']
 
                     performance_dicts.append(perf_dict)
                 else:
@@ -1254,7 +1700,7 @@ def batch_commit_simulation_results(matches_data, results, all_performances, all
                     performance_dicts.append(perf.__dict__)
 
             # Filter out performances without required fields
-            valid_performances = [p for p in performance_dicts if p.get('match_id') and p.get('player_id')]
+            valid_performances = [p for p in performance_dicts if p.get('match_id') and p.get('player_id') and p.get('team_id')]
 
             if valid_performances:
                 batch_create_performances(valid_performances)
@@ -1311,6 +1757,37 @@ def process_lane_records_batch(all_lane_records):
             # In a full implementation, you'd check against existing records
 
 
+def batch_update_player_flags(all_player_updates):
+    """
+    Batch update player flags for better performance.
+
+    Args:
+        all_player_updates: List of tuples (player_id, has_played, match_day)
+    """
+    if not all_player_updates:
+        return
+
+    try:
+        # Group updates by player_id to avoid duplicates
+        player_updates_dict = {}
+        for player_id, has_played, match_day in all_player_updates:
+            player_updates_dict[player_id] = (has_played, match_day)
+
+        # Batch update all players
+        for player_id, (has_played, match_day) in player_updates_dict.items():
+            db.session.execute(
+                db.update(Player)
+                .where(Player.id == player_id)
+                .values(
+                    has_played_current_matchday=has_played,
+                    last_played_matchday=match_day
+                )
+            )
+    except Exception as e:
+        print(f"Error in batch update player flags: {str(e)}")
+        raise
+
+
 def simulate_match_day_fallback(season):
     """Fallback to original simulation method if optimized version fails."""
     print("Using fallback simulation method")
@@ -1319,6 +1796,18 @@ def simulate_match_day_fallback(season):
 
     # Get all leagues in the season
     leagues = season.leagues
+    print(f"Fallback: Found {len(leagues)} leagues in season {season.name}")
+
+    # Check if leagues have fixtures, generate if missing
+    for league in leagues:
+        teams_in_league = Team.query.filter_by(league_id=league.id).all()
+        matches_in_league = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
+
+        print(f"Fallback: League {league.name}: {len(teams_in_league)} teams, {matches_in_league} matches")
+
+        if len(teams_in_league) >= 2 and matches_in_league == 0:
+            print(f"Fallback: Generating missing fixtures for league {league.name}")
+            generate_fixtures(league, season)
 
     # Find the earliest unplayed match day across all leagues
     unplayed_match_days = []
@@ -1354,14 +1843,52 @@ def simulate_match_day_fallback(season):
     # Reset player availability flags for all players
     reset_player_availability()
 
-    # Continue with original logic...
-    # (Rest of original implementation would go here if needed)
+    # Get matches for this match day
+    matches_to_simulate = []
+    for league in leagues:
+        league_matches = Match.query.filter(
+            Match.league_id == league.id,
+            Match.season_id == season.id,
+            Match.is_played == False,
+            Match.match_day == global_next_match_day
+        ).all()
+        matches_to_simulate.extend(league_matches)
+
+    print(f"Fallback: Found {len(matches_to_simulate)} matches to simulate")
+
+    if not matches_to_simulate:
+        return {
+            'season': season.name,
+            'matches_simulated': 0,
+            'results': [],
+            'message': f'Keine Spiele für Spieltag {global_next_match_day} gefunden.'
+        }
+
+    # Simulate each match
+    for match in matches_to_simulate:
+        try:
+            result = simulate_match(match.home_team, match.away_team, match=match)
+            results.append(result)
+
+            # Update match in database
+            match.home_score = result['home_score']
+            match.away_score = result['away_score']
+            match.home_match_points = result['home_match_points']
+            match.away_match_points = result['away_match_points']
+            match.is_played = True
+            match.date_played = datetime.now()
+
+        except Exception as e:
+            print(f"Fallback: Error simulating match {match.id}: {str(e)}")
+
+    # Commit all changes
+    db.session.commit()
 
     return {
         'season': season.name,
-        'matches_simulated': 0,
-        'results': [],
-        'message': 'Fallback simulation not fully implemented'
+        'matches_simulated': len(results),
+        'results': results,
+        'message': f'Fallback simulation completed: {len(results)} matches simulated'
     }
 
 def reset_player_availability():
@@ -1543,6 +2070,44 @@ def simulate_season(season, create_new_season=True):
     print(f"Number of leagues: {len(leagues)}")
     print(f"Create new season after simulation: {create_new_season}")
 
+    # Check if cups exist for this season
+    from models import Cup, CupMatch
+    cups = Cup.query.filter_by(season_id=season.id).all()
+    total_cup_matches = 0
+    unplayed_cup_matches = 0
+    all_cup_match_days = set()
+
+    for cup in cups:
+        cup_match_count = CupMatch.query.filter_by(cup_id=cup.id).count()
+        unplayed_count = CupMatch.query.filter_by(cup_id=cup.id, is_played=False).count()
+        total_cup_matches += cup_match_count
+        unplayed_cup_matches += unplayed_count
+        print(f"POKAL: Cup {cup.name} has {cup_match_count} matches ({unplayed_count} unplayed)")
+
+        # Show cup match days for this cup
+        cup_match_days = db.session.query(CupMatch.cup_match_day).filter_by(cup_id=cup.id, is_played=False).distinct().all()
+        if cup_match_days:
+            match_days_list = [str(day[0]) for day in cup_match_days if day[0] is not None]
+            print(f"POKAL: Cup {cup.name} has unplayed matches on match days: {', '.join(match_days_list)}")
+            # Add to overall set
+            for day in cup_match_days:
+                if day[0] is not None:
+                    all_cup_match_days.add(day[0])
+
+        # Also show ALL cup match days (including played ones) for debugging
+        all_cup_days = db.session.query(CupMatch.cup_match_day).filter_by(cup_id=cup.id).distinct().all()
+        if all_cup_days:
+            all_days_list = [str(day[0]) for day in all_cup_days if day[0] is not None]
+            print(f"POKAL: Cup {cup.name} ALL match days (played and unplayed): {', '.join(all_days_list)}")
+
+    print(f"POKAL: Total {len(cups)} cups with {total_cup_matches} matches ({unplayed_cup_matches} unplayed) in season")
+
+    if all_cup_match_days:
+        sorted_cup_days = sorted(all_cup_match_days)
+        print(f"POKAL: All unplayed cup match days in season: {', '.join(map(str, sorted_cup_days))}")
+    else:
+        print("POKAL: No unplayed cup match days found in season")
+
     # First, ensure all leagues have fixtures generated
     for league in leagues:
         # Generate matches if they don't exist
@@ -1550,21 +2115,16 @@ def simulate_season(season, create_new_season=True):
             print(f"No matches found for league {league.name}, generating fixtures...")
             generate_fixtures(league, season)
 
-    # Find the maximum match day across all leagues
-    max_match_day = 0
-    for league in leagues:
-        # Get the highest match day for this league
-        highest_match_day = db.session.query(db.func.max(Match.match_day)).filter(
-            Match.league_id == league.id,
-            Match.season_id == season.id
-        ).scalar() or 0
-        max_match_day = max(max_match_day, highest_match_day)
+    # Simulate match day by match day using the same logic as simulate_match_day
+    # This ensures that both league and cup matches are properly simulated in the correct order
+    while True:
+        # Find the next match day to simulate (same logic as simulate_match_day)
+        next_match_day = find_next_match_day(season.id)
+        if not next_match_day:
+            print("No more unplayed matches found. Season simulation complete.")
+            break
 
-    print(f"Maximum match day across all leagues: {max_match_day}")
-
-    # Simulate match day by match day
-    for match_day in range(1, max_match_day + 1):
-        print(f"Simulating match day {match_day} across all leagues")
+        print(f"Simulating match day {next_match_day} across all leagues and cups")
 
         # Reset player availability flags efficiently
         from performance_optimizations import bulk_reset_player_flags
@@ -1580,7 +2140,7 @@ def simulate_season(season, create_new_season=True):
                 league_id=league.id,
                 season_id=season.id,
                 is_played=False,
-                match_day=match_day
+                match_day=next_match_day
             ).all()
 
             for match in unplayed_matches:
@@ -1594,6 +2154,29 @@ def simulate_season(season, create_new_season=True):
                 teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
                 teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
 
+        # Also check for cup matches on this match day using the same function as simulate_match_day
+        cup_matches_data = get_cup_matches_for_match_day(season.id, next_match_day)
+        print(f"POKAL: Found {len(cup_matches_data)} cup matches for match day {next_match_day}")
+
+        # Get actual CupMatch objects for simulation
+        from models import CupMatch, Cup
+        cup_matches = []
+        for cup_match_data in cup_matches_data:
+            cup_match = CupMatch.query.get(cup_match_data['match_id'])
+            if cup_match:
+                cup_matches.append(cup_match)
+
+        for cup_match in cup_matches:
+            home_club_id = cup_match.home_team.club_id
+            away_club_id = cup_match.away_team.club_id
+
+            clubs_with_matches.add(home_club_id)
+            clubs_with_matches.add(away_club_id)
+
+            # Count how many teams each club has playing
+            teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
+            teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
+
         # Batch process player availability for all clubs
         try:
             for club_id in clubs_with_matches:
@@ -1604,7 +2187,7 @@ def simulate_season(season, create_new_season=True):
 
         except Exception as e:
             db.session.rollback()
-            print(f"Error setting player availability for match day {match_day}: {str(e)}")
+            print(f"Error setting player availability for match day {next_match_day}: {str(e)}")
             raise
 
         # Assign players to teams for each club
@@ -1612,7 +2195,7 @@ def simulate_season(season, create_new_season=True):
         for club_id in clubs_with_matches:
             club_team_players[club_id] = assign_players_to_teams_for_match_day(
                 club_id,
-                match_day,
+                next_match_day,
                 season.id
             )
 
@@ -1620,17 +2203,18 @@ def simulate_season(season, create_new_season=True):
         match_day_results = []
         all_player_updates = []
 
+        # Simulate league matches
         for league in leagues:
             # Get all unplayed matches for this match day in this league
             unplayed_matches = Match.query.filter_by(
                 league_id=league.id,
                 season_id=season.id,
                 is_played=False,
-                match_day=match_day
+                match_day=next_match_day
             ).all()
 
             if unplayed_matches:
-                print(f"Simulating match day {match_day} for league {league.name} with {len(unplayed_matches)} matches")
+                print(f"Simulating match day {next_match_day} for league {league.name} with {len(unplayed_matches)} matches")
 
             # Simulate each match in this match day
             for match in unplayed_matches:
@@ -1662,7 +2246,7 @@ def simulate_season(season, create_new_season=True):
                 match_result['home_team_name'] = home_team.name
                 match_result['away_team_name'] = away_team.name
                 match_result['league_name'] = league.name
-                match_result['match_day'] = match_day
+                match_result['match_day'] = next_match_day
 
                 match_day_results.append(match_result)
 
@@ -1672,7 +2256,73 @@ def simulate_season(season, create_new_season=True):
                 away_player_ids = [p.id if hasattr(p, 'id') else p for p in away_players]
 
                 for player_id in home_player_ids + away_player_ids:
-                    all_player_updates.append((player_id, True, match_day))
+                    all_player_updates.append((player_id, True, next_match_day))
+
+        # Simulate cup matches for this match day
+        if cup_matches:
+            print(f"POKAL: Simulating {len(cup_matches)} cup matches for match day {next_match_day}")
+
+            for cup_match in cup_matches:
+                home_team = cup_match.home_team
+                away_team = cup_match.away_team
+
+                # Get assigned players
+                home_players = club_team_players.get(home_team.club_id, {}).get(home_team.id, [])
+                away_players = club_team_players.get(away_team.club_id, {}).get(away_team.id, [])
+
+                # Simulate the match
+                match_result = simulate_match(
+                    home_team,
+                    away_team,
+                    match=cup_match,
+                    home_team_players=home_players,
+                    away_team_players=away_players
+                )
+
+                # Update cup match record
+                cup_match.home_score = match_result['home_score']
+                cup_match.away_score = match_result['away_score']
+                cup_match.home_set_points = match_result['home_match_points']
+                cup_match.away_set_points = match_result['away_match_points']
+                cup_match.is_played = True
+                cup_match.match_date = datetime.now(timezone.utc).date()
+
+                # Determine and set the winner (essential for cup advancement)
+                if match_result['home_match_points'] > match_result['away_match_points']:
+                    cup_match.winner_team_id = home_team.id
+                    winner_name = home_team.name
+                elif match_result['away_match_points'] > match_result['home_match_points']:
+                    cup_match.winner_team_id = away_team.id
+                    winner_name = away_team.name
+                else:
+                    # In case of a tie on match points, the team with more total pins wins
+                    if match_result['home_score'] > match_result['away_score']:
+                        cup_match.winner_team_id = home_team.id
+                        winner_name = home_team.name
+                    else:
+                        cup_match.winner_team_id = away_team.id
+                        winner_name = away_team.name
+
+                # Print cup match result
+                print(f"POKAL: {cup_match.cup.name} {cup_match.round_name} - {home_team.name} {match_result['home_score']}:{match_result['away_score']} {away_team.name} ({match_result['home_match_points']}:{match_result['away_match_points']} SP) - Winner: {winner_name}")
+
+                # Add team names to the result for better display
+                match_result['home_team_name'] = home_team.name
+                match_result['away_team_name'] = away_team.name
+                match_result['cup_name'] = cup_match.cup.name
+                match_result['round_name'] = cup_match.round_name
+                match_result['match_day'] = next_match_day
+                match_result['is_cup_match'] = True
+
+                match_day_results.append(match_result)
+
+                # Collect player updates for batch processing
+                # Convert player objects to IDs if necessary
+                home_player_ids = [p.id if hasattr(p, 'id') else p for p in home_players]
+                away_player_ids = [p.id if hasattr(p, 'id') else p for p in away_players]
+
+                for player_id in home_player_ids + away_player_ids:
+                    all_player_updates.append((player_id, True, next_match_day))
 
         # Batch update player flags
         if all_player_updates:
@@ -1680,7 +2330,14 @@ def simulate_season(season, create_new_season=True):
 
         # Save all changes to database after each match day
         db.session.commit()
-        print(f"Simulated {len(match_day_results)} matches for match day {match_day}")
+        print(f"Simulated {len(match_day_results)} matches for match day {next_match_day}")
+
+        # Check for completed cup rounds and advance if necessary
+        # This must be called after every match day, not just when cup matches exist on this day
+        try:
+            advance_completed_cup_rounds(season.id, next_match_day)
+        except Exception as e:
+            print(f"Error advancing cup rounds: {str(e)}")
 
         # Reset player flags after the match day is complete
         reset_player_matchday_flags()
@@ -1697,16 +2354,35 @@ def simulate_season(season, create_new_season=True):
         print(f"League {league.name} has {len(standings)} teams in standings")
 
     # Process end of season (promotions/relegations) only if create_new_season is True
-    if create_new_season and all(match.is_played for league in leagues for match in league.matches):
-        print("All matches played, processing end of season...")
-        process_end_of_season(season)
+    if create_new_season:
+        # Check if all league matches are played
+        all_league_matches_played = all(match.is_played for league in leagues for match in league.matches)
 
-        # Get the new current season
-        new_season = Season.query.filter_by(is_current=True).first()
-        if new_season and new_season.id != season.id:
-            new_season_created = True
-            new_season_id = new_season.id
-            print(f"New season created: {new_season.name} (ID: {new_season.id})")
+        # Check if all cup matches are played
+        from models import Cup, CupMatch
+        all_cup_matches_played = True
+        cups = Cup.query.filter_by(season_id=season.id).all()
+        for cup in cups:
+            cup_matches = CupMatch.query.filter_by(cup_id=cup.id).all()
+            if not all(match.is_played for match in cup_matches):
+                all_cup_matches_played = False
+                break
+
+        # Only process end of season if ALL matches (league and cup) are played
+        if all_league_matches_played and all_cup_matches_played:
+            print("All league and cup matches played, processing end of season...")
+            process_end_of_season(season)
+
+            # Get the new current season
+            new_season = Season.query.filter_by(is_current=True).first()
+            if new_season and new_season.id != season.id:
+                new_season_created = True
+                new_season_id = new_season.id
+                print(f"New season created: {new_season.name} (ID: {new_season.id})")
+        else:
+            unplayed_league_matches = sum(1 for league in leagues for match in league.matches if not match.is_played)
+            unplayed_cup_matches = sum(1 for cup in cups for match in CupMatch.query.filter_by(cup_id=cup.id).all() if not match.is_played)
+            print(f"Season not complete: {unplayed_league_matches} league matches and {unplayed_cup_matches} cup matches still unplayed")
 
     return {
         'season': season.name,
@@ -1719,7 +2395,8 @@ def simulate_season(season, create_new_season=True):
 def generate_fixtures(league, season):
     """Generate fixtures (matches) for a league in a season using a round-robin tournament algorithm.
     Ensures teams alternate between home and away matches as much as possible."""
-    teams = list(league.teams)
+    # Use direct query instead of relationship to ensure we get updated team assignments
+    teams = list(Team.query.filter_by(league_id=league.id).all())
 
     # Need at least 2 teams to create fixtures
     if len(teams) < 2:
@@ -2008,27 +2685,125 @@ def generate_fixtures(league, season):
 
 def process_end_of_season(season):
     """Process end of season events like promotions and relegations."""
-    leagues = League.query.filter_by(season_id=season.id).order_by(League.level).all()
+    print("Processing end of season...")
 
-    # Process each league level
-    for i, league in enumerate(leagues):
-        # Calculate league standings
-        standings = calculate_standings(league)
+    # Save final standings to league history before creating new season
+    save_league_history(season)
 
-        # Process promotions (except for the top league)
-        if i > 0:
-            promote_teams(standings, leagues[i-1])
-
-        # Process relegations (except for the bottom league)
-        if i < len(leagues) - 1:
-            relegate_teams(standings, leagues[i+1])
-
-    # Create new season
+    # Create new season (this will handle promotions/relegations internally)
     create_new_season(season)
+
+def save_league_history(season):
+    """Save the final standings of all leagues to the league history table."""
+    try:
+        from models import LeagueHistory, League, db
+
+        print("Saving league history for season:", season.name)
+
+        # Check if LeagueHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'league_history' not in existing_tables:
+            print("LeagueHistory table does not exist yet. Creating it...")
+            # Create the table
+            db.create_all()
+            print("LeagueHistory table created successfully.")
+
+        # Get all leagues for this season
+        leagues = League.query.filter_by(season_id=season.id).all()
+        print(f"Found {len(leagues)} leagues for season {season.name}")
+
+        for league in leagues:
+            print(f"Saving history for league: {league.name} (ID: {league.id})")
+
+            # Calculate final standings
+            standings = calculate_standings(league)
+            print(f"Calculated {len(standings)} standings for league {league.name}")
+
+            # Save each team's final position and statistics
+            for i, standing in enumerate(standings):
+                team = standing['team']
+                position = i + 1  # Position is index + 1
+                print(f"  Processing team {i+1}: {team.name} (Position: {position})")
+
+                # Get club information
+                club_name = team.club.name if team.club else None
+                club_id = team.club.id if team.club else None
+                verein_id = team.club.verein_id if team.club else None
+
+                # Calculate games played
+                games_played = standing['wins'] + standing['draws'] + standing['losses']
+
+                # Calculate average scores (home and away)
+                home_matches = Match.query.filter_by(home_team_id=team.id, league_id=league.id, is_played=True).all()
+                away_matches = Match.query.filter_by(away_team_id=team.id, league_id=league.id, is_played=True).all()
+
+                avg_home_score = 0.0
+                avg_away_score = 0.0
+
+                if home_matches:
+                    total_home_score = sum(match.home_score for match in home_matches)
+                    avg_home_score = total_home_score / len(home_matches)
+
+                if away_matches:
+                    total_away_score = sum(match.away_score for match in away_matches)
+                    avg_away_score = total_away_score / len(away_matches)
+
+                # Create league history entry
+                history_entry = LeagueHistory(
+                    league_name=league.name,
+                    league_level=league.level,
+                    season_id=season.id,
+                    season_name=season.name,
+                    team_id=team.id,
+                    team_name=team.name,
+                    club_name=club_name,
+                    club_id=club_id,
+                    verein_id=verein_id,
+                    position=position,
+                    games_played=games_played,
+                    wins=standing['wins'],
+                    draws=standing['draws'],
+                    losses=standing['losses'],
+                    table_points=standing['points'],
+                    match_points_for=standing['match_points_for'],
+                    match_points_against=standing['match_points_against'],
+                    pins_for=standing['goals_for'],  # goals_for is actually pins_for
+                    pins_against=standing['goals_against'],  # goals_against is actually pins_against
+                    avg_home_score=avg_home_score,
+                    avg_away_score=avg_away_score
+                )
+
+                print(f"    Created history entry: {team.name} -> Position {position}")
+                db.session.add(history_entry)
+
+            print(f"Added {len(standings)} teams for league {league.name} to session")
+
+        # Commit all history entries
+        print("Committing all history entries to database...")
+        db.session.commit()
+        print(f"League history saved successfully for {len(leagues)} leagues")
+
+        # Verify the data was saved
+        total_entries = LeagueHistory.query.filter_by(season_id=season.id).count()
+        print(f"Verification: {total_entries} history entries saved for season {season.name}")
+
+    except Exception as e:
+        print(f"Error saving league history: {e}")
+        import traceback
+        traceback.print_exc()
+        print("Continuing with season transition without saving history...")
+        # Don't let history saving errors break the season transition
+        try:
+            db.session.rollback()
+        except:
+            pass
 
 def calculate_standings(league):
     """Calculate the standings for a league."""
-    teams = league.teams
+    # Use direct query instead of relationship to ensure we get updated team assignments
+    teams = Team.query.filter_by(league_id=league.id).all()
     standings = []
 
     # Check if any matches have been played in this league
@@ -2104,24 +2879,6 @@ def calculate_standings(league):
 
     return standings
 
-def promote_teams(standings, higher_league):
-    """Promote top teams to a higher league."""
-    # Promote top 2 teams
-    for i in range(min(2, len(standings))):
-        team = standings[i]['team']
-        team.league_id = higher_league.id
-
-    db.session.commit()
-
-def relegate_teams(standings, lower_league):
-    """Relegate bottom teams to a lower league."""
-    # Relegate bottom 2 teams
-    for i in range(max(0, len(standings) - 2), len(standings)):
-        team = standings[i]['team']
-        team.league_id = lower_league.id
-
-    db.session.commit()
-
 def create_new_season(old_season):
     """Create a new season based on the old one."""
     print("Creating new season...")
@@ -2167,30 +2924,50 @@ def create_new_season(old_season):
     # First, get the final standings for each old league
     for i, old_league in enumerate(old_leagues):
         standings = calculate_standings(old_league)
+        print(f"Old league {old_league.name} (Level {old_league.level}) has {len(standings)} teams")
 
-        # Map each team to its corresponding new league
+        # Map each team to its corresponding new league and set status flags
         for j, standing in enumerate(standings):
             team = standing['team']
             # By default, teams stay in the same level
             target_level = old_league.level
 
-            # Apply promotions/relegations based on standings
+            # Store previous season information
+            team.previous_season_position = j + 1
+            team.previous_season_league_level = old_league.level
+            team.previous_season_status = None  # Reset status first
+
+            # Apply promotions/relegations based on standings and set status
             if j < old_league.anzahl_aufsteiger and i > 0:  # Promotion (except for top league)
                 target_level = old_league.level - 1
+                team.previous_season_status = 'promoted'
+                print(f"Team {team.name} promoted from level {old_league.level} to level {target_level}")
             elif j >= len(standings) - old_league.anzahl_absteiger and i < len(old_leagues) - 1:  # Relegation (except for bottom league)
                 target_level = old_league.level + 1
+                team.previous_season_status = 'relegated'
+                print(f"Team {team.name} relegated from level {old_league.level} to level {target_level}")
+            elif j == 0 and old_league.level == 1:  # Champion of top league
+                team.previous_season_status = 'champion'
+                print(f"Team {team.name} is champion of level {old_league.level}")
 
             # Find the new league with the matching level
             for new_league in new_leagues:
                 if new_league.level == target_level:
                     team_to_new_league[team.id] = new_league.id
+                    print(f"Team {team.name} (ID: {team.id}) mapped to new league {new_league.name} (ID: {new_league.id})")
                     break
 
     # Now update all teams to point to their new leagues
     teams = Team.query.all()
+    updated_teams = 0
+    unmapped_teams = []
+
     for team in teams:
         if team.id in team_to_new_league:
+            old_league_id = team.league_id
             team.league_id = team_to_new_league[team.id]
+            updated_teams += 1
+            print(f"Team {team.name} moved from league {old_league_id} to league {team.league_id}")
         else:
             # If for some reason we don't have a mapping, find a league with the same level
             old_league = League.query.get(team.league_id)
@@ -2198,16 +2975,51 @@ def create_new_season(old_season):
                 for new_league in new_leagues:
                     if new_league.level == old_league.level:
                         team.league_id = new_league.id
+                        updated_teams += 1
+                        print(f"Team {team.name} mapped to same level league {new_league.name}")
                         break
+                else:
+                    unmapped_teams.append(team)
+                    print(f"WARNING: Could not find new league for team {team.name} (old level: {old_league.level})")
+            else:
+                unmapped_teams.append(team)
+                print(f"WARNING: Team {team.name} has invalid old league reference")
 
     db.session.commit()
-    print(f"Updated {len(teams)} teams to point to their new leagues")
+    print(f"Updated {updated_teams} teams to point to their new leagues")
+
+    if unmapped_teams:
+        print(f"WARNING: {len(unmapped_teams)} teams could not be mapped to new leagues")
+
+    # Refresh the session to ensure relationships are updated
+    db.session.expire_all()
 
     # Generate fixtures for the new season
+    total_fixtures_generated = 0
     for new_league in new_leagues:
-        generate_fixtures(new_league, new_season)
+        # Verify that the league has teams before generating fixtures
+        league_teams = Team.query.filter_by(league_id=new_league.id).all()
+        print(f"League {new_league.name} (Level {new_league.level}) has {len(league_teams)} teams")
+
+        if len(league_teams) >= 2:
+            generate_fixtures(new_league, new_season)
+            fixtures_count = Match.query.filter_by(league_id=new_league.id, season_id=new_season.id).count()
+            total_fixtures_generated += fixtures_count
+            print(f"Generated {fixtures_count} fixtures for league {new_league.name}")
+        else:
+            print(f"WARNING: League {new_league.name} has only {len(league_teams)} teams, skipping fixture generation")
+
+    print(f"Total fixtures generated: {total_fixtures_generated}")
 
     print("Generated fixtures for all leagues in the new season")
+
+    # Create cups for the new season
+    from app import auto_initialize_cups
+    try:
+        auto_initialize_cups(new_season.id)
+        print("Auto-initialized cups for the new season")
+    except Exception as e:
+        print(f"Error initializing cups: {str(e)}")
 
     # Age all players by 1 year
     players = Player.query.all()
