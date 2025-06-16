@@ -254,6 +254,12 @@ class Team(db.Model):
     previous_season_position = db.Column(db.Integer, nullable=True)  # Position in previous season
     previous_season_league_level = db.Column(db.Integer, nullable=True)  # League level in previous season
 
+    # Temporary fields for cheat function: target league for next season
+    target_league_level = db.Column(db.Integer, nullable=True)  # Target league level for next season
+    target_league_bundesland = db.Column(db.String(50), nullable=True)  # Target league bundesland
+    target_league_landkreis = db.Column(db.String(100), nullable=True)  # Target league landkreis
+    target_league_altersklasse = db.Column(db.String(50), nullable=True)  # Target league altersklasse
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

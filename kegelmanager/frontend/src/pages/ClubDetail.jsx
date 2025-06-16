@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getClub, updateClub } from '../services/api';
+import { getClub, updateClub, addTeamToClub, getLeagues, getSeasonStatus } from '../services/api';
 import './ClubDetail.css';
 
 const ClubDetail = () => {
@@ -11,13 +11,21 @@ const ClubDetail = () => {
   const [cheatForm, setCheatForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState({ show: false, type: '', text: '' });
+  const [showAddTeamModal, setShowAddTeamModal] = useState(false);
+  const [leagues, setLeagues] = useState([]);
+  const [selectedLeague, setSelectedLeague] = useState('');
+  const [teamName, setTeamName] = useState('');
+  const [seasonCompleted, setSeasonCompleted] = useState(false);
+  const [addingTeam, setAddingTeam] = useState(false);
 
   // Lade Daten aus der API
   useEffect(() => {
     console.log(`Lade Club mit ID ${id} aus der API...`);
 
-    getClub(id)
-      .then(data => {
+    const loadData = async () => {
+      try {
+        // Load club data
+        const data = await getClub(id);
         console.log('Geladene Club-Daten:', data);
 
         // Verarbeite die Daten
@@ -60,12 +68,22 @@ const ClubDetail = () => {
           console.error(`Keine Daten für Club ${id} gefunden`);
         }
 
+        // Load leagues for team creation
+        const leaguesData = await getLeagues();
+        setLeagues(leaguesData);
+
+        // Check season status
+        const seasonStatus = await getSeasonStatus();
+        setSeasonCompleted(seasonStatus.is_completed);
+
         setLoading(false);
-      })
-      .catch(error => {
-        console.error(`Fehler beim Laden des Clubs ${id}:`, error);
+      } catch (error) {
+        console.error(`Fehler beim Laden der Daten für Club ${id}:`, error);
         setLoading(false);
-      });
+      }
+    };
+
+    loadData();
   }, [id]);
 
   if (loading) {
@@ -115,6 +133,51 @@ const ClubDetail = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Handle add team modal
+  const handleAddTeamClick = () => {
+    setShowAddTeamModal(true);
+    setSelectedLeague('');
+    setTeamName('');
+  };
+
+  const handleAddTeamSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedLeague) {
+      alert('Bitte wählen Sie eine Liga aus.');
+      return;
+    }
+
+    setAddingTeam(true);
+    try {
+      const response = await addTeamToClub(id, {
+        league_id: selectedLeague,
+        team_name: teamName || undefined
+      });
+
+      setSaveMessage({
+        show: true,
+        type: 'success',
+        text: response.message
+      });
+
+      setShowAddTeamModal(false);
+
+      // Reload club data to show the new team
+      const updatedClub = await getClub(id);
+      setClub(updatedClub);
+
+    } catch (error) {
+      console.error('Error adding team:', error);
+      setSaveMessage({
+        show: true,
+        type: 'error',
+        text: `Fehler beim Hinzufügen der Mannschaft: ${error.response?.data?.error || error.message}`
+      });
+    } finally {
+      setAddingTeam(false);
     }
   };
 
@@ -808,6 +871,103 @@ const ClubDetail = () => {
                   </button>
                 </div>
               </form>
+
+              <div className="cheat-section">
+                <h4>Mannschaftsverwaltung</h4>
+                <p className="info-text">
+                  Hier können Sie neue Mannschaften für die nächste Saison hinzufügen.
+                </p>
+
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleAddTeamClick}
+                    disabled={!seasonCompleted}
+                    title={!seasonCompleted ? 'Diese Funktion ist nur nach dem letzten Spieltag verfügbar' : 'Neue Mannschaft hinzufügen'}
+                  >
+                    Mannschaft hinzufügen
+                  </button>
+                  {!seasonCompleted && (
+                    <p className="warning-text">
+                      Diese Funktion ist nur nach dem letzten Spieltag verfügbar.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Add Team Modal */}
+          {showAddTeamModal && (
+            <div className="modal-overlay" onClick={() => setShowAddTeamModal(false)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3>Neue Mannschaft hinzufügen</h3>
+                  <button
+                    className="modal-close"
+                    onClick={() => setShowAddTeamModal(false)}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <form onSubmit={handleAddTeamSubmit}>
+                  <div className="modal-body">
+                    <div className="form-group">
+                      <label htmlFor="teamName">Mannschaftsname (optional):</label>
+                      <input
+                        type="text"
+                        id="teamName"
+                        value={teamName}
+                        onChange={(e) => setTeamName(e.target.value)}
+                        placeholder={`${club?.name} ${(club?.teams_info?.length || 0) + 1}`}
+                      />
+                      <div className="input-help">
+                        Leer lassen für automatischen Namen
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="targetLeague">Ziel-Liga:</label>
+                      <select
+                        id="targetLeague"
+                        value={selectedLeague}
+                        onChange={(e) => setSelectedLeague(e.target.value)}
+                        required
+                      >
+                        <option value="">Liga auswählen...</option>
+                        {leagues.map(league => (
+                          <option key={league.id} value={league.id}>
+                            {league.name} (Level {league.level})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="input-help">
+                        Die Mannschaft wird zur nächsten Saison zu dieser Liga hinzugefügt
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setShowAddTeamModal(false)}
+                      disabled={addingTeam}
+                    >
+                      Abbrechen
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={addingTeam || !selectedLeague}
+                    >
+                      {addingTeam ? 'Hinzufügen...' : 'Mannschaft hinzufügen'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
         </div>

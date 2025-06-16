@@ -208,6 +208,71 @@ def update_team(team_id):
         "team": team.to_dict()
     })
 
+@app.route('/api/clubs/<int:club_id>/teams', methods=['POST'])
+def add_team_to_club(club_id):
+    """Add a new team to a club for the next season (Cheat function)."""
+    try:
+        # Check if season is completed
+        current_season = Season.query.filter_by(is_current=True).first()
+        if not current_season:
+            return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+        # Check season status
+        season_status = get_season_status_data(current_season)
+        if not season_status.get('is_completed', False):
+            return jsonify({"error": "Diese Funktion ist nur nach dem letzten Spieltag verfügbar"}), 400
+
+        # Get club
+        club = Club.query.get_or_404(club_id)
+
+        # Get request data
+        data = request.json
+        league_id = data.get('league_id')
+        team_name = data.get('team_name')
+
+        if not league_id:
+            return jsonify({"error": "Liga-ID ist erforderlich"}), 400
+
+        if not team_name:
+            # Generate default team name
+            existing_teams = Team.query.filter_by(club_id=club_id).count()
+            team_name = f"{club.name} {existing_teams + 1}"
+
+        # Validate league exists and is in current season
+        league = League.query.filter_by(id=league_id, season_id=current_season.id).first()
+        if not league:
+            return jsonify({"error": "Liga nicht gefunden oder nicht in aktueller Saison"}), 404
+
+        # Create new team (will be added to next season during season transition)
+        new_team = Team(
+            name=team_name,
+            club_id=club_id,
+            league_id=None,  # Will be set during season transition
+            is_youth_team=False,
+            staerke=0
+        )
+
+        # Store the target league for next season in a temporary field
+        # We'll use a simple approach: store it in the database and handle it during season transition
+        new_team.target_league_level = league.level
+        new_team.target_league_bundesland = league.bundesland
+        new_team.target_league_landkreis = league.landkreis
+        new_team.target_league_altersklasse = league.altersklasse
+
+        db.session.add(new_team)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Mannschaft '{team_name}' wurde erstellt und wird zur nächsten Saison zu '{league.name}' hinzugefügt",
+            "team": new_team.to_dict(),
+            "target_league": league.name
+        })
+
+    except Exception as e:
+        print(f"Error adding team to club: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/teams/<int:team_id>/history', methods=['GET'])
 def get_team_history(team_id):
     """Get historical league positions for a team across all seasons."""
@@ -1388,6 +1453,37 @@ def simulate_season():
         print(f"DEBUG: Error simulating season: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+def get_season_status_data(season):
+    """Helper function to get season status data."""
+    # Check if all matches in the season are played (both league and cup matches)
+    total_league_matches = Match.query.filter_by(season_id=season.id).count()
+    played_league_matches = Match.query.filter_by(season_id=season.id, is_played=True).count()
+
+    # Check cup matches
+    from models import CupMatch, Cup
+    total_cup_matches = db.session.query(CupMatch).join(Cup).filter(
+        Cup.season_id == season.id
+    ).count()
+    played_cup_matches = db.session.query(CupMatch).join(Cup).filter(
+        Cup.season_id == season.id,
+        CupMatch.is_played == True
+    ).count()
+
+    # Total matches = league matches + cup matches
+    total_matches = total_league_matches + total_cup_matches
+    played_matches = played_league_matches + played_cup_matches
+
+    is_completed = total_matches > 0 and total_matches == played_matches
+
+    return {
+        "season_id": season.id,
+        "season_name": season.name,
+        "is_completed": is_completed,
+        "total_matches": total_matches,
+        "played_matches": played_matches,
+        "unplayed_matches": total_matches - played_matches
+    }
+
 @app.route('/api/season/status', methods=['GET'])
 def get_season_status():
     """Get the status of the current season (completed or not)."""
@@ -1621,6 +1717,35 @@ def migrate_database():
         if 'transfer_history' not in existing_tables:
             TransferHistory.__table__.create(db.engine)
             new_tables_created.append('transfer_history')
+
+        # Add new columns to Team table for cheat function
+        try:
+            # Check if the new columns exist
+            inspector = db.inspect(db.engine)
+            team_columns = [col['name'] for col in inspector.get_columns('team')]
+
+            columns_to_add = []
+            if 'target_league_level' not in team_columns:
+                columns_to_add.append('target_league_level INTEGER')
+            if 'target_league_bundesland' not in team_columns:
+                columns_to_add.append('target_league_bundesland VARCHAR(50)')
+            if 'target_league_landkreis' not in team_columns:
+                columns_to_add.append('target_league_landkreis VARCHAR(100)')
+            if 'target_league_altersklasse' not in team_columns:
+                columns_to_add.append('target_league_altersklasse VARCHAR(50)')
+
+            # Add the columns if they don't exist
+            for column_def in columns_to_add:
+                try:
+                    db.session.execute(f'ALTER TABLE team ADD COLUMN {column_def}')
+                    db.session.commit()
+                    print(f"Added column to team table: {column_def}")
+                except Exception as e:
+                    print(f"Error adding column {column_def}: {e}")
+                    db.session.rollback()
+
+        except Exception as e:
+            print(f"Error checking/adding team table columns: {e}")
 
         return jsonify({
             "message": "Database migration completed successfully",

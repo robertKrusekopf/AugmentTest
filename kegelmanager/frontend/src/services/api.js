@@ -40,6 +40,16 @@ export const updateClub = async (id, clubData) => {
   }
 };
 
+export const addTeamToClub = async (clubId, teamData) => {
+  try {
+    const response = await api.post(`/clubs/${clubId}/teams`, teamData);
+    return response.data;
+  } catch (error) {
+    console.error(`Error adding team to club ${clubId}:`, error);
+    throw error;
+  }
+};
+
 // Team endpoints
 export const getTeams = async () => {
   try {

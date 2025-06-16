@@ -3552,6 +3552,29 @@ def create_new_season(old_season):
             team.league_id = team_to_new_league[team.id]
             updated_teams += 1
             print(f"Team {team.name} moved from league {old_league_id} to league {team.league_id}")
+        elif team.target_league_level is not None:
+            # This is a new team added via cheat function - assign to target league
+            target_league = None
+            for new_league in new_leagues:
+                if (new_league.level == team.target_league_level and
+                    new_league.bundesland == team.target_league_bundesland and
+                    new_league.landkreis == team.target_league_landkreis and
+                    new_league.altersklasse == team.target_league_altersklasse):
+                    target_league = new_league
+                    break
+
+            if target_league:
+                team.league_id = target_league.id
+                # Clear the temporary fields
+                team.target_league_level = None
+                team.target_league_bundesland = None
+                team.target_league_landkreis = None
+                team.target_league_altersklasse = None
+                updated_teams += 1
+                print(f"New team {team.name} assigned to target league {target_league.name}")
+            else:
+                unmapped_teams.append(team)
+                print(f"WARNING: Could not find target league for new team {team.name}")
         else:
             # If for some reason we don't have a mapping, find a league with the same level
             old_league = League.query.get(team.league_id)
