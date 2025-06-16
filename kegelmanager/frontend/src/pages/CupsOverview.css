@@ -801,3 +801,198 @@
     margin-right: 0;
   }
 }
+
+/* History Tab */
+.history-tab {
+  padding: 1rem 0;
+}
+
+.history-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 2rem 0;
+  text-align: center;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.history-entry {
+  background: var(--card-background);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 2rem;
+  transition: all 0.2s ease;
+}
+
+.history-entry:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  border-color: var(--primary-color-light);
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--border-light);
+}
+
+.season-name {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  margin: 0;
+}
+
+.final-score {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.set-points {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.finalists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.finalist {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.finalist-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.trophy-icon,
+.medal-icon {
+  font-size: 1.5rem;
+}
+
+.finalist-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.finalist.winner .finalist-label {
+  color: var(--success-text);
+}
+
+.finalist.runner-up .finalist-label {
+  color: var(--text-secondary);
+}
+
+.finalist .team-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--secondary-background);
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+}
+
+.finalist.winner .team-info {
+  background: var(--success-background);
+  border-color: var(--success-color);
+}
+
+.finalist .team-emblem-small {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.finalist .team-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.finalist .team-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.finalist .club-name {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.no-history {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-secondary);
+}
+
+.no-history h3 {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin: 0 0 1rem 0;
+}
+
+.no-history p {
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Mobile responsiveness for history tab */
+@media (max-width: 768px) {
+  .history-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .finalists {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .finalist .team-info {
+    padding: 0.75rem;
+  }
+
+  .history-entry {
+    padding: 1.5rem;
+  }
+
+  .history-title {
+    font-size: 1.25rem;
+  }
+
+  .season-name {
+    font-size: 1.1rem;
+  }
+
+  .final-score {
+    font-size: 1rem;
+  }
+}

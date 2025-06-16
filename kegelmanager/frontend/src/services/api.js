@@ -71,6 +71,26 @@ export const getTeamHistory = async (id) => {
   }
 };
 
+export const getTeamCupHistory = async (id) => {
+  try {
+    const response = await api.get(`/teams/${id}/cup-history`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching team cup history for team ${id}:`, error);
+    throw error;
+  }
+};
+
+export const getTeamAchievements = async (id) => {
+  try {
+    const response = await api.get(`/teams/${id}/achievements`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching team achievements for team ${id}:`, error);
+    throw error;
+  }
+};
+
 export const updateTeam = async (id, teamData) => {
   try {
     const response = await api.patch(`/teams/${id}`, teamData);
@@ -108,6 +128,16 @@ export const getPlayerHistory = async (id) => {
     return response.data;
   } catch (error) {
     console.error(`Error fetching player history for ${id}:`, error);
+    throw error;
+  }
+};
+
+export const getPlayerMatches = async (id) => {
+  try {
+    const response = await api.get(`/players/${id}/matches`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching player matches for ${id}:`, error);
     throw error;
   }
 };
@@ -159,6 +189,37 @@ export const getLeagueHistorySeason = async (leagueId, seasonId) => {
     return response.data;
   } catch (error) {
     console.error(`Error fetching league history for league ${leagueId} and season ${seasonId}:`, error);
+    throw error;
+  }
+};
+
+// Cup history endpoints
+export const getCupsHistory = async () => {
+  try {
+    const response = await api.get('/cups/history');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching cups history:', error);
+    throw error;
+  }
+};
+
+export const getCupsHistoryByType = async (cupType) => {
+  try {
+    const response = await api.get(`/cups/history/${cupType}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching cups history for type ${cupType}:`, error);
+    throw error;
+  }
+};
+
+export const getCupHistoryByName = async (cupName) => {
+  try {
+    const response = await api.get(`/cups/history/cup/${encodeURIComponent(cupName)}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching cup history for ${cupName}:`, error);
     throw error;
   }
 };

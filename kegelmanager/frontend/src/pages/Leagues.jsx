@@ -46,6 +46,8 @@ const Leagues = () => {
           // Wenn Ligen vorhanden sind, lade automatisch die erste Liga
           if (processedLeagues.length > 0) {
             loadLeagueDetails(processedLeagues[0].id);
+            // Lade auch die Historie für die erste Liga
+            loadLeagueHistory(processedLeagues[0].id);
           }
         }
       } catch (error) {
@@ -57,6 +59,14 @@ const Leagues = () => {
 
     loadLeagues();
   }, [getLeagues]);
+
+  // Lade Historie wenn der Historie-Tab aktiviert wird
+  useEffect(() => {
+    if (activeTab === 'history' && selectedLeague && !leagueHistory) {
+      console.log('Historie-Tab aktiviert, lade Historie für Liga:', selectedLeague.id);
+      loadLeagueHistory(selectedLeague.id);
+    }
+  }, [activeTab, selectedLeague]);
 
   // Funktion zum Laden der Details einer Liga
   const loadLeagueDetails = (leagueId) => {
@@ -538,7 +548,7 @@ const Leagues = () => {
               <div className="history-tab">
                 {loadingHistory ? (
                   <div className="loading">Lade Historie...</div>
-                ) : leagueHistory && leagueHistory.seasons && leagueHistory.seasons.length > 0 ? (
+                ) : leagueHistory && leagueHistory.seasons ? (
                   <div className="history-content">
                     <div className="history-controls">
                       <label htmlFor="season-select">Saison auswählen:</label>

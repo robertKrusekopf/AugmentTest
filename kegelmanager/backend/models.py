@@ -392,8 +392,8 @@ class Team(db.Model):
         recent_matches = []
         all_played_matches = []
 
-        # Get home matches
-        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True).order_by(Match.match_date.desc()).all()
+        # Get home league matches
+        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True).all()
         for match in home_matches:
             match_data = {
                 'id': match.id,
@@ -403,12 +403,14 @@ class Team(db.Model):
                 'homeScore': match.home_score,
                 'awayScore': match.away_score,
                 'league': match.league.name,
-                'status': 'played'
+                'status': 'played',
+                'match_type': 'league',
+                'match_day': match.match_day or 0
             }
-            all_played_matches.append((match.match_date, match_data))
+            all_played_matches.append((match.match_day or 0, match_data))
 
-        # Get away matches
-        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True).order_by(Match.match_date.desc()).all()
+        # Get away league matches
+        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True).all()
         for match in away_matches:
             match_data = {
                 'id': match.id,
@@ -418,12 +420,110 @@ class Team(db.Model):
                 'homeScore': match.home_score,
                 'awayScore': match.away_score,
                 'league': match.league.name,
-                'status': 'played'
+                'status': 'played',
+                'match_type': 'league',
+                'match_day': match.match_day or 0
             }
-            all_played_matches.append((match.match_date, match_data))
+            all_played_matches.append((match.match_day or 0, match_data))
 
-        # Sort by date (newest first)
-        all_played_matches.sort(key=lambda x: x[0] if x[0] else datetime.min, reverse=True)
+        # Get home cup matches - use raw SQL to avoid circular dependency
+        try:
+            from sqlalchemy import text
+            # Query cup matches using raw SQL to avoid circular import
+            home_cup_matches_raw = db.session.execute(
+                text("""
+                    SELECT cm.id, cm.match_date, cm.home_score, cm.away_score,
+                           cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as away_team_name
+                    FROM cup_match cm
+                    JOIN cup c ON cm.cup_id = c.id
+                    LEFT JOIN team t ON cm.away_team_id = t.id
+                    WHERE cm.home_team_id = :team_id AND cm.is_played = 1
+                """),
+                {"team_id": self.id}
+            ).fetchall()
+
+            for cup_match_row in home_cup_matches_raw:
+                # Convert match_date to datetime for consistency
+                match_datetime = None
+                if cup_match_row.match_date:
+                    try:
+                        if isinstance(cup_match_row.match_date, str):
+                            # Parse string date
+                            from datetime import datetime as dt
+                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
+                        else:
+                            # Assume it's a date object
+                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
+                    except (ValueError, TypeError):
+                        match_datetime = None
+
+                # Import the helper function
+                from app import get_cup_match_frontend_id
+
+                match_data = {
+                    'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
+                    'date': match_datetime.isoformat() if match_datetime else None,
+                    'homeTeam': self.name,
+                    'awayTeam': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
+                    'homeScore': cup_match_row.home_score,
+                    'awayScore': cup_match_row.away_score,
+                    'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
+                    'status': 'played',
+                    'match_type': 'cup',
+                    'match_day': cup_match_row.cup_match_day or 0
+                }
+                all_played_matches.append((cup_match_row.cup_match_day or 0, match_data))
+
+            # Get away cup matches
+            away_cup_matches_raw = db.session.execute(
+                text("""
+                    SELECT cm.id, cm.match_date, cm.home_score, cm.away_score,
+                           cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as home_team_name
+                    FROM cup_match cm
+                    JOIN cup c ON cm.cup_id = c.id
+                    JOIN team t ON cm.home_team_id = t.id
+                    WHERE cm.away_team_id = :team_id AND cm.is_played = 1
+                """),
+                {"team_id": self.id}
+            ).fetchall()
+
+            for cup_match_row in away_cup_matches_raw:
+                # Convert match_date to datetime for consistency
+                match_datetime = None
+                if cup_match_row.match_date:
+                    try:
+                        if isinstance(cup_match_row.match_date, str):
+                            # Parse string date
+                            from datetime import datetime as dt
+                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
+                        else:
+                            # Assume it's a date object
+                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
+                    except (ValueError, TypeError):
+                        match_datetime = None
+
+                # Import the helper function
+                from app import get_cup_match_frontend_id
+
+                match_data = {
+                    'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
+                    'date': match_datetime.isoformat() if match_datetime else None,
+                    'homeTeam': cup_match_row.home_team_name,
+                    'awayTeam': self.name,
+                    'homeScore': cup_match_row.home_score,
+                    'awayScore': cup_match_row.away_score,
+                    'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
+                    'status': 'played',
+                    'match_type': 'cup',
+                    'match_day': cup_match_row.cup_match_day or 0
+                }
+                all_played_matches.append((cup_match_row.cup_match_day or 0, match_data))
+        except Exception as e:
+            print(f"Error loading cup matches for team {self.id}: {e}")
+            # Continue without cup matches if there's an error
+
+        # Sort by match_day (newest first for recent matches)
+        all_played_matches.sort(key=lambda x: x[0] or 0, reverse=True)
         # Get all recent matches but mark the first 5 as visible by default
         recent_matches = []
         for i, match_tuple in enumerate(all_played_matches):
@@ -435,8 +535,8 @@ class Team(db.Model):
         upcoming_matches = []
         all_upcoming_matches = []
 
-        # Get home matches
-        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=False).order_by(Match.match_date).all()
+        # Get home league matches
+        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=False).all()
         for match in home_matches:
             match_data = {
                 'id': match.id,
@@ -444,12 +544,14 @@ class Team(db.Model):
                 'homeTeam': self.name,
                 'awayTeam': match.away_team.name,
                 'league': match.league.name,
-                'status': 'upcoming'
+                'status': 'upcoming',
+                'match_type': 'league',
+                'match_day': match.match_day or 0
             }
-            all_upcoming_matches.append((match.match_date, match_data))
+            all_upcoming_matches.append((match.match_day or 0, match_data))
 
-        # Get away matches
-        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=False).order_by(Match.match_date).all()
+        # Get away league matches
+        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=False).all()
         for match in away_matches:
             match_data = {
                 'id': match.id,
@@ -457,12 +559,103 @@ class Team(db.Model):
                 'homeTeam': match.home_team.name,
                 'awayTeam': self.name,
                 'league': match.league.name,
-                'status': 'upcoming'
+                'status': 'upcoming',
+                'match_type': 'league',
+                'match_day': match.match_day or 0
             }
-            all_upcoming_matches.append((match.match_date, match_data))
+            all_upcoming_matches.append((match.match_day or 0, match_data))
 
-        # Sort by date (oldest first)
-        all_upcoming_matches.sort(key=lambda x: x[0] if x[0] else datetime.max)
+        # Get upcoming cup matches - use raw SQL to avoid circular import
+        try:
+            # Query upcoming home cup matches
+            home_cup_matches_raw = db.session.execute(
+                text("""
+                    SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as away_team_name
+                    FROM cup_match cm
+                    JOIN cup c ON cm.cup_id = c.id
+                    LEFT JOIN team t ON cm.away_team_id = t.id
+                    WHERE cm.home_team_id = :team_id AND cm.is_played = 0
+                """),
+                {"team_id": self.id}
+            ).fetchall()
+
+            for cup_match_row in home_cup_matches_raw:
+                # Convert match_date to datetime for consistency
+                match_datetime = None
+                if cup_match_row.match_date:
+                    try:
+                        if isinstance(cup_match_row.match_date, str):
+                            # Parse string date
+                            from datetime import datetime as dt
+                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
+                        else:
+                            # Assume it's a date object
+                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
+                    except (ValueError, TypeError):
+                        match_datetime = None
+
+                # Import the helper function
+                from app import get_cup_match_frontend_id
+
+                match_data = {
+                    'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
+                    'date': match_datetime.isoformat() if match_datetime else None,
+                    'homeTeam': self.name,
+                    'awayTeam': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
+                    'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
+                    'status': 'upcoming',
+                    'match_type': 'cup',
+                    'match_day': cup_match_row.cup_match_day or 0
+                }
+                all_upcoming_matches.append((cup_match_row.cup_match_day or 0, match_data))
+
+            # Query upcoming away cup matches
+            away_cup_matches_raw = db.session.execute(
+                text("""
+                    SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as home_team_name
+                    FROM cup_match cm
+                    JOIN cup c ON cm.cup_id = c.id
+                    JOIN team t ON cm.home_team_id = t.id
+                    WHERE cm.away_team_id = :team_id AND cm.is_played = 0
+                """),
+                {"team_id": self.id}
+            ).fetchall()
+
+            for cup_match_row in away_cup_matches_raw:
+                # Convert match_date to datetime for consistency
+                match_datetime = None
+                if cup_match_row.match_date:
+                    try:
+                        if isinstance(cup_match_row.match_date, str):
+                            # Parse string date
+                            from datetime import datetime as dt
+                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
+                        else:
+                            # Assume it's a date object
+                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
+                    except (ValueError, TypeError):
+                        match_datetime = None
+
+                # Import the helper function
+                from app import get_cup_match_frontend_id
+
+                match_data = {
+                    'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
+                    'date': match_datetime.isoformat() if match_datetime else None,
+                    'homeTeam': cup_match_row.home_team_name,
+                    'awayTeam': self.name,
+                    'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
+                    'status': 'upcoming',
+                    'match_type': 'cup',
+                    'match_day': cup_match_row.cup_match_day or 0
+                }
+                all_upcoming_matches.append((cup_match_row.cup_match_day or 0, match_data))
+        except Exception as e:
+            print(f"Error loading upcoming cup matches for team {self.id}: {e}")
+            # Continue without cup matches if there's an error
+
+        # Sort by match_day (earliest first for upcoming matches)
+        all_upcoming_matches.sort(key=lambda x: x[0] or 999)
         # Get all upcoming matches but mark the first 5 as visible by default
         upcoming_matches = []
         for i, match_tuple in enumerate(all_upcoming_matches):
@@ -1502,6 +1695,253 @@ class LeagueHistory(db.Model):
             'avg_away_score': self.avg_away_score
         }
 
+
+class CupHistory(db.Model):
+    """Speichert die Sieger und Finalisten vergangener Pokale für jede Saison."""
+    id = db.Column(db.Integer, primary_key=True)
+    cup_name = db.Column(db.String(100), nullable=False)  # Name des Pokals
+    cup_type = db.Column(db.String(20), nullable=False)  # "DKBC", "Landespokal", "Kreispokal"
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
+    season_name = db.Column(db.String(100), nullable=False)  # Name der Saison für einfachere Abfragen
+
+    # Geografische Zuordnung (für Landes- und Kreispokale)
+    bundesland = db.Column(db.String(50))  # Nur für Landespokal und Kreispokal
+    landkreis = db.Column(db.String(100))  # Nur für Kreispokal
+
+    # Sieger-Informationen
+    winner_team_id = db.Column(db.Integer, nullable=False)  # Original Team ID des Siegers
+    winner_team_name = db.Column(db.String(100), nullable=False)
+    winner_club_name = db.Column(db.String(100))
+    winner_club_id = db.Column(db.Integer)
+    winner_verein_id = db.Column(db.Integer)  # Für Wappen
+
+    # Finalist-Informationen
+    finalist_team_id = db.Column(db.Integer, nullable=False)  # Original Team ID des Finalisten
+    finalist_team_name = db.Column(db.String(100), nullable=False)
+    finalist_club_name = db.Column(db.String(100))
+    finalist_club_id = db.Column(db.Integer)
+    finalist_verein_id = db.Column(db.Integer)  # Für Wappen
+
+    # Finale-Ergebnis
+    final_winner_score = db.Column(db.Integer)  # Holz des Siegers im Finale
+    final_finalist_score = db.Column(db.Integer)  # Holz des Finalisten im Finale
+    final_winner_set_points = db.Column(db.Float)  # Satzpunkte des Siegers im Finale
+    final_finalist_set_points = db.Column(db.Float)  # Satzpunkte des Finalisten im Finale
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    season = db.relationship('Season', backref='cup_histories')
+
+    def to_dict(self):
+        winner_emblem_url = None
+        if self.winner_verein_id:
+            winner_emblem_url = f"/api/club-emblem/{self.winner_verein_id}"
+
+        finalist_emblem_url = None
+        if self.finalist_verein_id:
+            finalist_emblem_url = f"/api/club-emblem/{self.finalist_verein_id}"
+
+        return {
+            'id': self.id,
+            'cup_name': self.cup_name,
+            'cup_type': self.cup_type,
+            'season_id': self.season_id,
+            'season_name': self.season_name,
+            'bundesland': self.bundesland,
+            'landkreis': self.landkreis,
+            'winner': {
+                'team_id': self.winner_team_id,
+                'team_name': self.winner_team_name,
+                'club_name': self.winner_club_name,
+                'club_id': self.winner_club_id,
+                'verein_id': self.winner_verein_id,
+                'emblem_url': winner_emblem_url
+            },
+            'finalist': {
+                'team_id': self.finalist_team_id,
+                'team_name': self.finalist_team_name,
+                'club_name': self.finalist_club_name,
+                'club_id': self.finalist_club_id,
+                'verein_id': self.finalist_verein_id,
+                'emblem_url': finalist_emblem_url
+            },
+            'final_result': {
+                'winner_score': self.final_winner_score,
+                'finalist_score': self.final_finalist_score,
+                'winner_set_points': self.final_winner_set_points,
+                'finalist_set_points': self.final_finalist_set_points
+            }
+        }
+
+
+class TeamAchievement(db.Model):
+    """Speichert die Erfolge (Meisterschaften und Pokalsiege) der Teams für jede Saison."""
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Team-Informationen
+    team_id = db.Column(db.Integer, nullable=False)  # Original Team ID
+    team_name = db.Column(db.String(100), nullable=False)
+    club_name = db.Column(db.String(100))
+    club_id = db.Column(db.Integer)
+    verein_id = db.Column(db.Integer)  # Für Wappen
+
+    # Saison-Informationen
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
+    season_name = db.Column(db.String(100), nullable=False)
+
+    # Erfolg-Informationen
+    achievement_type = db.Column(db.String(20), nullable=False)  # "LEAGUE_CHAMPION", "CUP_WINNER"
+    achievement_name = db.Column(db.String(100), nullable=False)  # Name der Liga oder des Pokals
+    achievement_level = db.Column(db.Integer)  # Liga-Level (nur für Meisterschaften)
+
+    # Geografische Zuordnung (für Pokale)
+    bundesland = db.Column(db.String(50))  # Nur für Landes- und Kreispokale
+    landkreis = db.Column(db.String(100))  # Nur für Kreispokale
+    cup_type = db.Column(db.String(20))  # "DKBC", "Landespokal", "Kreispokal" (nur für Pokale)
+
+    # Zusätzliche Informationen
+    final_opponent_team_name = db.Column(db.String(100))  # Finalgegner (nur für Pokale)
+    final_opponent_club_name = db.Column(db.String(100))  # Finalgegner Verein (nur für Pokale)
+    final_score_for = db.Column(db.Integer)  # Eigenes Ergebnis im Finale (nur für Pokale)
+    final_score_against = db.Column(db.Integer)  # Gegnerisches Ergebnis im Finale (nur für Pokale)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    season = db.relationship('Season', backref='team_achievements')
+
+    def to_dict(self):
+        emblem_url = None
+        if self.verein_id:
+            emblem_url = f"/api/club-emblem/{self.verein_id}"
+
+        return {
+            'id': self.id,
+            'team_id': self.team_id,
+            'team_name': self.team_name,
+            'club_name': self.club_name,
+            'club_id': self.club_id,
+            'verein_id': self.verein_id,
+            'emblem_url': emblem_url,
+            'season': {
+                'season_id': self.season_id,
+                'season_name': self.season_name
+            },
+            'achievement_type': self.achievement_type,
+            'achievement_name': self.achievement_name,
+            'achievement_level': self.achievement_level,
+            'bundesland': self.bundesland,
+            'landkreis': self.landkreis,
+            'cup_type': self.cup_type,
+            'final_opponent': {
+                'team_name': self.final_opponent_team_name,
+                'club_name': self.final_opponent_club_name
+            } if self.final_opponent_team_name else None,
+            'final_result': {
+                'score_for': self.final_score_for,
+                'score_against': self.final_score_against
+            } if self.final_score_for is not None else None
+        }
+
+
+class TeamCupHistory(db.Model):
+    """Speichert die Pokal-Teilnahmen und -Ergebnisse der Teams für jede Saison."""
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Team-Informationen
+    team_id = db.Column(db.Integer, nullable=False)  # Original Team ID
+    team_name = db.Column(db.String(100), nullable=False)
+    club_name = db.Column(db.String(100))
+    club_id = db.Column(db.Integer)
+    verein_id = db.Column(db.Integer)  # Für Wappen
+
+    # Pokal-Informationen
+    cup_name = db.Column(db.String(100), nullable=False)  # Name des Pokals
+    cup_type = db.Column(db.String(20), nullable=False)  # "DKBC", "Landespokal", "Kreispokal"
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False)
+    season_name = db.Column(db.String(100), nullable=False)  # Name der Saison für einfachere Abfragen
+
+    # Geografische Zuordnung (für Landes- und Kreispokale)
+    bundesland = db.Column(db.String(50))  # Nur für Landespokal und Kreispokal
+    landkreis = db.Column(db.String(100))  # Nur für Kreispokal
+
+    # Turnier-Verlauf
+    reached_round = db.Column(db.String(50), nullable=False)  # "1. Runde", "Achtelfinale", "Viertelfinale", "Halbfinale", "Finale", "Sieger"
+    reached_round_number = db.Column(db.Integer, nullable=False)  # Rundennummer (1, 2, 3, etc.)
+    total_rounds = db.Column(db.Integer, nullable=False)  # Gesamtanzahl der Runden im Pokal
+
+    # Ausscheidung (falls nicht Sieger)
+    eliminated_by_team_id = db.Column(db.Integer)  # Team ID des Gegners, der das Team eliminiert hat
+    eliminated_by_team_name = db.Column(db.String(100))  # Name des eliminierenden Teams
+    eliminated_by_club_name = db.Column(db.String(100))  # Club des eliminierenden Teams
+    eliminated_by_verein_id = db.Column(db.Integer)  # Für Wappen des eliminierenden Teams
+
+    # Finale-Informationen (falls erreicht)
+    elimination_match_score_for = db.Column(db.Integer)  # Eigenes Ergebnis im Ausscheidungsspiel
+    elimination_match_score_against = db.Column(db.Integer)  # Gegner-Ergebnis im Ausscheidungsspiel
+    elimination_match_set_points_for = db.Column(db.Float)  # Eigene Satzpunkte im Ausscheidungsspiel
+    elimination_match_set_points_against = db.Column(db.Float)  # Gegner-Satzpunkte im Ausscheidungsspiel
+
+    # Status-Flags
+    is_winner = db.Column(db.Boolean, default=False)  # True wenn das Team den Pokal gewonnen hat
+    is_finalist = db.Column(db.Boolean, default=False)  # True wenn das Team das Finale erreicht hat
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    season = db.relationship('Season', backref='team_cup_histories')
+
+    def to_dict(self):
+        team_emblem_url = None
+        if self.verein_id:
+            team_emblem_url = f"/api/club-emblem/{self.verein_id}"
+
+        eliminated_by_emblem_url = None
+        if self.eliminated_by_verein_id:
+            eliminated_by_emblem_url = f"/api/club-emblem/{self.eliminated_by_verein_id}"
+
+        return {
+            'id': self.id,
+            'team': {
+                'team_id': self.team_id,
+                'team_name': self.team_name,
+                'club_name': self.club_name,
+                'club_id': self.club_id,
+                'verein_id': self.verein_id,
+                'emblem_url': team_emblem_url
+            },
+            'cup': {
+                'cup_name': self.cup_name,
+                'cup_type': self.cup_type,
+                'bundesland': self.bundesland,
+                'landkreis': self.landkreis
+            },
+            'season': {
+                'season_id': self.season_id,
+                'season_name': self.season_name
+            },
+            'performance': {
+                'reached_round': self.reached_round,
+                'reached_round_number': self.reached_round_number,
+                'total_rounds': self.total_rounds,
+                'is_winner': self.is_winner,
+                'is_finalist': self.is_finalist
+            },
+            'elimination': {
+                'eliminated_by_team_id': self.eliminated_by_team_id,
+                'eliminated_by_team_name': self.eliminated_by_team_name,
+                'eliminated_by_club_name': self.eliminated_by_club_name,
+                'eliminated_by_verein_id': self.eliminated_by_verein_id,
+                'eliminated_by_emblem_url': eliminated_by_emblem_url,
+                'match_score_for': self.elimination_match_score_for,
+                'match_score_against': self.elimination_match_score_against,
+                'match_set_points_for': self.elimination_match_set_points_for,
+                'match_set_points_against': self.elimination_match_set_points_against
+            }
+        }
+
+
 class Finance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
@@ -1860,6 +2300,64 @@ class PlayerMatchPerformance(db.Model):
             'player_id': self.player_id,
             'player_name': self.player.name,
             'match_id': self.match_id,
+            'team_id': self.team_id,
+            'team_name': self.team.name,
+            'is_home_team': self.is_home_team,
+            'position_number': self.position_number,
+            'is_substitute': self.is_substitute,
+            'lane1_score': self.lane1_score,
+            'lane2_score': self.lane2_score,
+            'lane3_score': self.lane3_score,
+            'lane4_score': self.lane4_score,
+            'total_score': self.total_score,
+            'volle_score': self.volle_score,
+            'raeumer_score': self.raeumer_score,
+            'fehler_count': self.fehler_count,
+            'set_points': self.set_points,
+            'match_points': self.match_points
+        }
+
+
+class PlayerCupMatchPerformance(db.Model):
+    """Spielerleistungen für Pokalspiele."""
+    id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
+    cup_match_id = db.Column(db.Integer, db.ForeignKey('cup_match.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+    is_home_team = db.Column(db.Boolean, nullable=False)  # True für Heimteam, False für Auswärtsteam
+    position_number = db.Column(db.Integer, nullable=False)  # Position im Team (1-6)
+    is_substitute = db.Column(db.Boolean, default=False)  # True wenn Spieler ein Ersatzspieler ist
+
+    # Ergebnisse der 4 Bahnen (je 30 Wurf)
+    lane1_score = db.Column(db.Integer)
+    lane2_score = db.Column(db.Integer)
+    lane3_score = db.Column(db.Integer)
+    lane4_score = db.Column(db.Integer)
+    total_score = db.Column(db.Integer)  # Gesamtergebnis aller Bahnen
+
+    # Detaillierte Statistiken
+    volle_score = db.Column(db.Integer)  # Ergebnis auf die vollen Bilder (15 Wurf pro Bahn)
+    raeumer_score = db.Column(db.Integer)  # Ergebnis auf die Räumer (15 Wurf pro Bahn)
+    fehler_count = db.Column(db.Integer)  # Anzahl der Fehlwürfe
+
+    # Neue Felder für das Punktesystem
+    set_points = db.Column(db.Float, default=0.0)  # Satzpunkte (SP) - kann auch 0.5 sein
+    match_points = db.Column(db.Integer, default=0)  # Mannschaftspunkte (MP)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    player = db.relationship('Player', backref='cup_performances')
+    cup_match = db.relationship('CupMatch', backref='performances')
+    team = db.relationship('Team')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'player_id': self.player_id,
+            'player_name': self.player.name,
+            'cup_match_id': self.cup_match_id,
             'team_id': self.team_id,
             'team_name': self.team.name,
             'is_home_team': self.is_home_team,

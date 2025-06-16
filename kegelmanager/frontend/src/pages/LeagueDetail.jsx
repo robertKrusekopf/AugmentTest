@@ -81,6 +81,7 @@ const LeagueDetail = () => {
     try {
       const historyData = await getLeagueHistory(leagueId);
       console.log('League history data received:', historyData);
+
       setLeagueHistory(historyData);
 
       // Setze die erste verfügbare Saison als Standard
@@ -478,7 +479,7 @@ const LeagueDetail = () => {
             <div className="history-tab">
               {loadingHistory ? (
                 <div className="loading">Lade Historie...</div>
-              ) : leagueHistory && leagueHistory.seasons && leagueHistory.seasons.length > 0 ? (
+              ) : leagueHistory && leagueHistory.seasons ? (
                 <div className="history-content">
                   <div className="history-controls">
                     <label htmlFor="season-select">Saison auswählen:</label>

@@ -139,6 +139,24 @@ export const getCupDetailOptimized = (cupId, useCache = true) =>
 export const getCupMatchDaysOptimized = (useCache = true) =>
   cachedRequest('/cups/match-days', {}, useCache);
 
+export const getCupsHistoryOptimized = (useCache = true) =>
+  cachedRequest('/cups/history', {}, useCache);
+
+export const getCupsHistoryByTypeOptimized = (cupType, useCache = true) =>
+  cachedRequest(`/cups/history/${cupType}`, {}, useCache);
+
+export const getCupHistoryByNameOptimized = (cupName, useCache = true) =>
+  cachedRequest(`/cups/history/cup/${encodeURIComponent(cupName)}`, {}, useCache);
+
+export const getTeamOptimized = (id, useCache = true) =>
+  cachedRequest(`/teams/${id}`, {}, useCache);
+
+export const getTeamHistoryOptimized = (id, useCache = true) =>
+  cachedRequest(`/teams/${id}/history`, {}, useCache);
+
+export const getTeamCupHistoryOptimized = (id, useCache = true) =>
+  cachedRequest(`/teams/${id}/cup-history`, {}, useCache);
+
 // Parallel data loading for common combinations
 export const loadDashboardData = async () => {
   console.log('Loading dashboard data in parallel...');
@@ -214,7 +232,7 @@ export const invalidateAfterClubUpdate = () => {
 };
 
 export const invalidateAfterSeasonTransition = () => {
-  // Clear all cache after season transition since leagues, teams, and matches change
+  // Clear all cache after season transition since leagues, teams, matches, and cup history change
   clearAllCache();
 };
 

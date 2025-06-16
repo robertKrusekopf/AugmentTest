@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, send_file, abort
 from flask_cors import CORS
-from models import db, Player, Team, Club, League, Match, Season, Finance, UserLineup, LineupPosition, TransferOffer, TransferHistory, Cup, CupMatch
+from models import db, Player, Team, Club, League, Match, Season, Finance, UserLineup, LineupPosition, TransferOffer, TransferHistory, Cup, CupMatch, PlayerCupMatchPerformance
 import os
 import sys
 import subprocess
@@ -268,6 +268,93 @@ def get_team_history(team_id):
         traceback.print_exc()
         return jsonify({"error": "Fehler beim Laden der Team-Historie"}), 500
 
+
+@app.route('/api/teams/<int:team_id>/cup-history', methods=['GET'])
+def get_team_cup_history(team_id):
+    """Get historical cup participations for a team across all seasons."""
+    try:
+        from models import TeamCupHistory, Season
+
+        # Verify team exists
+        team = Team.query.get_or_404(team_id)
+
+        # Check if TeamCupHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'team_cup_history' not in existing_tables:
+            return jsonify({
+                'team_name': team.name,
+                'club_name': team.club.name if team.club else 'Unbekannt',
+                'cup_history': []
+            })
+
+        # Get historical cup data for this team
+        history_entries = TeamCupHistory.query.filter_by(
+            team_id=team_id
+        ).order_by(TeamCupHistory.season_id.desc()).all()
+
+        # Format data
+        cup_history_data = []
+        for entry in history_entries:
+            cup_history_data.append(entry.to_dict())
+
+        return jsonify({
+            'team_name': team.name,
+            'club_name': team.club.name if team.club else 'Unbekannt',
+            'cup_history': cup_history_data
+        })
+
+    except Exception as e:
+        print(f"Error getting team cup history: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden der Team-Pokal-Historie"}), 500
+
+
+@app.route('/api/teams/<int:team_id>/achievements', methods=['GET'])
+def get_team_achievements(team_id):
+    """Get all achievements (league championships and cup wins) for a team across all seasons."""
+    try:
+        from models import TeamAchievement, Season
+
+        # Verify team exists
+        team = Team.query.get_or_404(team_id)
+
+        # Check if TeamAchievement table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'team_achievement' not in existing_tables:
+            return jsonify({
+                'team_name': team.name,
+                'club_name': team.club.name if team.club else 'Unbekannt',
+                'achievements': []
+            })
+
+        # Get all achievements for this team
+        achievements = TeamAchievement.query.filter_by(
+            team_id=team_id
+        ).order_by(TeamAchievement.season_id.desc(), TeamAchievement.achievement_type).all()
+
+        # Format data
+        achievements_data = []
+        for achievement in achievements:
+            achievements_data.append(achievement.to_dict())
+
+        return jsonify({
+            'team_name': team.name,
+            'club_name': team.club.name if team.club else 'Unbekannt',
+            'achievements': achievements_data
+        })
+
+    except Exception as e:
+        print(f"Error getting team achievements: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden der Team-Erfolge"}), 500
+
+
 # Player endpoints
 @app.route('/api/players', methods=['GET'])
 def get_players():
@@ -278,6 +365,164 @@ def get_players():
 def get_player(player_id):
     player = Player.query.get_or_404(player_id)
     return jsonify(player.to_dict())
+
+@app.route('/api/players/<int:player_id>/matches', methods=['GET'])
+def get_player_matches(player_id):
+    """Get all matches for a player (both league and cup matches)."""
+    try:
+        from models import PlayerMatchPerformance, PlayerCupMatchPerformance, Match, CupMatch
+        from sqlalchemy import or_, and_
+
+        # Verify player exists
+        player = Player.query.get_or_404(player_id)
+
+        # Get current season
+        current_season = Season.query.filter_by(is_current=True).first()
+        if not current_season:
+            return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+        # Get all teams the player belongs to
+        player_team_ids = [team.id for team in player.teams]
+
+        if not player_team_ids:
+            return jsonify({
+                'player_name': player.name,
+                'upcoming_matches': [],
+                'recent_matches': []
+            })
+
+        # Get league matches for player's teams
+        league_matches = Match.query.filter(
+            and_(
+                Match.season_id == current_season.id,
+                or_(
+                    Match.home_team_id.in_(player_team_ids),
+                    Match.away_team_id.in_(player_team_ids)
+                )
+            )
+        ).order_by(Match.match_date.desc()).all()
+
+        # Get cup matches for player's teams
+        cup_matches = CupMatch.query.join(Cup).filter(
+            and_(
+                Cup.season_id == current_season.id,
+                or_(
+                    CupMatch.home_team_id.in_(player_team_ids),
+                    CupMatch.away_team_id.in_(player_team_ids)
+                )
+            )
+        ).order_by(CupMatch.match_date.desc()).all()
+
+        # Get player performances for league matches
+        league_performances = {}
+        if league_matches:
+            match_ids = [m.id for m in league_matches]
+            perfs = PlayerMatchPerformance.query.filter(
+                and_(
+                    PlayerMatchPerformance.player_id == player_id,
+                    PlayerMatchPerformance.match_id.in_(match_ids)
+                )
+            ).all()
+            league_performances = {p.match_id: p for p in perfs}
+
+        # Get player performances for cup matches
+        cup_performances = {}
+        if cup_matches:
+            cup_match_ids = [m.id for m in cup_matches]
+            cup_perfs = PlayerCupMatchPerformance.query.filter(
+                and_(
+                    PlayerCupMatchPerformance.player_id == player_id,
+                    PlayerCupMatchPerformance.cup_match_id.in_(cup_match_ids)
+                )
+            ).all()
+            cup_performances = {p.cup_match_id: p for p in cup_perfs}
+
+        # Combine and process matches
+        all_matches = []
+
+        # Process league matches
+        for match in league_matches:
+            player_participated = match.id in league_performances
+            match_data = {
+                'id': match.id,
+                'type': 'league',
+                'date': match.match_date.isoformat() if match.match_date else None,
+                'homeTeam': match.home_team.name,
+                'awayTeam': match.away_team.name,
+                'homeScore': match.home_score,
+                'awayScore': match.away_score,
+                'league': match.league.name,
+                'match_day': match.match_day,
+                'is_played': match.is_played,
+                'player_participated': player_participated,
+                'player_performance': league_performances[match.id].to_dict() if player_participated else None
+            }
+            all_matches.append(match_data)
+
+        # Process cup matches
+        for cup_match in cup_matches:
+            player_participated = cup_match.id in cup_performances
+            # Convert cup match ID to frontend format (add 1,000,000)
+            frontend_id = cup_match.id + 1000000
+            match_data = {
+                'id': frontend_id,
+                'type': 'cup',
+                'date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+                'homeTeam': cup_match.home_team.name,
+                'awayTeam': cup_match.away_team.name if cup_match.away_team else 'Freilos',
+                'homeScore': cup_match.home_score,
+                'awayScore': cup_match.away_score,
+                'league': f"{cup_match.cup.name} - {cup_match.round_name}",
+                'match_day': cup_match.cup_match_day,
+                'is_played': cup_match.is_played,
+                'player_participated': player_participated,
+                'player_performance': cup_performances[cup_match.id].to_dict() if player_participated else None
+            }
+            all_matches.append(match_data)
+
+        # Sort all matches by date
+        all_matches.sort(key=lambda x: x['date'] if x['date'] else '', reverse=True)
+
+        # Split into upcoming and recent matches
+        from datetime import datetime
+        now = datetime.now()
+
+        upcoming_matches = []
+        recent_matches = []
+
+        for match in all_matches:
+            if match['date']:
+                match_date = datetime.fromisoformat(match['date'].replace('Z', '+00:00'))
+                if match_date > now:
+                    upcoming_matches.append(match)
+                else:
+                    recent_matches.append(match)
+            elif not match['is_played']:
+                upcoming_matches.append(match)
+            else:
+                recent_matches.append(match)
+
+        # Sort upcoming matches by date (earliest first)
+        upcoming_matches.sort(key=lambda x: x['date'] if x['date'] else '', reverse=False)
+
+        # Add visibility flag for expand/collapse functionality
+        for i, match in enumerate(upcoming_matches):
+            match['visible'] = i < 5
+
+        for i, match in enumerate(recent_matches):
+            match['visible'] = i < 5
+
+        return jsonify({
+            'player_name': player.name,
+            'upcoming_matches': upcoming_matches,
+            'recent_matches': recent_matches
+        })
+
+    except Exception as e:
+        print(f"Error getting player matches: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden der Spieler-Spiele"}), 500
 
 @app.route('/api/players/<int:player_id>/history', methods=['GET'])
 def get_player_history(player_id):
@@ -709,36 +954,75 @@ def get_matches():
     matches = Match.query.all()
     return jsonify([match.to_dict() for match in matches])
 
+# Constants for ID ranges
+CUP_MATCH_ID_OFFSET = 1000000  # Cup match IDs start at 1,000,000
+
+def is_cup_match_id(match_id):
+    """Check if a match ID belongs to a cup match."""
+    return match_id >= CUP_MATCH_ID_OFFSET
+
+def get_cup_match_db_id(frontend_id):
+    """Convert frontend cup match ID to database ID."""
+    return frontend_id - CUP_MATCH_ID_OFFSET
+
+def get_cup_match_frontend_id(db_id):
+    """Convert database cup match ID to frontend ID."""
+    return db_id + CUP_MATCH_ID_OFFSET
+
 @app.route('/api/matches/<int:match_id>', methods=['GET'])
 def get_match(match_id):
-    # First try to find a regular league match
-    match = Match.query.get(match_id)
-    if match:
-        return jsonify(match.to_dict())
+    # Check if this is a cup match ID (>= 1,000,000)
+    if is_cup_match_id(match_id):
+        # Convert to database ID and look for cup match
+        db_id = get_cup_match_db_id(match_id)
+        cup_match = CupMatch.query.get(db_id)
+        if cup_match:
+            # Convert CupMatch to Match-like format for compatibility
+            cup_match_data = cup_match.to_dict()
 
-    # If not found, try to find a cup match
-    cup_match = CupMatch.query.get(match_id)
-    if cup_match:
-        # Convert CupMatch to Match-like format for compatibility
-        cup_match_data = cup_match.to_dict()
+            # Load cup match performances
+            cup_performances = PlayerCupMatchPerformance.query.filter_by(cup_match_id=db_id).all()
+            performances_data = [perf.to_dict() for perf in cup_performances]
 
-        # Add additional fields that MatchDetail expects
-        cup_match_data.update({
-            'league_id': None,  # Cup matches don't have a league
-            'league_name': f"{cup_match.cup.name} - {cup_match.round_name}",
-            'match_day': cup_match.cup_match_day,
-            'date': cup_match.match_date.isoformat() if cup_match.match_date else None,
-            'venue': cup_match.home_team.club.name if cup_match.home_team and cup_match.home_team.club else 'Unbekannt',
-            'attendance': 0,  # Cup matches don't track attendance yet
-            'referee': 'Unbekannt',  # Cup matches don't track referee yet
-            'round': cup_match.cup_match_day or 0,
-            'performances': []  # Cup matches don't have detailed performances yet
-        })
+            # Add additional fields that MatchDetail expects
+            cup_match_data.update({
+                'id': match_id,  # Use the frontend ID
+                'league_id': None,  # Cup matches don't have a league
+                'league_name': f"{cup_match.cup.name} - {cup_match.round_name}",
+                'match_day': cup_match.cup_match_day,
+                'date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+                'venue': cup_match.home_team.club.name if cup_match.home_team and cup_match.home_team.club else 'Unbekannt',
+                'attendance': 0,  # Cup matches don't track attendance yet
+                'referee': 'Unbekannt',  # Cup matches don't track referee yet
+                'round': cup_match.cup_match_day or 0,
+                'performances': performances_data,  # Load actual cup match performances
+                'is_cup_match': True,  # Flag to identify this as a cup match
+                # Add fields for team club IDs (needed for emblems)
+                'home_team_verein_id': cup_match.home_team.club.verein_id if cup_match.home_team and cup_match.home_team.club else None,
+                'away_team_verein_id': cup_match.away_team.club.verein_id if cup_match.away_team and cup_match.away_team.club else None,
+                'home_team_club_id': cup_match.home_team.club.id if cup_match.home_team and cup_match.home_team.club else None,
+                'away_team_club_id': cup_match.away_team.club.id if cup_match.away_team and cup_match.away_team.club else None,
+                # Add score fields with proper names
+                'homeScore': cup_match.home_score,
+                'awayScore': cup_match.away_score,
+                'homeMatchPoints': int(cup_match.home_set_points * 2) if cup_match.home_set_points else 0,  # Convert set points to match points
+                'awayMatchPoints': int(cup_match.away_set_points * 2) if cup_match.away_set_points else 0,
+                'status': 'played' if cup_match.is_played else 'upcoming'
+            })
 
-        return jsonify(cup_match_data)
+            return jsonify(cup_match_data)
+    else:
+        # Look for regular league match
+        match = Match.query.get(match_id)
+        if match:
+            match_data = match.to_dict()
+            match_data['is_cup_match'] = False
+            return jsonify(match_data)
 
     # If neither found, return 404
     abort(404)
+
+
 
 # Helper function for auto-initialization
 def auto_initialize_cups(season_id):
@@ -846,9 +1130,16 @@ def get_cup(cup_id):
         for team in eligible_teams
     ]
 
-    # Add cup matches
+    # Add cup matches with frontend IDs
     cup_matches = CupMatch.query.filter_by(cup_id=cup_id).order_by(CupMatch.round_number, CupMatch.id).all()
-    cup_data['matches'] = [match.to_dict() for match in cup_matches]
+    matches_data = []
+    for match in cup_matches:
+        match_data = match.to_dict()
+        # Convert database ID to frontend ID for cup matches
+        match_data['id'] = get_cup_match_frontend_id(match.id)
+        matches_data.append(match_data)
+
+    cup_data['matches'] = matches_data
 
     return jsonify(cup_data)
 
@@ -954,6 +1245,85 @@ def get_cup_match_days():
         match_days[match_day]['total_played'] += match.played_count
 
     return jsonify(list(match_days.values()))
+
+
+@app.route('/api/cups/history', methods=['GET'])
+def get_all_cups_history():
+    """Get historical winners and finalists for all cups across all seasons."""
+    try:
+        from models import CupHistory
+
+        # Check if CupHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'cup_history' not in existing_tables:
+            return jsonify([])
+
+        # Get all cup history entries, ordered by season (newest first)
+        history_entries = CupHistory.query.order_by(CupHistory.season_id.desc()).all()
+
+        return jsonify([entry.to_dict() for entry in history_entries])
+
+    except Exception as e:
+        print(f"Error getting all cups history: {e}")
+        return jsonify({"error": "Fehler beim Laden der Pokal-Historie"}), 500
+
+
+@app.route('/api/cups/history/<cup_type>', methods=['GET'])
+def get_cups_history_by_type(cup_type):
+    """Get historical winners and finalists for cups of a specific type."""
+    try:
+        from models import CupHistory
+
+        # Validate cup type
+        valid_types = ['DKBC', 'Landespokal', 'Kreispokal']
+        if cup_type not in valid_types:
+            return jsonify({"error": f"Ungültiger Pokaltyp. Erlaubt: {', '.join(valid_types)}"}), 400
+
+        # Check if CupHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'cup_history' not in existing_tables:
+            return jsonify([])
+
+        # Get cup history entries for this type, ordered by season (newest first)
+        history_entries = CupHistory.query.filter_by(
+            cup_type=cup_type
+        ).order_by(CupHistory.season_id.desc()).all()
+
+        return jsonify([entry.to_dict() for entry in history_entries])
+
+    except Exception as e:
+        print(f"Error getting cups history by type: {e}")
+        return jsonify({"error": "Fehler beim Laden der Pokal-Historie"}), 500
+
+
+@app.route('/api/cups/history/cup/<cup_name>', methods=['GET'])
+def get_cup_history_by_name(cup_name):
+    """Get historical winners and finalists for a specific cup across all seasons."""
+    try:
+        from models import CupHistory
+
+        # Check if CupHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'cup_history' not in existing_tables:
+            return jsonify([])
+
+        # Get cup history entries for this specific cup, ordered by season (newest first)
+        history_entries = CupHistory.query.filter_by(
+            cup_name=cup_name
+        ).order_by(CupHistory.season_id.desc()).all()
+
+        return jsonify([entry.to_dict() for entry in history_entries])
+
+    except Exception as e:
+        print(f"Error getting cup history by name: {e}")
+        return jsonify({"error": "Fehler beim Laden der Pokal-Historie"}), 500
+
 
 # Season endpoints
 @app.route('/api/seasons', methods=['GET'])

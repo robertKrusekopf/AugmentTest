@@ -532,49 +532,97 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             # Check if home player is a substitute
             is_home_substitute = home_player in home_substitutes if 'home_substitutes' in locals() else False
 
-            # Home player performance
-            home_perf = PlayerMatchPerformance(
-                player_id=home_player.id,
-                match_id=match.id,
-                team_id=home_team.id,
-                is_home_team=True,
-                position_number=i+1,
-                is_substitute=is_home_substitute,
-                lane1_score=home_player_lanes[0],
-                lane2_score=home_player_lanes[1],
-                lane3_score=home_player_lanes[2],
-                lane4_score=home_player_lanes[3],
-                total_score=home_player_total,
-                volle_score=home_player_volle,
-                raeumer_score=home_player_raeumer,
-                fehler_count=home_player_fehler,
-                set_points=home_player_set_points,
-                match_points=home_player_match_points
-            )
+            # Determine if this is a cup match or regular match
+            from models import CupMatch
+            is_cup_match = isinstance(match, CupMatch)
+
+            if is_cup_match:
+                # Create cup match performance
+                from models import PlayerCupMatchPerformance
+                home_perf = PlayerCupMatchPerformance(
+                    player_id=home_player.id,
+                    cup_match_id=match.id,
+                    team_id=home_team.id,
+                    is_home_team=True,
+                    position_number=i+1,
+                    is_substitute=is_home_substitute,
+                    lane1_score=home_player_lanes[0],
+                    lane2_score=home_player_lanes[1],
+                    lane3_score=home_player_lanes[2],
+                    lane4_score=home_player_lanes[3],
+                    total_score=home_player_total,
+                    volle_score=home_player_volle,
+                    raeumer_score=home_player_raeumer,
+                    fehler_count=home_player_fehler,
+                    set_points=home_player_set_points,
+                    match_points=home_player_match_points
+                )
+            else:
+                # Create regular match performance
+                home_perf = PlayerMatchPerformance(
+                    player_id=home_player.id,
+                    match_id=match.id,
+                    team_id=home_team.id,
+                    is_home_team=True,
+                    position_number=i+1,
+                    is_substitute=is_home_substitute,
+                    lane1_score=home_player_lanes[0],
+                    lane2_score=home_player_lanes[1],
+                    lane3_score=home_player_lanes[2],
+                    lane4_score=home_player_lanes[3],
+                    total_score=home_player_total,
+                    volle_score=home_player_volle,
+                    raeumer_score=home_player_raeumer,
+                    fehler_count=home_player_fehler,
+                    set_points=home_player_set_points,
+                    match_points=home_player_match_points
+                )
             performances.append(home_perf)
 
             # Check if away player is a substitute
             is_away_substitute = away_player in away_substitutes if 'away_substitutes' in locals() else False
 
-            # Away player performance
-            away_perf = PlayerMatchPerformance(
-                player_id=away_player.id,
-                match_id=match.id,
-                team_id=away_team.id,
-                is_home_team=False,
-                position_number=i+1,
-                is_substitute=is_away_substitute,
-                lane1_score=away_player_lanes[0],
-                lane2_score=away_player_lanes[1],
-                lane3_score=away_player_lanes[2],
-                lane4_score=away_player_lanes[3],
-                total_score=away_player_total,
-                volle_score=away_player_volle,
-                raeumer_score=away_player_raeumer,
-                fehler_count=away_player_fehler,
-                set_points=away_player_set_points,
-                match_points=away_player_match_points
-            )
+            if is_cup_match:
+                # Create cup match performance
+                from models import PlayerCupMatchPerformance
+                away_perf = PlayerCupMatchPerformance(
+                    player_id=away_player.id,
+                    cup_match_id=match.id,
+                    team_id=away_team.id,
+                    is_home_team=False,
+                    position_number=i+1,
+                    is_substitute=is_away_substitute,
+                    lane1_score=away_player_lanes[0],
+                    lane2_score=away_player_lanes[1],
+                    lane3_score=away_player_lanes[2],
+                    lane4_score=away_player_lanes[3],
+                    total_score=away_player_total,
+                    volle_score=away_player_volle,
+                    raeumer_score=away_player_raeumer,
+                    fehler_count=away_player_fehler,
+                    set_points=away_player_set_points,
+                    match_points=away_player_match_points
+                )
+            else:
+                # Create regular match performance
+                away_perf = PlayerMatchPerformance(
+                    player_id=away_player.id,
+                    match_id=match.id,
+                    team_id=away_team.id,
+                    is_home_team=False,
+                    position_number=i+1,
+                    is_substitute=is_away_substitute,
+                    lane1_score=away_player_lanes[0],
+                    lane2_score=away_player_lanes[1],
+                    lane3_score=away_player_lanes[2],
+                    lane4_score=away_player_lanes[3],
+                    total_score=away_player_total,
+                    volle_score=away_player_volle,
+                    raeumer_score=away_player_raeumer,
+                    fehler_count=away_player_fehler,
+                    set_points=away_player_set_points,
+                    match_points=away_player_match_points
+                )
             performances.append(away_perf)
 
 
@@ -2690,6 +2738,15 @@ def process_end_of_season(season):
     # Save final standings to league history before creating new season
     save_league_history(season)
 
+    # Save cup winners and finalists to cup history before creating new season
+    save_cup_history(season)
+
+    # Save team cup participation history before creating new season
+    save_team_cup_history(season)
+
+    # Save team achievements (league champions and cup winners) before creating new season
+    save_team_achievements(season)
+
     # Create new season (this will handle promotions/relegations internally)
     create_new_season(season)
 
@@ -2799,6 +2856,533 @@ def save_league_history(season):
             db.session.rollback()
         except:
             pass
+
+
+def save_cup_history(season):
+    """Save the winners and finalists of all completed cups to the cup history table."""
+    try:
+        from models import CupHistory, Cup, CupMatch, Team, Club, db
+
+        print("Saving cup history for season:", season.name)
+
+        # Check if CupHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'cup_history' not in existing_tables:
+            print("CupHistory table does not exist yet. Creating it...")
+            # Create the table
+            db.create_all()
+            print("CupHistory table created successfully.")
+
+        # Get all cups for this season
+        cups = Cup.query.filter_by(season_id=season.id).all()
+        print(f"Found {len(cups)} cups for season {season.name}")
+
+        for cup in cups:
+            print(f"Processing cup: {cup.name}")
+
+            # Check if this cup is completed (not active)
+            if cup.is_active:
+                print(f"  Cup {cup.name} is still active, skipping...")
+                continue
+
+            # Find the final match (should be the last round)
+            final_matches = CupMatch.query.filter_by(
+                cup_id=cup.id,
+                round_number=cup.total_rounds,
+                is_played=True
+            ).all()
+
+            if not final_matches:
+                print(f"  No final match found for cup {cup.name}, skipping...")
+                continue
+
+            # There should be exactly one final match
+            if len(final_matches) != 1:
+                print(f"  Expected 1 final match for cup {cup.name}, found {len(final_matches)}, skipping...")
+                continue
+
+            final_match = final_matches[0]
+
+            # Get winner and finalist teams
+            if not final_match.winner_team_id:
+                print(f"  Final match for cup {cup.name} has no winner, skipping...")
+                continue
+
+            winner_team = Team.query.get(final_match.winner_team_id)
+            if not winner_team:
+                print(f"  Winner team not found for cup {cup.name}, skipping...")
+                continue
+
+            # Determine finalist (the team that lost the final)
+            if final_match.home_team_id == final_match.winner_team_id:
+                finalist_team = Team.query.get(final_match.away_team_id)
+            else:
+                finalist_team = Team.query.get(final_match.home_team_id)
+
+            if not finalist_team:
+                print(f"  Finalist team not found for cup {cup.name}, skipping...")
+                continue
+
+            # Get club information for winner
+            winner_club = winner_team.club if winner_team.club else None
+            winner_club_name = winner_club.name if winner_club else None
+            winner_club_id = winner_club.id if winner_club else None
+            winner_verein_id = winner_club.verein_id if winner_club else None
+
+            # Get club information for finalist
+            finalist_club = finalist_team.club if finalist_team.club else None
+            finalist_club_name = finalist_club.name if finalist_club else None
+            finalist_club_id = finalist_club.id if finalist_club else None
+            finalist_verein_id = finalist_club.verein_id if finalist_club else None
+
+            # Check if history entry already exists for this cup and season
+            existing_entry = CupHistory.query.filter_by(
+                cup_name=cup.name,
+                season_id=season.id
+            ).first()
+
+            if existing_entry:
+                print(f"  History entry already exists for cup {cup.name} in season {season.name}, skipping...")
+                continue
+
+            # Create cup history entry
+            history_entry = CupHistory(
+                cup_name=cup.name,
+                cup_type=cup.cup_type,
+                season_id=season.id,
+                season_name=season.name,
+                bundesland=cup.bundesland,
+                landkreis=cup.landkreis,
+                winner_team_id=winner_team.id,
+                winner_team_name=winner_team.name,
+                winner_club_name=winner_club_name,
+                winner_club_id=winner_club_id,
+                winner_verein_id=winner_verein_id,
+                finalist_team_id=finalist_team.id,
+                finalist_team_name=finalist_team.name,
+                finalist_club_name=finalist_club_name,
+                finalist_club_id=finalist_club_id,
+                finalist_verein_id=finalist_verein_id,
+                final_winner_score=final_match.home_score if final_match.home_team_id == final_match.winner_team_id else final_match.away_score,
+                final_finalist_score=final_match.away_score if final_match.home_team_id == final_match.winner_team_id else final_match.home_score,
+                final_winner_set_points=final_match.home_set_points if final_match.home_team_id == final_match.winner_team_id else final_match.away_set_points,
+                final_finalist_set_points=final_match.away_set_points if final_match.home_team_id == final_match.winner_team_id else final_match.home_set_points
+            )
+
+            print(f"    Created history entry: {cup.name} -> Winner: {winner_team.name}, Finalist: {finalist_team.name}")
+            db.session.add(history_entry)
+
+        # Commit all history entries
+        print("Committing all cup history entries to database...")
+        db.session.commit()
+        print(f"Cup history saved successfully for {len(cups)} cups")
+
+        # Verify the data was saved
+        total_entries = CupHistory.query.filter_by(season_id=season.id).count()
+        print(f"Verification: {total_entries} cup history entries saved for season {season.name}")
+
+    except Exception as e:
+        print(f"Error saving cup history: {e}")
+        import traceback
+        traceback.print_exc()
+        print("Continuing with season transition without saving cup history...")
+        # Don't let history saving errors break the season transition
+        try:
+            db.session.rollback()
+        except:
+            pass
+
+
+def save_team_cup_history(season):
+    """Save the cup participation history for all teams in all cups for this season."""
+    try:
+        from models import TeamCupHistory, Cup, CupMatch, Team, Club, db
+
+        print("Saving team cup history for season:", season.name)
+
+        # Check if TeamCupHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'team_cup_history' not in existing_tables:
+            print("TeamCupHistory table does not exist yet. Creating it...")
+            # Create the table
+            db.create_all()
+            print("TeamCupHistory table created successfully.")
+
+        # Get all cups for this season
+        cups = Cup.query.filter_by(season_id=season.id).all()
+        print(f"Found {len(cups)} cups for season {season.name}")
+
+        for cup in cups:
+            print(f"Processing cup: {cup.name}")
+
+            # Get all teams that participated in this cup
+            # Find all teams that played at least one match in this cup
+            participating_teams_query = db.session.query(CupMatch.home_team_id, CupMatch.away_team_id).filter_by(
+                cup_id=cup.id,
+                is_played=True
+            ).distinct()
+
+            participating_team_ids = set()
+            for home_id, away_id in participating_teams_query:
+                participating_team_ids.add(home_id)
+                participating_team_ids.add(away_id)
+
+            print(f"  Found {len(participating_team_ids)} participating teams")
+
+            for team_id in participating_team_ids:
+                team = Team.query.get(team_id)
+                if not team:
+                    print(f"    Team {team_id} not found, skipping...")
+                    continue
+
+                # Check if history entry already exists for this team and cup
+                existing_entry = TeamCupHistory.query.filter_by(
+                    team_id=team_id,
+                    cup_name=cup.name,
+                    season_id=season.id
+                ).first()
+
+                if existing_entry:
+                    print(f"    History entry already exists for team {team.name} in cup {cup.name}, skipping...")
+                    continue
+
+                # Determine how far this team reached
+                team_matches = CupMatch.query.filter(
+                    CupMatch.cup_id == cup.id,
+                    CupMatch.is_played == True,
+                    db.or_(CupMatch.home_team_id == team_id, CupMatch.away_team_id == team_id)
+                ).order_by(CupMatch.round_number.desc()).all()
+
+                if not team_matches:
+                    print(f"    No matches found for team {team.name} in cup {cup.name}, skipping...")
+                    continue
+
+                # Find the last round this team played in
+                last_round = max(match.round_number for match in team_matches)
+                last_match = next(match for match in team_matches if match.round_number == last_round)
+
+                # Determine if team won or lost their last match
+                team_won_last_match = last_match.winner_team_id == team_id
+
+                # Determine reached round and status
+                is_winner = False
+                is_finalist = False
+                reached_round_number = last_round
+
+                if team_won_last_match and last_round == cup.total_rounds:
+                    # Team won the final
+                    is_winner = True
+                    is_finalist = True
+                    reached_round = "Sieger"
+                elif not team_won_last_match and last_round == cup.total_rounds:
+                    # Team lost the final
+                    is_finalist = True
+                    reached_round = "Finale"
+                elif team_won_last_match:
+                    # Team won their last match but didn't reach the final
+                    # This means they reached the next round but didn't play it (cup ended)
+                    reached_round_number = min(last_round + 1, cup.total_rounds)
+                    reached_round = get_round_name(reached_round_number, cup.total_rounds)
+                else:
+                    # Team lost their last match
+                    reached_round = get_round_name(last_round, cup.total_rounds)
+
+                # Get elimination details (if not winner)
+                eliminated_by_team_id = None
+                eliminated_by_team_name = None
+                eliminated_by_club_name = None
+                eliminated_by_verein_id = None
+                elimination_match_score_for = None
+                elimination_match_score_against = None
+                elimination_match_set_points_for = None
+                elimination_match_set_points_against = None
+
+                if not is_winner:
+                    # Find the match where this team was eliminated
+                    elimination_match = None
+                    if not team_won_last_match:
+                        elimination_match = last_match
+                    else:
+                        # Team won their last match but was eliminated in a later round they didn't play
+                        # This shouldn't happen in normal circumstances, but handle it gracefully
+                        pass
+
+                    if elimination_match:
+                        # Determine the opponent
+                        if elimination_match.home_team_id == team_id:
+                            eliminated_by_team_id = elimination_match.away_team_id
+                            elimination_match_score_for = elimination_match.home_score
+                            elimination_match_score_against = elimination_match.away_score
+                            elimination_match_set_points_for = elimination_match.home_set_points
+                            elimination_match_set_points_against = elimination_match.away_set_points
+                        else:
+                            eliminated_by_team_id = elimination_match.home_team_id
+                            elimination_match_score_for = elimination_match.away_score
+                            elimination_match_score_against = elimination_match.home_score
+                            elimination_match_set_points_for = elimination_match.away_set_points
+                            elimination_match_set_points_against = elimination_match.home_set_points
+
+                        # Get opponent team details
+                        eliminated_by_team = Team.query.get(eliminated_by_team_id)
+                        if eliminated_by_team:
+                            eliminated_by_team_name = eliminated_by_team.name
+                            if eliminated_by_team.club:
+                                eliminated_by_club_name = eliminated_by_team.club.name
+                                eliminated_by_verein_id = eliminated_by_team.club.verein_id
+
+                # Get team club information
+                club_name = team.club.name if team.club else None
+                club_id = team.club.id if team.club else None
+                verein_id = team.club.verein_id if team.club else None
+
+                # Create team cup history entry
+                history_entry = TeamCupHistory(
+                    team_id=team.id,
+                    team_name=team.name,
+                    club_name=club_name,
+                    club_id=club_id,
+                    verein_id=verein_id,
+                    cup_name=cup.name,
+                    cup_type=cup.cup_type,
+                    season_id=season.id,
+                    season_name=season.name,
+                    bundesland=cup.bundesland,
+                    landkreis=cup.landkreis,
+                    reached_round=reached_round,
+                    reached_round_number=reached_round_number,
+                    total_rounds=cup.total_rounds,
+                    eliminated_by_team_id=eliminated_by_team_id,
+                    eliminated_by_team_name=eliminated_by_team_name,
+                    eliminated_by_club_name=eliminated_by_club_name,
+                    eliminated_by_verein_id=eliminated_by_verein_id,
+                    elimination_match_score_for=elimination_match_score_for,
+                    elimination_match_score_against=elimination_match_score_against,
+                    elimination_match_set_points_for=elimination_match_set_points_for,
+                    elimination_match_set_points_against=elimination_match_set_points_against,
+                    is_winner=is_winner,
+                    is_finalist=is_finalist
+                )
+
+                print(f"    Created history entry: {team.name} -> {reached_round} in {cup.name}")
+                db.session.add(history_entry)
+
+        # Commit all history entries
+        print("Committing all team cup history entries to database...")
+        db.session.commit()
+        print(f"Team cup history saved successfully for season {season.name}")
+
+        # Verify the data was saved
+        total_entries = TeamCupHistory.query.filter_by(season_id=season.id).count()
+        print(f"Verification: {total_entries} team cup history entries saved for season {season.name}")
+
+    except Exception as e:
+        print(f"Error saving team cup history: {e}")
+        import traceback
+        traceback.print_exc()
+        print("Continuing with season transition without saving team cup history...")
+        # Don't let history saving errors break the season transition
+        try:
+            db.session.rollback()
+        except:
+            pass
+
+
+def save_team_achievements(season):
+    """Save team achievements (league championships and cup wins) for this season."""
+    try:
+        from models import TeamAchievement, League, Cup, CupMatch, Team, Club, db
+
+        print("Saving team achievements for season:", season.name)
+
+        # Check if TeamAchievement table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'team_achievement' not in existing_tables:
+            print("TeamAchievement table does not exist yet. Creating it...")
+            # Create the table
+            db.create_all()
+            print("TeamAchievement table created successfully.")
+
+        achievements_saved = 0
+
+        # Save league champions
+        leagues = League.query.filter_by(season_id=season.id).all()
+        print(f"Found {len(leagues)} leagues for season {season.name}")
+
+        for league in leagues:
+            print(f"Processing league: {league.name} (Level {league.level})")
+
+            # Get league standings using the correct function
+            standings = calculate_standings(league)
+            if not standings:
+                print(f"    No standings found for league {league.name}")
+                continue
+
+            # Get the champion (first place)
+            champion_standing = standings[0]
+            champion_team = champion_standing['team']
+
+            if not champion_team:
+                print(f"    Champion team not found for league {league.name}")
+                continue
+
+            # Check if achievement already exists
+            existing_achievement = TeamAchievement.query.filter_by(
+                team_id=champion_team.id,
+                season_id=season.id,
+                achievement_type='LEAGUE_CHAMPION',
+                achievement_name=league.name
+            ).first()
+
+            if existing_achievement:
+                print(f"    Achievement already exists for {champion_team.name} in {league.name}")
+                continue
+
+            # Get club information
+            club_name = champion_team.club.name if champion_team.club else 'Unbekannt'
+            club_id = champion_team.club.id if champion_team.club else None
+            verein_id = champion_team.club.id if champion_team.club else None
+
+            # Create league championship achievement
+            achievement = TeamAchievement(
+                team_id=champion_team.id,
+                team_name=champion_team.name,
+                club_name=club_name,
+                club_id=club_id,
+                verein_id=verein_id,
+                season_id=season.id,
+                season_name=season.name,
+                achievement_type='LEAGUE_CHAMPION',
+                achievement_name=league.name,
+                achievement_level=league.level
+            )
+
+            print(f"    Created league championship: {champion_team.name} -> {league.name}")
+            db.session.add(achievement)
+            achievements_saved += 1
+
+        # Save cup winners
+        cups = Cup.query.filter_by(season_id=season.id).all()
+        print(f"Found {len(cups)} cups for season {season.name}")
+
+        for cup in cups:
+            print(f"Processing cup: {cup.name} ({cup.cup_type})")
+
+            # Find the final match
+            final_matches = CupMatch.query.filter(
+                CupMatch.cup_id == cup.id,
+                CupMatch.round_number == cup.total_rounds,
+                CupMatch.is_played == True,
+                CupMatch.winner_team_id.isnot(None)
+            ).all()
+
+            if not final_matches:
+                print(f"    No completed final found for cup {cup.name}")
+                continue
+
+            final_match = final_matches[0]
+            winner_team = Team.query.get(final_match.winner_team_id)
+
+            if not winner_team:
+                print(f"    Winner team not found for cup {cup.name}")
+                continue
+
+            # Get finalist team
+            finalist_team_id = final_match.home_team_id if final_match.away_team_id == final_match.winner_team_id else final_match.away_team_id
+            finalist_team = Team.query.get(finalist_team_id)
+
+            # Check if achievement already exists
+            existing_achievement = TeamAchievement.query.filter_by(
+                team_id=winner_team.id,
+                season_id=season.id,
+                achievement_type='CUP_WINNER',
+                achievement_name=cup.name
+            ).first()
+
+            if existing_achievement:
+                print(f"    Achievement already exists for {winner_team.name} in {cup.name}")
+                continue
+
+            # Get club information
+            club_name = winner_team.club.name if winner_team.club else 'Unbekannt'
+            club_id = winner_team.club.id if winner_team.club else None
+            verein_id = winner_team.club.id if winner_team.club else None
+
+            # Get final opponent information
+            final_opponent_team_name = finalist_team.name if finalist_team else 'Unbekannt'
+            final_opponent_club_name = finalist_team.club.name if finalist_team and finalist_team.club else 'Unbekannt'
+
+            # Get final scores
+            final_score_for = final_match.home_score if final_match.home_team_id == final_match.winner_team_id else final_match.away_score
+            final_score_against = final_match.away_score if final_match.home_team_id == final_match.winner_team_id else final_match.home_score
+
+            # Create cup winner achievement
+            achievement = TeamAchievement(
+                team_id=winner_team.id,
+                team_name=winner_team.name,
+                club_name=club_name,
+                club_id=club_id,
+                verein_id=verein_id,
+                season_id=season.id,
+                season_name=season.name,
+                achievement_type='CUP_WINNER',
+                achievement_name=cup.name,
+                bundesland=cup.bundesland,
+                landkreis=cup.landkreis,
+                cup_type=cup.cup_type,
+                final_opponent_team_name=final_opponent_team_name,
+                final_opponent_club_name=final_opponent_club_name,
+                final_score_for=final_score_for,
+                final_score_against=final_score_against
+            )
+
+            print(f"    Created cup winner achievement: {winner_team.name} -> {cup.name}")
+            db.session.add(achievement)
+            achievements_saved += 1
+
+        # Commit all achievements
+        print("Committing all team achievements to database...")
+        db.session.commit()
+        print(f"Team achievements saved successfully: {achievements_saved} achievements for season {season.name}")
+
+        # Verify the data was saved
+        total_entries = TeamAchievement.query.filter_by(season_id=season.id).count()
+        print(f"Verification: {total_entries} team achievement entries saved for season {season.name}")
+
+    except Exception as e:
+        print(f"Error saving team achievements: {e}")
+        import traceback
+        traceback.print_exc()
+        print("Continuing with season transition without saving team achievements...")
+        # Don't let achievement saving errors break the season transition
+        try:
+            db.session.rollback()
+        except:
+            pass
+
+
+def get_round_name(round_number, total_rounds):
+    """Convert round number to human-readable round name."""
+    if round_number == total_rounds:
+        return "Finale"
+    elif round_number == total_rounds - 1:
+        return "Halbfinale"
+    elif round_number == total_rounds - 2:
+        return "Viertelfinale"
+    elif round_number == total_rounds - 3:
+        return "Achtelfinale"
+    elif round_number == total_rounds - 4:
+        return "1/16-Finale"
+    elif round_number == total_rounds - 5:
+        return "1/32-Finale"
+    else:
+        return f"{round_number}. Runde"
+
 
 def calculate_standings(league):
     """Calculate the standings for a league."""

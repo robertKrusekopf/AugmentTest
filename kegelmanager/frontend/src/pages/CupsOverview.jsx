@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getCupsOptimized, getCupDetailOptimized } from '../services/apiCache';
+import { getCupsOptimized, getCupDetailOptimized, getCupHistoryByNameOptimized } from '../services/apiCache';
 import './CupsOverview.css';
 
 const CupsOverview = () => {
@@ -11,6 +11,8 @@ const CupsOverview = () => {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('matches');
   const [selectedRound, setSelectedRound] = useState('all');
+  const [cupHistory, setCupHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const loadAllCups = async () => {
     try {
@@ -47,6 +49,19 @@ const CupsOverview = () => {
     }
   };
 
+  const loadCupHistory = async (cupName) => {
+    try {
+      setHistoryLoading(true);
+      const data = await getCupHistoryByNameOptimized(cupName);
+      setCupHistory(data);
+    } catch (error) {
+      console.error('Error loading cup history:', error);
+      setCupHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadAllCups();
   }, []);
@@ -57,6 +72,12 @@ const CupsOverview = () => {
       setSelectedRound('all'); // Reset round selection when cup changes
     }
   }, [selectedCupId]);
+
+  useEffect(() => {
+    if (selectedCup && selectedCup.name) {
+      loadCupHistory(selectedCup.name);
+    }
+  }, [selectedCup]);
 
   // Get available rounds from matches
   const getAvailableRounds = () => {
@@ -182,6 +203,12 @@ const CupsOverview = () => {
                 onClick={() => setActiveTab('teams')}
               >
                 Teams
+              </button>
+              <button
+                className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
+                onClick={() => setActiveTab('history')}
+              >
+                Historie
               </button>
             </div>
 
@@ -429,6 +456,90 @@ const CupsOverview = () => {
                   ) : (
                     <div className="no-teams">
                       <p>Keine teilnehmenden Teams gefunden.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'history' && (
+                <div className="history-tab">
+                  {historyLoading ? (
+                    <div className="loading">Lade Historie...</div>
+                  ) : cupHistory && cupHistory.length > 0 ? (
+                    <div className="history-content">
+                      <h3 className="history-title">Pokal-Historie: {selectedCup.name}</h3>
+                      <div className="history-list">
+                        {cupHistory.map((entry, index) => (
+                          <div key={entry.id} className="history-entry">
+                            <div className="history-header">
+                              <h4 className="season-name">{entry.season_name}</h4>
+                              <div className="final-score">
+                                {entry.final_result.winner_score} : {entry.final_result.finalist_score}
+                                {entry.final_result.winner_set_points && entry.final_result.finalist_set_points && (
+                                  <span className="set-points">
+                                    ({entry.final_result.winner_set_points} : {entry.final_result.finalist_set_points} SP)
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="finalists">
+                              {/* Winner */}
+                              <div className="finalist winner">
+                                <div className="finalist-header">
+                                  <div className="trophy-icon">🏆</div>
+                                  <span className="finalist-label">Sieger</span>
+                                </div>
+                                <div className="team-info">
+                                  {entry.winner.emblem_url && (
+                                    <img
+                                      src={entry.winner.emblem_url}
+                                      alt={`${entry.winner.club_name} Wappen`}
+                                      className="team-emblem-small"
+                                      onError={(e) => {
+                                        e.target.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                  <div className="team-details">
+                                    <span className="team-name">{entry.winner.team_name}</span>
+                                    <span className="club-name">{entry.winner.club_name}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Finalist */}
+                              <div className="finalist runner-up">
+                                <div className="finalist-header">
+                                  <div className="medal-icon">🥈</div>
+                                  <span className="finalist-label">Finalist</span>
+                                </div>
+                                <div className="team-info">
+                                  {entry.finalist.emblem_url && (
+                                    <img
+                                      src={entry.finalist.emblem_url}
+                                      alt={`${entry.finalist.club_name} Wappen`}
+                                      className="team-emblem-small"
+                                      onError={(e) => {
+                                        e.target.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                  <div className="team-details">
+                                    <span className="team-name">{entry.finalist.team_name}</span>
+                                    <span className="club-name">{entry.finalist.club_name}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="no-history">
+                      <h3>Keine Historie verfügbar</h3>
+                      <p>Für diesen Pokal wurden noch keine historischen Daten gefunden. Die Historie wird automatisch gespeichert, sobald der Pokal in einer Saison abgeschlossen wurde.</p>
                     </div>
                   )}
                 </div>

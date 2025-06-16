@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPlayer, updatePlayer, getPlayerHistory } from '../services/api';
+import { getPlayer, updatePlayer, getPlayerHistory, getPlayerMatches } from '../services/api';
 import './PlayerDetail.css';
 
 const PlayerDetail = () => {
   const { id } = useParams();
   const [player, setPlayer] = useState(null);
   const [playerHistory, setPlayerHistory] = useState(null);
+  const [playerMatches, setPlayerMatches] = useState(null);
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [matchesLoading, setMatchesLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [cheatForm, setCheatForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState({ show: false, type: '', text: '' });
+  const [upcomingMatchesExpanded, setUpcomingMatchesExpanded] = useState(false);
+  const [recentMatchesExpanded, setRecentMatchesExpanded] = useState(false);
 
   // Lade Spielerdaten aus der API
   useEffect(() => {
@@ -142,6 +146,22 @@ const PlayerDetail = () => {
       });
   }, [id]);
 
+  // Lade Spieler-Spiele aus der API
+  useEffect(() => {
+    console.log(`Lade Spieler-Spiele für ID ${id} aus der API...`);
+
+    getPlayerMatches(id)
+      .then(data => {
+        console.log('Geladene Spieler-Spiele:', data);
+        setPlayerMatches(data);
+        setMatchesLoading(false);
+      })
+      .catch(error => {
+        console.error('Fehler beim Laden der Spieler-Spiele:', error);
+        setMatchesLoading(false);
+      });
+  }, [id]);
+
   // Handle form input changes
   const handleCheatInputChange = (e) => {
     const { name, value } = e.target;
@@ -208,6 +228,14 @@ const PlayerDetail = () => {
         setSaveMessage({ show: false, type: '', text: '' });
       }, 3000);
     }
+  };
+
+  const toggleUpcomingMatches = () => {
+    setUpcomingMatchesExpanded(!upcomingMatchesExpanded);
+  };
+
+  const toggleRecentMatches = () => {
+    setRecentMatchesExpanded(!recentMatchesExpanded);
   };
 
   if (loading) {
@@ -282,6 +310,12 @@ const PlayerDetail = () => {
             onClick={() => setActiveTab('statistics')}
           >
             Statistiken
+          </div>
+          <div
+            className={`tab ${activeTab === 'matches' ? 'active' : ''}`}
+            onClick={() => setActiveTab('matches')}
+          >
+            Spiele
           </div>
           <div
             className={`tab ${activeTab === 'history' ? 'active' : ''}`}
@@ -515,6 +549,149 @@ const PlayerDetail = () => {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {activeTab === 'matches' && (
+            <div className="matches-tab">
+              {matchesLoading ? (
+                <div className="loading">Lade Spiele...</div>
+              ) : playerMatches ? (
+                <>
+                  <div className="section-header">
+                    <h3>Nächste Spiele</h3>
+                    {playerMatches.upcoming_matches && playerMatches.upcoming_matches.length > 5 && (
+                      <button
+                        className="expand-button"
+                        onClick={toggleUpcomingMatches}
+                      >
+                        {upcomingMatchesExpanded ? 'Einklappen' : 'Ausklappen'}
+                      </button>
+                    )}
+                  </div>
+                  <table className="table matches-table">
+                    <thead>
+                      <tr>
+                        <th>Datum</th>
+                        <th>Heimteam</th>
+                        <th>Auswärtsteam</th>
+                        <th>Liga/Pokal</th>
+                        <th>Teilnahme</th>
+                        <th>Aktionen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {playerMatches.upcoming_matches && playerMatches.upcoming_matches
+                        .filter(match => match.visible || upcomingMatchesExpanded)
+                        .map(match => (
+                          <tr key={match.id} className={!match.player_participated ? 'not-participated' : ''}>
+                            <td>
+                              {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              }) : 'TBD'}
+                            </td>
+                            <td>{match.homeTeam}</td>
+                            <td>{match.awayTeam}</td>
+                            <td>
+                              <span className={`match-type ${match.type}`}>
+                                {match.league}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
+                                {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
+                              </span>
+                            </td>
+                            <td>
+                              <Link to={`/matches/${match.id}`} className="btn btn-small">
+                                Details
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+
+                  <div className="section-header">
+                    <h3>Letzte Spiele</h3>
+                    {playerMatches.recent_matches && playerMatches.recent_matches.length > 5 && (
+                      <button
+                        className="expand-button"
+                        onClick={toggleRecentMatches}
+                      >
+                        {recentMatchesExpanded ? 'Einklappen' : 'Ausklappen'}
+                      </button>
+                    )}
+                  </div>
+                  <table className="table matches-table">
+                    <thead>
+                      <tr>
+                        <th>Datum</th>
+                        <th>Heimteam</th>
+                        <th>Ergebnis</th>
+                        <th>Auswärtsteam</th>
+                        <th>Liga/Pokal</th>
+                        <th>Teilnahme</th>
+                        <th>Leistung</th>
+                        <th>Aktionen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {playerMatches.recent_matches && playerMatches.recent_matches
+                        .filter(match => match.visible || recentMatchesExpanded)
+                        .map(match => (
+                          <tr key={match.id} className={!match.player_participated ? 'not-participated' : ''}>
+                            <td>
+                              {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
+                                day: '2-digit',
+                                month: '2-digit'
+                              }) : 'TBD'}
+                            </td>
+                            <td>{match.homeTeam}</td>
+                            <td>
+                              {match.is_played ? (
+                                <strong>{match.homeScore} - {match.awayScore}</strong>
+                              ) : (
+                                'Nicht gespielt'
+                              )}
+                            </td>
+                            <td>{match.awayTeam}</td>
+                            <td>
+                              <span className={`match-type ${match.type}`}>
+                                {match.league}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
+                                {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
+                              </span>
+                            </td>
+                            <td>
+                              {match.player_participated && match.player_performance ? (
+                                <span className="player-score">
+                                  {match.player_performance.total_score} Holz
+                                </span>
+                              ) : (
+                                '-'
+                              )}
+                            </td>
+                            <td>
+                              <Link to={`/matches/${match.id}`} className="btn btn-small">
+                                Details
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : (
+                <div className="no-matches">Keine Spiele gefunden</div>
+              )}
             </div>
           )}
 

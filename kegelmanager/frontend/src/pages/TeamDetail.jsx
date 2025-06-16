@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getTeam, getTeamHistory, updateTeam } from '../services/api';
+import { getTeam, getTeamHistory, getTeamCupHistory, getTeamAchievements, updateTeam } from '../services/api';
 import './TeamDetail.css';
 
 const TeamDetail = () => {
@@ -15,6 +15,10 @@ const TeamDetail = () => {
   const [savingStaerke, setSavingStaerke] = useState(false);
   const [teamHistory, setTeamHistory] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [teamCupHistory, setTeamCupHistory] = useState(null);
+  const [loadingCupHistory, setLoadingCupHistory] = useState(false);
+  const [teamAchievements, setTeamAchievements] = useState(null);
+  const [loadingAchievements, setLoadingAchievements] = useState(false);
 
   // Lade Teamdaten aus der API
   useEffect(() => {
@@ -81,6 +85,12 @@ const TeamDetail = () => {
     if (activeTab === 'history' && !teamHistory && !loadingHistory) {
       loadTeamHistory();
     }
+    if (activeTab === 'history' && !teamCupHistory && !loadingCupHistory) {
+      loadTeamCupHistory();
+    }
+    if (activeTab === 'achievements' && !teamAchievements && !loadingAchievements) {
+      loadTeamAchievements();
+    }
   }, [activeTab, id]);
 
   const loadTeamHistory = async () => {
@@ -95,6 +105,36 @@ const TeamDetail = () => {
       setTeamHistory({ team_name: '', club_name: '', history: [] });
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const loadTeamCupHistory = async () => {
+    try {
+      setLoadingCupHistory(true);
+      console.log(`Lade Team-Pokal-Historie für Team ${id}...`);
+      const cupHistoryData = await getTeamCupHistory(id);
+      setTeamCupHistory(cupHistoryData);
+      console.log('Team-Pokal-Historie geladen:', cupHistoryData);
+    } catch (error) {
+      console.error('Fehler beim Laden der Team-Pokal-Historie:', error);
+      setTeamCupHistory({ team_name: '', club_name: '', cup_history: [] });
+    } finally {
+      setLoadingCupHistory(false);
+    }
+  };
+
+  const loadTeamAchievements = async () => {
+    try {
+      setLoadingAchievements(true);
+      console.log(`Lade Team-Erfolge für Team ${id}...`);
+      const achievementsData = await getTeamAchievements(id);
+      setTeamAchievements(achievementsData);
+      console.log('Team-Erfolge geladen:', achievementsData);
+    } catch (error) {
+      console.error('Fehler beim Laden der Team-Erfolge:', error);
+      setTeamAchievements({ team_name: '', club_name: '', achievements: [] });
+    } finally {
+      setLoadingAchievements(false);
     }
   };
 
@@ -220,6 +260,12 @@ const TeamDetail = () => {
             onClick={() => setActiveTab('history')}
           >
             Historie
+          </div>
+          <div
+            className={`tab ${activeTab === 'achievements' ? 'active' : ''}`}
+            onClick={() => setActiveTab('achievements')}
+          >
+            Erfolge
           </div>
         </div>
 
@@ -954,9 +1000,9 @@ const TeamDetail = () => {
 
           {activeTab === 'history' && (
             <div className="history-tab">
-              {loadingHistory ? (
+              {(loadingHistory || loadingCupHistory) ? (
                 <div className="loading">Lade Team-Historie...</div>
-              ) : teamHistory && teamHistory.history && teamHistory.history.length > 0 ? (
+              ) : (teamHistory && teamHistory.history && teamHistory.history.length > 0) || (teamCupHistory && teamCupHistory.cup_history && teamCupHistory.cup_history.length > 0) ? (
                 <div className="history-content">
                   <div className="history-header">
                     <h3>Ligaplatzierungen von {teamHistory.team_name}</h3>
@@ -1224,11 +1270,245 @@ const TeamDetail = () => {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : null}
+
+              {/* Cup History Section */}
+              {teamCupHistory && teamCupHistory.cup_history && teamCupHistory.cup_history.length > 0 ? (
+                <div className="cup-history-content">
+                  <div className="history-header">
+                    <h3>Pokal-Historie von {teamCupHistory.team_name}</h3>
+                    <p className="history-subtitle">Verein: {teamCupHistory.club_name}</p>
+                  </div>
+
+                  <div className="cup-history-table-container">
+                    <table className="table cup-history-table">
+                      <thead>
+                        <tr>
+                          <th>Saison</th>
+                          <th>Pokal</th>
+                          <th>Typ</th>
+                          <th>Erreichte Runde</th>
+                          <th>Ausgeschieden gegen</th>
+                          <th>Ergebnis</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teamCupHistory.cup_history.map((entry, index) => (
+                          <tr key={`${entry.season.season_id}-${entry.cup.cup_name}-${index}`} className="cup-history-row">
+                            <td className="season-name">{entry.season.season_name}</td>
+                            <td className="cup-name">{entry.cup.cup_name}</td>
+                            <td className="cup-type">{entry.cup.cup_type}</td>
+                            <td className={`reached-round ${entry.performance.is_winner ? 'winner' : entry.performance.is_finalist ? 'finalist' : ''}`}>
+                              {entry.performance.reached_round}
+                            </td>
+                            <td className="eliminated-by">
+                              {entry.elimination.eliminated_by_team_name ? (
+                                <div className="elimination-info">
+                                  {entry.elimination.eliminated_by_emblem_url && (
+                                    <img
+                                      src={entry.elimination.eliminated_by_emblem_url}
+                                      alt={`${entry.elimination.eliminated_by_club_name} Wappen`}
+                                      className="team-emblem-tiny"
+                                      onError={(e) => {
+                                        e.target.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                  <span className="team-name">{entry.elimination.eliminated_by_team_name}</span>
+                                </div>
+                              ) : (
+                                <span className="no-elimination">-</span>
+                              )}
+                            </td>
+                            <td className="match-result">
+                              {entry.elimination.match_score_for !== null && entry.elimination.match_score_against !== null ? (
+                                <div className="score-display">
+                                  <span className="score">{entry.elimination.match_score_for}:{entry.elimination.match_score_against}</span>
+                                  {entry.elimination.match_set_points_for !== null && entry.elimination.match_set_points_against !== null && (
+                                    <span className="set-points">({entry.elimination.match_set_points_for}:{entry.elimination.match_set_points_against} SP)</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="no-result">-</span>
+                              )}
+                            </td>
+                            <td className="status">
+                              {entry.performance.is_winner ? (
+                                <span className="status-winner">🏆 Sieger</span>
+                              ) : entry.performance.is_finalist ? (
+                                <span className="status-finalist">🥈 Finalist</span>
+                              ) : (
+                                <span className="status-eliminated">Ausgeschieden</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="cup-history-summary">
+                    <div className="summary-stats">
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">{teamCupHistory.cup_history.length}</div>
+                        <div className="summary-stat-label">Pokal-Teilnahmen</div>
+                      </div>
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">
+                          {teamCupHistory.cup_history.filter(entry => entry.performance.is_winner).length}
+                        </div>
+                        <div className="summary-stat-label">Pokalsiege</div>
+                      </div>
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">
+                          {teamCupHistory.cup_history.filter(entry => entry.performance.is_finalist).length}
+                        </div>
+                        <div className="summary-stat-label">Finale erreicht</div>
+                      </div>
+                      <div className="summary-stat">
+                        <div className="summary-stat-value">
+                          {teamCupHistory.cup_history.length > 0
+                            ? ((teamCupHistory.cup_history.filter(entry => entry.performance.reached_round_number >= entry.performance.total_rounds - 1).length / teamCupHistory.cup_history.length) * 100).toFixed(1)
+                            : '0.0'}%
+                        </div>
+                        <div className="summary-stat-label">Erfolgsquote (Halbfinale+)</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* No History Message */}
+              {(!teamHistory || !teamHistory.history || teamHistory.history.length === 0) &&
+               (!teamCupHistory || !teamCupHistory.cup_history || teamCupHistory.cup_history.length === 0) ? (
                 <div className="no-history">
                   <h3>Keine historischen Daten verfügbar</h3>
-                  <p>Historische Ligaplatzierungen werden nach dem ersten Saisonwechsel angezeigt.</p>
+                  <p>Historische Liga- und Pokalplatzierungen werden nach dem ersten Saisonwechsel angezeigt.</p>
                   <p>Die Historie wird automatisch beim Übergang zur nächsten Saison gespeichert.</p>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {activeTab === 'achievements' && (
+            <div className="achievements-tab">
+              {loadingAchievements ? (
+                <div className="loading">Lade Team-Erfolge...</div>
+              ) : (teamAchievements && teamAchievements.achievements && teamAchievements.achievements.length > 0) ? (
+                <div className="achievements-content">
+                  <div className="achievements-header">
+                    <h3>Erfolge von {teamAchievements.team_name}</h3>
+                    <p className="achievements-subtitle">Verein: {teamAchievements.club_name}</p>
+                  </div>
+
+                  {/* Group achievements by type */}
+                  {(() => {
+                    const leagueChampionships = teamAchievements.achievements.filter(a => a.achievement_type === 'LEAGUE_CHAMPION');
+                    const cupWins = teamAchievements.achievements.filter(a => a.achievement_type === 'CUP_WINNER');
+
+                    return (
+                      <div className="achievements-sections">
+                        {/* League Championships */}
+                        {leagueChampionships.length > 0 && (
+                          <div className="achievements-section">
+                            <h4 className="section-title">
+                              <span className="trophy-icon">🏆</span>
+                              Meisterschaften ({leagueChampionships.length})
+                            </h4>
+                            <div className="achievements-grid">
+                              {leagueChampionships.map((achievement, index) => (
+                                <div key={`league-${achievement.id}-${index}`} className="achievement-card championship-card">
+                                  <div className="achievement-icon">
+                                    <span className="trophy">🏆</span>
+                                  </div>
+                                  <div className="achievement-details">
+                                    <div className="achievement-title">{achievement.achievement_name}</div>
+                                    <div className="achievement-subtitle">Meister {achievement.season.season_name}</div>
+                                    <div className="achievement-level">Liga Level {achievement.achievement_level}</div>
+                                  </div>
+                                  <div className="achievement-season">{achievement.season.season_name}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Cup Wins */}
+                        {cupWins.length > 0 && (
+                          <div className="achievements-section">
+                            <h4 className="section-title">
+                              <span className="cup-icon">🏅</span>
+                              Pokalsiege ({cupWins.length})
+                            </h4>
+                            <div className="achievements-grid">
+                              {cupWins.map((achievement, index) => (
+                                <div key={`cup-${achievement.id}-${index}`} className="achievement-card cup-card">
+                                  <div className="achievement-icon">
+                                    <span className="cup">🏅</span>
+                                  </div>
+                                  <div className="achievement-details">
+                                    <div className="achievement-title">{achievement.achievement_name}</div>
+                                    <div className="achievement-subtitle">Sieger {achievement.season.season_name}</div>
+                                    <div className="achievement-type">{achievement.cup_type}</div>
+                                    {achievement.final_opponent && (
+                                      <div className="final-info">
+                                        <div className="final-opponent">
+                                          Finale gegen: {achievement.final_opponent.team_name}
+                                          {achievement.final_opponent.club_name &&
+                                            ` (${achievement.final_opponent.club_name})`
+                                          }
+                                        </div>
+                                        {achievement.final_result && (
+                                          <div className="final-result">
+                                            Ergebnis: {achievement.final_result.score_for} : {achievement.final_result.score_against}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="achievement-season">{achievement.season.season_name}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Summary Statistics */}
+                        <div className="achievements-summary">
+                          <h4>Erfolgs-Statistik</h4>
+                          <div className="summary-stats">
+                            <div className="summary-stat">
+                              <div className="summary-stat-value">{leagueChampionships.length}</div>
+                              <div className="summary-stat-label">Meisterschaften</div>
+                            </div>
+                            <div className="summary-stat">
+                              <div className="summary-stat-value">{cupWins.length}</div>
+                              <div className="summary-stat-label">Pokalsiege</div>
+                            </div>
+                            <div className="summary-stat">
+                              <div className="summary-stat-value">{teamAchievements.achievements.length}</div>
+                              <div className="summary-stat-label">Erfolge gesamt</div>
+                            </div>
+                            <div className="summary-stat">
+                              <div className="summary-stat-value">
+                                {teamAchievements.achievements.length > 0
+                                  ? new Set(teamAchievements.achievements.map(a => a.season.season_id)).size
+                                  : 0}
+                              </div>
+                              <div className="summary-stat-label">Erfolgreiche Saisons</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="no-achievements">
+                  <h3>Noch keine Erfolge</h3>
+                  <p>Diese Mannschaft hat noch keine Meisterschaften oder Pokalsiege errungen.</p>
+                  <p>Erfolge werden automatisch beim Saisonwechsel gespeichert, wenn die Mannschaft eine Liga gewinnt oder einen Pokal holt.</p>
                 </div>
               )}
             </div>
