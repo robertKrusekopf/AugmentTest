@@ -152,6 +152,10 @@ def create_sample_data(custom_app=None):
             db.session.add(league)
         db.session.commit()
 
+        # Balance promotion and relegation spots after creating all leagues
+        from simulation import balance_promotion_relegation_spots
+        balance_promotion_relegation_spots(season.id)
+
 
         # Stelle sicher, dass der Ordner für die Vereinswappen existiert
         #logos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "public", "logos")
@@ -428,6 +432,11 @@ def create_sample_data(custom_app=None):
         # Commit the player changes
         db.session.commit()
         print("Players generated successfully!")
+
+        # Perform initial player distribution for UI display purposes
+        print("Performing initial player distribution...")
+        from player_redistribution import initial_player_distribution
+        initial_player_distribution()
 
         # Generate fixtures for each league using the proper round-robin algorithm
         print("Generating match fixtures...")

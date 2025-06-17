@@ -433,7 +433,7 @@ def get_player(player_id):
 
 @app.route('/api/players/<int:player_id>/matches', methods=['GET'])
 def get_player_matches(player_id):
-    """Get all matches for a player (both league and cup matches)."""
+    """Get all matches for a player (both league and cup matches), including matches where player helped other teams."""
     try:
         from models import PlayerMatchPerformance, PlayerCupMatchPerformance, Match, CupMatch
         from sqlalchemy import or_, and_
@@ -446,68 +446,73 @@ def get_player_matches(player_id):
         if not current_season:
             return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
 
-        # Get all teams the player belongs to
+        # Get all teams the player belongs to (for matches where he didn't play)
         player_team_ids = [team.id for team in player.teams]
 
-        if not player_team_ids:
-            return jsonify({
-                'player_name': player.name,
-                'upcoming_matches': [],
-                'recent_matches': []
-            })
-
-        # Get league matches for player's teams
-        league_matches = Match.query.filter(
+        # STEP 1: Get all league matches where the player actually played (including as substitute for other teams)
+        league_performances = PlayerMatchPerformance.query.join(
+            Match, PlayerMatchPerformance.match_id == Match.id
+        ).filter(
             and_(
-                Match.season_id == current_season.id,
-                or_(
-                    Match.home_team_id.in_(player_team_ids),
-                    Match.away_team_id.in_(player_team_ids)
-                )
+                PlayerMatchPerformance.player_id == player_id,
+                Match.season_id == current_season.id
             )
-        ).order_by(Match.match_date.desc()).all()
+        ).all()
 
-        # Get cup matches for player's teams
-        cup_matches = CupMatch.query.join(Cup).filter(
+        # STEP 2: Get all cup matches where the player actually played (including as substitute for other teams)
+        cup_performances = PlayerCupMatchPerformance.query.join(
+            CupMatch, PlayerCupMatchPerformance.cup_match_id == CupMatch.id
+        ).join(
+            Cup, CupMatch.cup_id == Cup.id
+        ).filter(
             and_(
-                Cup.season_id == current_season.id,
-                or_(
-                    CupMatch.home_team_id.in_(player_team_ids),
-                    CupMatch.away_team_id.in_(player_team_ids)
-                )
+                PlayerCupMatchPerformance.player_id == player_id,
+                Cup.season_id == current_season.id
             )
-        ).order_by(CupMatch.match_date.desc()).all()
+        ).all()
 
-        # Get player performances for league matches
-        league_performances = {}
-        if league_matches:
-            match_ids = [m.id for m in league_matches]
-            perfs = PlayerMatchPerformance.query.filter(
+        # STEP 3: Get match IDs where player actually played
+        played_league_match_ids = {p.match_id for p in league_performances}
+        played_cup_match_ids = {p.cup_match_id for p in cup_performances}
+
+        # STEP 4: Get additional league matches from player's regular teams (where he didn't play)
+        additional_league_matches = []
+        if player_team_ids:
+            additional_league_matches = Match.query.filter(
                 and_(
-                    PlayerMatchPerformance.player_id == player_id,
-                    PlayerMatchPerformance.match_id.in_(match_ids)
+                    Match.season_id == current_season.id,
+                    or_(
+                        Match.home_team_id.in_(player_team_ids),
+                        Match.away_team_id.in_(player_team_ids)
+                    ),
+                    ~Match.id.in_(played_league_match_ids)  # Exclude matches where he already played
                 )
             ).all()
-            league_performances = {p.match_id: p for p in perfs}
 
-        # Get player performances for cup matches
-        cup_performances = {}
-        if cup_matches:
-            cup_match_ids = [m.id for m in cup_matches]
-            cup_perfs = PlayerCupMatchPerformance.query.filter(
+        # STEP 5: Get additional cup matches from player's regular teams (where he didn't play)
+        additional_cup_matches = []
+        if player_team_ids:
+            additional_cup_matches = CupMatch.query.join(Cup).filter(
                 and_(
-                    PlayerCupMatchPerformance.player_id == player_id,
-                    PlayerCupMatchPerformance.cup_match_id.in_(cup_match_ids)
+                    Cup.season_id == current_season.id,
+                    or_(
+                        CupMatch.home_team_id.in_(player_team_ids),
+                        CupMatch.away_team_id.in_(player_team_ids)
+                    ),
+                    ~CupMatch.id.in_(played_cup_match_ids)  # Exclude matches where he already played
                 )
             ).all()
-            cup_performances = {p.cup_match_id: p for p in cup_perfs}
+
+        # STEP 6: Create performance dictionaries for easy lookup
+        league_performances_dict = {p.match_id: p for p in league_performances}
+        cup_performances_dict = {p.cup_match_id: p for p in cup_performances}
 
         # Combine and process matches
         all_matches = []
 
-        # Process league matches
-        for match in league_matches:
-            player_participated = match.id in league_performances
+        # STEP 7: Process league matches where player actually played
+        for performance in league_performances:
+            match = performance.match
             match_data = {
                 'id': match.id,
                 'type': 'league',
@@ -519,14 +524,34 @@ def get_player_matches(player_id):
                 'league': match.league.name,
                 'match_day': match.match_day,
                 'is_played': match.is_played,
-                'player_participated': player_participated,
-                'player_performance': league_performances[match.id].to_dict() if player_participated else None
+                'player_participated': True,
+                'player_performance': performance.to_dict(),
+                'played_for_team': performance.team.name  # Show which team he played for
             }
             all_matches.append(match_data)
 
-        # Process cup matches
-        for cup_match in cup_matches:
-            player_participated = cup_match.id in cup_performances
+        # STEP 8: Process additional league matches from regular teams (where player didn't play)
+        for match in additional_league_matches:
+            match_data = {
+                'id': match.id,
+                'type': 'league',
+                'date': match.match_date.isoformat() if match.match_date else None,
+                'homeTeam': match.home_team.name,
+                'awayTeam': match.away_team.name,
+                'homeScore': match.home_score,
+                'awayScore': match.away_score,
+                'league': match.league.name,
+                'match_day': match.match_day,
+                'is_played': match.is_played,
+                'player_participated': False,
+                'player_performance': None,
+                'played_for_team': None
+            }
+            all_matches.append(match_data)
+
+        # STEP 9: Process cup matches where player actually played
+        for performance in cup_performances:
+            cup_match = performance.cup_match
             # Convert cup match ID to frontend format (add 1,000,000)
             frontend_id = cup_match.id + 1000000
             match_data = {
@@ -540,8 +565,30 @@ def get_player_matches(player_id):
                 'league': f"{cup_match.cup.name} - {cup_match.round_name}",
                 'match_day': cup_match.cup_match_day,
                 'is_played': cup_match.is_played,
-                'player_participated': player_participated,
-                'player_performance': cup_performances[cup_match.id].to_dict() if player_participated else None
+                'player_participated': True,
+                'player_performance': performance.to_dict(),
+                'played_for_team': performance.team.name  # Show which team he played for
+            }
+            all_matches.append(match_data)
+
+        # STEP 10: Process additional cup matches from regular teams (where player didn't play)
+        for cup_match in additional_cup_matches:
+            # Convert cup match ID to frontend format (add 1,000,000)
+            frontend_id = cup_match.id + 1000000
+            match_data = {
+                'id': frontend_id,
+                'type': 'cup',
+                'date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+                'homeTeam': cup_match.home_team.name,
+                'awayTeam': cup_match.away_team.name if cup_match.away_team else 'Freilos',
+                'homeScore': cup_match.home_score,
+                'awayScore': cup_match.away_score,
+                'league': f"{cup_match.cup.name} - {cup_match.round_name}",
+                'match_day': cup_match.cup_match_day,
+                'is_played': cup_match.is_played,
+                'player_participated': False,
+                'player_performance': None,
+                'played_for_team': None
             }
             all_matches.append(match_data)
 
@@ -1860,6 +1907,72 @@ def debug_standings(league_id):
             for i, standing in enumerate(standings)
         ]
     })
+
+# Debug endpoint to check and balance promotion/relegation spots
+@app.route('/api/debug/balance-promotion-relegation', methods=['POST'])
+def debug_balance_promotion_relegation():
+    """Debug endpoint to manually trigger promotion/relegation balancing."""
+    try:
+        # Get current season
+        current_season = Season.query.filter_by(is_current=True).first()
+        if not current_season:
+            return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+        # Import and run the balancing function
+        from simulation import balance_promotion_relegation_spots
+        balance_promotion_relegation_spots(current_season.id)
+
+        return jsonify({
+            "success": True,
+            "message": "Auf-/Abstiegsplätze wurden erfolgreich ausbalanciert",
+            "season_id": current_season.id
+        })
+
+    except Exception as e:
+        print(f"Error in balance_promotion_relegation: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# Debug endpoint to show promotion/relegation structure
+@app.route('/api/debug/promotion-relegation-structure', methods=['GET'])
+def debug_promotion_relegation_structure():
+    """Debug endpoint to show the current promotion/relegation structure."""
+    try:
+        # Get current season
+        current_season = Season.query.filter_by(is_current=True).first()
+        if not current_season:
+            return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+        leagues = League.query.filter_by(season_id=current_season.id).order_by(League.level, League.name).all()
+
+        structure = []
+        for league in leagues:
+            promotion_leagues = league.get_aufstieg_ligen()
+            relegation_leagues = league.get_abstieg_ligen()
+
+            structure.append({
+                "id": league.id,
+                "name": league.name,
+                "level": league.level,
+                "bundesland": league.bundesland,
+                "landkreis": league.landkreis,
+                "altersklasse": league.altersklasse,
+                "anzahl_aufsteiger": league.anzahl_aufsteiger,
+                "anzahl_absteiger": league.anzahl_absteiger,
+                "aufstieg_liga_ids": league.get_aufstieg_liga_ids(),
+                "abstieg_liga_ids": league.get_abstieg_liga_ids(),
+                "promotion_leagues": [{"id": l.id, "name": l.name, "level": l.level} for l in promotion_leagues],
+                "relegation_leagues": [{"id": l.id, "name": l.name, "level": l.level} for l in relegation_leagues]
+            })
+
+        return jsonify({
+            "season_id": current_season.id,
+            "season_name": current_season.name,
+            "leagues": structure
+        })
+
+    except Exception as e:
+        print(f"Error in promotion_relegation_structure: {e}")
+        return jsonify({"error": str(e)}), 500
 
 # Lineup management endpoints
 @app.route('/api/matches/<int:match_id>/available-players', methods=['GET'])

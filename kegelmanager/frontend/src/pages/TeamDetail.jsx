@@ -253,7 +253,13 @@ const TeamDetail = () => {
             className={`tab ${activeTab === 'stats' ? 'active' : ''}`}
             onClick={() => setActiveTab('stats')}
           >
-            Statistiken
+            Statistiken (Gesamt)
+          </div>
+          <div
+            className={`tab ${activeTab === 'current-season-stats' ? 'active' : ''}`}
+            onClick={() => setActiveTab('current-season-stats')}
+          >
+            Statistiken (Saison)
           </div>
           <div
             className={`tab ${activeTab === 'history' ? 'active' : ''}`}
@@ -552,7 +558,7 @@ const TeamDetail = () => {
                               <div className="player-attributes">
                                 <div className="player-attribute">
                                   <span className="attribute-label">Stärke:</span>
-                                  <span className="attribute-value">{Math.floor(player.strength)}</span>
+                                  <span className="attribute-value">???</span>
                                 </div>
                                 <div className="player-attribute">
                                   <span className="attribute-label">Volle:</span>
@@ -567,8 +573,8 @@ const TeamDetail = () => {
                             <div
                               className="player-strength-indicator"
                               style={{
-                                height: `${(player.strength / 100) * 100}%`,
-                                backgroundColor: `hsl(${120 * (player.strength / 100)}, 70%, 45%)`
+                                height: `0%`,
+                                backgroundColor: `#e0e0e0`
                               }}
                             ></div>
                           </Link>
@@ -660,23 +666,12 @@ const TeamDetail = () => {
                       <td>{player.position}</td>
                       <td>
                         <div className="strength-display">
-                          <div className="strength-bar">
-                            <div
-                              className="strength-fill"
-                              style={{ width: `${player.strength}%` }}
-                            ></div>
-                          </div>
-                          <span>{Math.floor(player.strength)}</span>
+                          <span>???</span>
                         </div>
                       </td>
                       <td>
                         <div className="talent-stars">
-                          {Array.from({ length: 10 }, (_, i) => (
-                            <span
-                              key={i}
-                              className={`star ${i < player.talent ? 'filled' : ''}`}
-                            >★</span>
-                          ))}
+                          <span>???</span>
                         </div>
                       </td>
                       <td>
@@ -991,6 +986,199 @@ const TeamDetail = () => {
                   <div className="stat-item full-width">
                     <div className="chart-placeholder">
                       [Hier würde ein Saisonverlauf-Chart mit Holzergebnissen angezeigt werden]
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'current-season-stats' && (
+            <div className="stats-tab">
+              <div className="stats-section">
+                <h3>Teamstatistiken (Aktuelle Saison)</h3>
+                <div className="stats-grid detailed">
+                  <div className="stat-item">
+                    <span className="stat-label">Spiele:</span>
+                    <span className="stat-value">{team.current_season_stats?.matches || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Siege:</span>
+                    <span className="stat-value">{team.current_season_stats?.wins || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Unentschieden:</span>
+                    <span className="stat-value">{team.current_season_stats?.draws || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Niederlagen:</span>
+                    <span className="stat-value">{team.current_season_stats?.losses || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Punkte:</span>
+                    <span className="stat-value">{team.current_season_stats?.points || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Siegquote:</span>
+                    <span className="stat-value">
+                      {(team.current_season_stats?.matches || 0) > 0
+                        ? (((team.current_season_stats?.wins || 0) / team.current_season_stats.matches) * 100).toFixed(1)
+                        : '0.0'}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-section">
+                <h3>Kegelergebnisse (Aktuelle Saison)</h3>
+                <div className="stats-grid detailed">
+                  <div className="stat-item">
+                    <span className="stat-label">Gesamtholz:</span>
+                    <span className="stat-value">{team.current_season_stats?.goalsFor || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Gegnerisches Holz:</span>
+                    <span className="stat-value">{team.current_season_stats?.goalsAgainst || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Holzdifferenz:</span>
+                    <span className="stat-value">
+                      {(team.current_season_stats?.goalsFor || 0) - (team.current_season_stats?.goalsAgainst || 0)}
+                    </span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Ø Holz pro Spiel:</span>
+                    <span className="stat-value">
+                      {(team.current_season_stats?.matches || 0) > 0
+                        ? ((team.current_season_stats?.goalsFor || 0) / team.current_season_stats.matches).toFixed(1)
+                        : '0.0'}
+                    </span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Ø Gegnerholz pro Spiel:</span>
+                    <span className="stat-value">
+                      {(team.current_season_stats?.matches || 0) > 0
+                        ? ((team.current_season_stats?.goalsAgainst || 0) / team.current_season_stats.matches).toFixed(1)
+                        : '0.0'}
+                    </span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Ø Holz pro Spieler:</span>
+                    <span className="stat-value">
+                      {(team.current_season_stats?.matches || 0) > 0
+                        ? ((team.current_season_stats?.goalsFor || 0) / (team.current_season_stats.matches * 6)).toFixed(1)
+                        : '0.0'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-section">
+                <h3>Heim- vs. Auswärtsstatistiken (Aktuelle Saison)</h3>
+                <div className="stats-grid detailed">
+                  <div className="stat-item">
+                    <span className="stat-label">Heimspiele:</span>
+                    <span className="stat-value">{team.current_season_stats?.homeMatches || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Auswärtsspiele:</span>
+                    <span className="stat-value">{team.current_season_stats?.awayMatches || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Heimholz gesamt:</span>
+                    <span className="stat-value">{team.current_season_stats?.homeGoalsFor || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Auswärtsholz gesamt:</span>
+                    <span className="stat-value">{team.current_season_stats?.awayGoalsFor || 0}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Ø Heimergebnis:</span>
+                    <span className="stat-value">{team.current_season_stats?.avgHomeScore?.toFixed(1) || '0.0'}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Ø Auswärtsergebnis:</span>
+                    <span className="stat-value">{team.current_season_stats?.avgAwayScore?.toFixed(1) || '0.0'}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Ø Heimholz pro Spieler:</span>
+                    <span className="stat-value">
+                      {(team.current_season_stats?.homeMatches || 0) > 0
+                        ? ((team.current_season_stats?.homeGoalsFor || 0) / (team.current_season_stats.homeMatches * 6)).toFixed(1)
+                        : '0.0'}
+                    </span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Ø Auswärtsholz pro Spieler:</span>
+                    <span className="stat-value">
+                      {(team.current_season_stats?.awayMatches || 0) > 0
+                        ? ((team.current_season_stats?.awayGoalsFor || 0) / (team.current_season_stats.awayMatches * 6)).toFixed(1)
+                        : '0.0'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-section">
+                <h3>Spielerstatistiken (Aktuelle Saison)</h3>
+                <table className="table statistics-table">
+                  <thead>
+                    <tr>
+                      <th>Spieler</th>
+                      <th>Spiele</th>
+                      <th>Ø Gesamt</th>
+                      <th>Ø Volle</th>
+                      <th>Ø Räumer</th>
+                      <th>Ø Fehler</th>
+                      <th>MP-Quote</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {team.players
+                      .filter(player => player.current_season_statistics && player.current_season_statistics.total_matches > 0)
+                      .sort((a, b) => {
+                        // Sortiere nach Anzahl der Spiele (absteigend)
+                        const matchesA = a.current_season_statistics?.total_matches || 0;
+                        const matchesB = b.current_season_statistics?.total_matches || 0;
+                        if (matchesB !== matchesA) return matchesB - matchesA;
+
+                        // Bei gleicher Spielanzahl nach Durchschnitt (absteigend)
+                        const avgA = a.current_season_statistics?.avg_total_score || 0;
+                        const avgB = b.current_season_statistics?.avg_total_score || 0;
+                        return avgB - avgA;
+                      })
+                      .map(player => {
+                        const stats = player.current_season_statistics || {};
+                        return (
+                          <tr key={player.id} className={player.is_substitute ? 'substitute-player' : ''}>
+                            <td>
+                              <Link to={`/players/${player.id}`} className="player-name-link">
+                                {player.name}
+                                {player.is_substitute && <span className="substitute-badge" title="Aushilfsspieler"> (A)</span>}
+                              </Link>
+                              {player.club_id !== team.club_id && (
+                                <div className="player-club">{player.club_name}</div>
+                              )}
+                            </td>
+                            <td>{stats.total_matches || 0}</td>
+                            <td>{stats.avg_total_score?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.avg_total_volle?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.avg_total_raeumer?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.avg_total_fehler?.toFixed(1) || '0.0'}</td>
+                            <td>{stats.mp_win_percentage?.toFixed(1) || '0.0'}%</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="stats-section">
+                <h3>Saisonverlauf (Aktuelle Saison)</h3>
+                <div className="stats-grid detailed">
+                  <div className="stat-item full-width">
+                    <div className="chart-placeholder">
+                      [Hier würde ein Saisonverlauf-Chart mit Holzergebnissen der aktuellen Saison angezeigt werden]
                     </div>
                   </div>
                 </div>

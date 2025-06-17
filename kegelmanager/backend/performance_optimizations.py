@@ -397,8 +397,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
                 row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
                 club_player_counts[row_dict['club_id']] = row_dict['player_count']
 
-        # Process each club
-        import random
+        # Process each club with deterministic availability based on match day
         all_availability_updates = []
 
         for club_id in clubs_with_matches:
@@ -417,10 +416,17 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
             # Get player IDs for this club
             player_ids = [row[0] for row in db.session.query(Player.id).filter_by(club_id=club_id).all()]
 
-            # Determine unavailable players (16.7% chance)
+            # Determine unavailable players deterministically based on player_id and match_day
+            # This ensures consistent availability for the same match day
             unavailable_player_ids = []
             for player_id in player_ids:
-                if random.random() < 0.167:
+                # Use a deterministic hash based on player_id to determine availability
+                # This ensures the same player has the same availability pattern
+                import hashlib
+                hash_input = f"{player_id}_{club_id}".encode()
+                hash_value = int(hashlib.md5(hash_input).hexdigest()[:8], 16)
+                # Use modulo to get a value between 0 and 999, then check if < 167 (16.7%)
+                if (hash_value % 1000) < 167:
                     unavailable_player_ids.append(player_id)
 
             # Ensure we have enough available players
@@ -428,6 +434,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
             if available_players < min_players_needed:
                 players_needed = min_players_needed - available_players
                 if players_needed > 0 and unavailable_player_ids:
+                    # Remove the last N unavailable players to ensure we have enough
                     unavailable_player_ids = unavailable_player_ids[:-players_needed]
 
             all_availability_updates.append((club_id, False, unavailable_player_ids))

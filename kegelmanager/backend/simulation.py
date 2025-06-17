@@ -3463,6 +3463,200 @@ def calculate_standings(league):
 
     return standings
 
+def select_target_league_id(available_league_ids, old_to_new_mapping, new_leagues):
+    """
+    Select the best target league ID from available options.
+    For now, uses the first available league, but could be enhanced with more logic.
+    """
+    for old_league_id in available_league_ids:
+        new_league_id = old_to_new_mapping.get(old_league_id)
+        if new_league_id:
+            # Verify the league exists in new_leagues
+            if any(nl.id == new_league_id for nl in new_leagues):
+                return new_league_id
+    return None
+
+def _update_league_references(leagues, leagues_by_level):
+    """
+    Update league references in aufstieg_liga_id and abstieg_liga_id fields
+    to use current season league IDs based on league attributes.
+    """
+    print("Updating league references to current season IDs...")
+
+    # Create a mapping from league name to current league ID for each level
+    league_lookup_by_name_level = {}
+    for league in leagues:
+        key = (league.name, league.level)
+        league_lookup_by_name_level[key] = league.id
+
+    updates_made = 0
+
+    for league in leagues:
+        # Update promotion league IDs
+        if league.aufstieg_liga_id:
+            old_ids = league.get_aufstieg_liga_ids()
+            new_ids = []
+
+            for old_id in old_ids:
+                # Try to find the corresponding league in current season by ID first
+                found_league = None
+                for candidate in leagues:
+                    if candidate.id == old_id:
+                        found_league = candidate
+                        break
+
+                if found_league:
+                    new_ids.append(found_league.id)
+                else:
+                    # League not found by ID, try to find by level relationship
+                    target_level = league.level - 1
+                    if target_level in leagues_by_level:
+                        # Try to match by position in the original structure
+                        # This is a heuristic - take leagues at target level in order
+                        target_leagues = leagues_by_level[target_level]
+                        if target_leagues:
+                            # For simplicity, map to the first available league at target level
+                            new_ids.append(target_leagues[0].id)
+
+            if new_ids and new_ids != old_ids:
+                league.aufstieg_liga_id = ';'.join(map(str, new_ids))
+                updates_made += 1
+
+        # Update relegation league IDs
+        if league.abstieg_liga_id:
+            old_ids = league.get_abstieg_liga_ids()
+            new_ids = []
+
+            for old_id in old_ids:
+                # Try to find the corresponding league in current season by ID first
+                found_league = None
+                for candidate in leagues:
+                    if candidate.id == old_id:
+                        found_league = candidate
+                        break
+
+                if found_league:
+                    new_ids.append(found_league.id)
+                else:
+                    # League not found by ID, try to find by level relationship
+                    target_level = league.level + 1
+                    if target_level in leagues_by_level:
+                        # Try to match by position in the original structure
+                        target_leagues = leagues_by_level[target_level]
+                        if target_leagues:
+                            # For simplicity, map to the first available league at target level
+                            new_ids.append(target_leagues[0].id)
+
+            if new_ids and new_ids != old_ids:
+                league.abstieg_liga_id = ';'.join(map(str, new_ids))
+                updates_made += 1
+
+    if updates_made > 0:
+        db.session.commit()
+        print(f"Updated {updates_made} league references")
+    else:
+        print("No league reference updates needed")
+
+
+def balance_promotion_relegation_spots(season_id, old_to_new_league_mapping=None):
+    """
+    Balance promotion and relegation spots between league levels.
+
+    For each league level, check how many leagues from the next lower level
+    feed into it, and adjust relegation spots accordingly.
+
+    Args:
+        season_id: The season ID to balance leagues for
+        old_to_new_league_mapping: Optional mapping from old league IDs to new league IDs
+                                  (used during season transitions)
+    """
+    print("Balancing promotion and relegation spots...")
+
+    leagues = League.query.filter_by(season_id=season_id).order_by(League.level).all()
+    leagues_by_level = {}
+
+    # Group leagues by level
+    for league in leagues:
+        if league.level not in leagues_by_level:
+            leagues_by_level[league.level] = []
+        leagues_by_level[league.level].append(league)
+
+    # First, update league IDs in promotion/relegation fields to current season IDs
+    _update_league_references(leagues, leagues_by_level)
+
+    changes_made = 0
+
+    # Process each league level
+    for level in sorted(leagues_by_level.keys()):
+        current_level_leagues = leagues_by_level[level]
+
+        # For each league in this level, check how many lower-level leagues feed into it
+        for league in current_level_leagues:
+            # Get leagues that can be promoted to this league
+            feeding_leagues = []
+
+            # Check all leagues in lower levels (higher level numbers)
+            for lower_level in range(level + 1, max(leagues_by_level.keys()) + 1):
+                if lower_level in leagues_by_level:
+                    for lower_league in leagues_by_level[lower_level]:
+                        # Check if this lower league can promote to our current league
+                        promotion_league_ids = lower_league.get_aufstieg_liga_ids()
+
+                        if league.id in promotion_league_ids:
+                            feeding_leagues.append(lower_league)
+
+            # Calculate required relegation spots
+            required_relegation_spots = len(feeding_leagues)
+
+            # Only adjust if there are feeding leagues and the current spots don't match
+            if required_relegation_spots > 0:
+                if league.anzahl_absteiger != required_relegation_spots:
+                    old_spots = league.anzahl_absteiger
+                    league.anzahl_absteiger = required_relegation_spots
+                    changes_made += 1
+                    print(f"  {league.name} (Level {league.level}): Changed relegation spots from {old_spots} to {required_relegation_spots}")
+
+                # Also update promotion spots for the feeding leagues
+                for feeding_league in feeding_leagues:
+                    # Each feeding league should have at least 1 promotion spot to this level
+                    if feeding_league.anzahl_aufsteiger < 1:
+                        feeding_league.anzahl_aufsteiger = 1
+                        print(f"    {feeding_league.name} (Level {feeding_league.level}): Set promotion spots to 1")
+            elif required_relegation_spots == 0 and level < max(leagues_by_level.keys()):
+                # This league has no feeding leagues but is not the bottom level
+                # Keep at least 1 relegation spot unless it's the bottom level
+                if league.anzahl_absteiger == 0:
+                    league.anzahl_absteiger = 1
+                    changes_made += 1
+                    print(f"  {league.name} (Level {league.level}): Set minimum 1 relegation spot (no feeding leagues)")
+
+    # Special case: Check if top-level leagues have promotion spots when they shouldn't
+    top_level = min(leagues_by_level.keys()) if leagues_by_level else 1
+    if top_level in leagues_by_level:
+        for league in leagues_by_level[top_level]:
+            # Top level leagues should not have promotion spots
+            if league.anzahl_aufsteiger > 0:
+                league.anzahl_aufsteiger = 0
+                changes_made += 1
+                print(f"  {league.name} (Level {league.level}): Removed promotion spots (top level)")
+
+    # Special case: Check if bottom-level leagues have relegation spots when they shouldn't
+    bottom_level = max(leagues_by_level.keys()) if leagues_by_level else 10
+    if bottom_level in leagues_by_level:
+        for league in leagues_by_level[bottom_level]:
+            # Bottom level leagues should not have relegation spots
+            if league.anzahl_absteiger > 0:
+                league.anzahl_absteiger = 0
+                changes_made += 1
+                print(f"  {league.name} (Level {league.level}): Removed relegation spots (bottom level)")
+
+    if changes_made > 0:
+        db.session.commit()
+        print(f"Balanced promotion/relegation spots: {changes_made} changes made")
+    else:
+        print("No changes needed for promotion/relegation spots")
+
+
 def create_new_season(old_season):
     """Create a new season based on the old one."""
     print("Creating new season...")
@@ -3483,6 +3677,7 @@ def create_new_season(old_season):
     # Create leagues for the new season
     old_leagues = League.query.filter_by(season_id=old_season.id).order_by(League.level).all()
     new_leagues = []
+    old_to_new_league_mapping = {}  # Maps old league ID to new league ID
 
     print(f"Creating {len(old_leagues)} leagues for the new season...")
     for old_league in old_leagues:
@@ -3494,13 +3689,24 @@ def create_new_season(old_season):
             landkreis=old_league.landkreis,
             altersklasse=old_league.altersklasse,
             anzahl_aufsteiger=old_league.anzahl_aufsteiger,
-            anzahl_absteiger=old_league.anzahl_absteiger
+            anzahl_absteiger=old_league.anzahl_absteiger,
+            aufstieg_liga_id=old_league.aufstieg_liga_id,
+            abstieg_liga_id=old_league.abstieg_liga_id
         )
         new_leagues.append(new_league)
         db.session.add(new_league)
 
     db.session.commit()
+
+    # Create mapping from old league IDs to new league IDs
+    for i, old_league in enumerate(old_leagues):
+        old_to_new_league_mapping[old_league.id] = new_leagues[i].id
+
+    # Balance promotion and relegation spots for the new season
+    balance_promotion_relegation_spots(new_season.id, old_to_new_league_mapping)
+
     print(f"Created {len(new_leagues)} leagues for the new season")
+    print(f"League ID mapping: {old_to_new_league_mapping}")
 
     # Create a mapping of teams to their new leagues
     team_to_new_league = {}
@@ -3513,8 +3719,7 @@ def create_new_season(old_season):
         # Map each team to its corresponding new league and set status flags
         for j, standing in enumerate(standings):
             team = standing['team']
-            # By default, teams stay in the same level
-            target_level = old_league.level
+            target_new_league_id = None
 
             # Store previous season information
             team.previous_season_position = j + 1
@@ -3523,23 +3728,47 @@ def create_new_season(old_season):
 
             # Apply promotions/relegations based on standings and set status
             if j < old_league.anzahl_aufsteiger and i > 0:  # Promotion (except for top league)
-                target_level = old_league.level - 1
                 team.previous_season_status = 'promoted'
-                print(f"Team {team.name} promoted from level {old_league.level} to level {target_level}")
+                # Get promotion league IDs from the old league
+                promotion_league_ids = old_league.get_aufstieg_liga_ids()
+                if promotion_league_ids:
+                    target_new_league_id = select_target_league_id(promotion_league_ids, old_to_new_league_mapping, new_leagues)
+                    if target_new_league_id:
+                        target_league_name = next((nl.name for nl in new_leagues if nl.id == target_new_league_id), "Unknown")
+                        print(f"Team {team.name} promoted from {old_league.name} to {target_league_name}")
+                    else:
+                        print(f"WARNING: Could not find valid promotion league for {team.name} from {old_league.name}")
+                else:
+                    print(f"WARNING: No promotion leagues defined for {old_league.name}")
             elif j >= len(standings) - old_league.anzahl_absteiger and i < len(old_leagues) - 1:  # Relegation (except for bottom league)
-                target_level = old_league.level + 1
                 team.previous_season_status = 'relegated'
-                print(f"Team {team.name} relegated from level {old_league.level} to level {target_level}")
+                # Get relegation league IDs from the old league
+                relegation_league_ids = old_league.get_abstieg_liga_ids()
+                if relegation_league_ids:
+                    target_new_league_id = select_target_league_id(relegation_league_ids, old_to_new_league_mapping, new_leagues)
+                    if target_new_league_id:
+                        target_league_name = next((nl.name for nl in new_leagues if nl.id == target_new_league_id), "Unknown")
+                        print(f"Team {team.name} relegated from {old_league.name} to {target_league_name}")
+                    else:
+                        print(f"WARNING: Could not find valid relegation league for {team.name} from {old_league.name}")
+                else:
+                    print(f"WARNING: No relegation leagues defined for {old_league.name}")
             elif j == 0 and old_league.level == 1:  # Champion of top league
                 team.previous_season_status = 'champion'
                 print(f"Team {team.name} is champion of level {old_league.level}")
+                # Champions stay in the same league
+                target_new_league_id = old_to_new_league_mapping.get(old_league.id)
+            else:
+                # Team stays in the same league
+                target_new_league_id = old_to_new_league_mapping.get(old_league.id)
 
-            # Find the new league with the matching level
-            for new_league in new_leagues:
-                if new_league.level == target_level:
-                    team_to_new_league[team.id] = new_league.id
-                    print(f"Team {team.name} (ID: {team.id}) mapped to new league {new_league.name} (ID: {new_league.id})")
-                    break
+            # Map team to the target league
+            if target_new_league_id:
+                team_to_new_league[team.id] = target_new_league_id
+                target_league_name = next((nl.name for nl in new_leagues if nl.id == target_new_league_id), "Unknown")
+                print(f"Team {team.name} (ID: {team.id}) mapped to new league {target_league_name} (ID: {target_new_league_id})")
+            else:
+                print(f"WARNING: Could not determine target league for team {team.name}")
 
     # Now update all teams to point to their new leagues
     teams = Team.query.all()
@@ -3576,18 +3805,27 @@ def create_new_season(old_season):
                 unmapped_teams.append(team)
                 print(f"WARNING: Could not find target league for new team {team.name}")
         else:
-            # If for some reason we don't have a mapping, find a league with the same level
+            # If for some reason we don't have a mapping, try to map to the same league
             old_league = League.query.get(team.league_id)
             if old_league:
-                for new_league in new_leagues:
-                    if new_league.level == old_league.level:
-                        team.league_id = new_league.id
-                        updated_teams += 1
-                        print(f"Team {team.name} mapped to same level league {new_league.name}")
-                        break
+                # Try to find the corresponding new league using the mapping
+                new_league_id = old_to_new_league_mapping.get(old_league.id)
+                if new_league_id:
+                    team.league_id = new_league_id
+                    updated_teams += 1
+                    new_league_name = next((nl.name for nl in new_leagues if nl.id == new_league_id), "Unknown")
+                    print(f"Team {team.name} mapped to corresponding league {new_league_name} using ID mapping")
                 else:
-                    unmapped_teams.append(team)
-                    print(f"WARNING: Could not find new league for team {team.name} (old level: {old_league.level})")
+                    # Fallback: find a league with the same level
+                    for new_league in new_leagues:
+                        if new_league.level == old_league.level:
+                            team.league_id = new_league.id
+                            updated_teams += 1
+                            print(f"Team {team.name} mapped to same level league {new_league.name} (fallback)")
+                            break
+                    else:
+                        unmapped_teams.append(team)
+                        print(f"WARNING: Could not find new league for team {team.name} (old level: {old_league.level})")
             else:
                 unmapped_teams.append(team)
                 print(f"WARNING: Team {team.name} has invalid old league reference")
@@ -3635,6 +3873,13 @@ def create_new_season(old_season):
 
     db.session.commit()
     print(f"Aged {len(players)} players by 1 year")
+
+    # Note: Player redistribution is disabled during season transitions to avoid conflicts
+    # with the game's dynamic player assignment system. The current system assigns players
+    # to teams dynamically based on availability and strength for each match day.
+    #
+    # TODO: Future improvement - integrate permanent team assignments with match assignments
+    # so that players can only play for teams they are permanently assigned to.
 
     # Now that everything is set up, make the new season current
     old_season.is_current = False

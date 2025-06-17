@@ -133,10 +133,23 @@ class Player(db.Model):
             'mp_win_percentage': round(mp_win_percentage, 1)
         }
 
-    def calculate_team_specific_stats(self, team_id):
-        """Calculate player statistics for a specific team."""
+    def calculate_team_specific_stats(self, team_id, season_id=None):
+        """Calculate player statistics for a specific team.
+
+        Args:
+            team_id: The team ID to calculate stats for
+            season_id: If provided, calculate stats only for this season.
+                      If None, calculate stats for all seasons.
+        """
         # Get all performances for this player with this team
-        performances = [p for p in self.performances if p.team_id == team_id]
+        if season_id:
+            # Filter performances by team and season
+            performances = []
+            for p in self.performances:
+                if p.team_id == team_id and p.match and p.match.season_id == season_id:
+                    performances.append(p)
+        else:
+            performances = [p for p in self.performances if p.team_id == team_id]
 
         # Initialize statistics
         home_performances = [p for p in performances if p.is_home_team]
@@ -326,9 +339,13 @@ class Team(db.Model):
 
         # Get detailed player information for regular team members
         players_info = []
+        current_season = Season.query.filter_by(is_current=True).first()
+
         for player in self.players:
-            # Calculate statistics for this player specifically for this team
+            # Calculate statistics for this player specifically for this team (all-time)
             team_stats = player.calculate_team_specific_stats(self.id)
+            # Calculate current season statistics
+            current_season_team_stats = player.calculate_team_specific_stats(self.id, current_season.id) if current_season else team_stats
 
             player_info = {
                 'id': player.id,
@@ -349,7 +366,8 @@ class Team(db.Model):
                 'start': player.start,
                 'mitte': player.mitte,
                 'schluss': player.schluss,
-                'statistics': team_stats,  # Verwende teamspezifische Statistiken
+                'statistics': team_stats,  # Verwende teamspezifische Statistiken (all-time)
+                'current_season_statistics': current_season_team_stats,  # Current season statistics
                 'is_substitute': False,  # Regular team member
                 'club_id': player.club_id,
                 'club_name': player.club.name if player.club else 'Kein Verein'
@@ -359,8 +377,10 @@ class Team(db.Model):
         # Get detailed player information for substitute players
         substitute_players = self.get_substitute_players()
         for player in substitute_players:
-            # Calculate statistics for this player specifically for this team
+            # Calculate statistics for this player specifically for this team (all-time)
             team_stats = player.calculate_team_specific_stats(self.id)
+            # Calculate current season statistics
+            current_season_team_stats = player.calculate_team_specific_stats(self.id, current_season.id) if current_season else team_stats
 
             player_info = {
                 'id': player.id,
@@ -381,7 +401,8 @@ class Team(db.Model):
                 'start': player.start,
                 'mitte': player.mitte,
                 'schluss': player.schluss,
-                'statistics': team_stats,
+                'statistics': team_stats,  # All-time statistics
+                'current_season_statistics': current_season_team_stats,  # Current season statistics
                 'is_substitute': True,  # Substitute player
                 'club_id': player.club_id,
                 'club_name': player.club.name if player.club else 'Kein Verein'
@@ -669,8 +690,12 @@ class Team(db.Model):
             match_data['visible'] = i < 5  # Only first 5 are visible by default
             upcoming_matches.append(match_data)
 
-        # Calculate team statistics
+        # Calculate team statistics (all-time)
         stats = self.calculate_stats()
+
+        # Calculate current season statistics
+        current_season = Season.query.filter_by(is_current=True).first()
+        current_season_stats = self.calculate_stats(current_season.id) if current_season else stats
 
         return {
             'id': self.id,
@@ -686,14 +711,24 @@ class Team(db.Model):
             'avg_strength': round(avg_strength, 1),
             'recentMatches': recent_matches,
             'upcomingMatches': upcoming_matches,
-            'stats': stats
+            'stats': stats,
+            'current_season_stats': current_season_stats
         }
 
-    def calculate_stats(self):
-        """Calculate team statistics based on played matches."""
+    def calculate_stats(self, season_id=None):
+        """Calculate team statistics based on played matches.
+
+        Args:
+            season_id: If provided, calculate stats only for this season.
+                      If None, calculate stats for all seasons.
+        """
         # Get all matches for this team
-        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True).all()
-        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True).all()
+        if season_id:
+            home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True, season_id=season_id).all()
+            away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True, season_id=season_id).all()
+        else:
+            home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True).all()
+            away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True).all()
 
         matches = 0
         wins = 0
@@ -915,9 +950,9 @@ class League(db.Model):
     # Neue Felder für Altersklasse
     altersklasse = db.Column(db.String(50))  # z.B. "Herren", "Damen", "U23", "U19", etc.
 
-    # Neue Felder für Auf- und Abstieg
-    aufstieg_liga_id = db.Column(db.Integer, db.ForeignKey('league.id'))  # Liga, in die Aufsteiger gehen
-    abstieg_liga_id = db.Column(db.Integer, db.ForeignKey('league.id'))  # Liga, in die Absteiger gehen
+    # Neue Felder für Auf- und Abstieg (können mehrere IDs enthalten, getrennt durch Semikolon)
+    aufstieg_liga_id = db.Column(db.String(255))  # Liga(s), in die Aufsteiger gehen (mehrere IDs getrennt durch Semikolon)
+    abstieg_liga_id = db.Column(db.String(255))  # Liga(s), in die Absteiger gehen (mehrere IDs getrennt durch Semikolon)
 
     # Anzahl der Auf- und Abstiegsplätze
     anzahl_aufsteiger = db.Column(db.Integer, default=2)
@@ -932,8 +967,53 @@ class League(db.Model):
     matches = db.relationship('Match', back_populates='league')
 
     # Self-referential relationships für Auf- und Abstieg
-    aufstieg_liga = db.relationship('League', remote_side=[id], foreign_keys=[aufstieg_liga_id], backref=db.backref('abstiegs_ligen', lazy='dynamic'))
-    abstieg_liga = db.relationship('League', remote_side=[id], foreign_keys=[abstieg_liga_id], backref=db.backref('aufstiegs_ligen', lazy='dynamic'))
+    # NOTE: Relationships disabled because aufstieg_liga_id and abstieg_liga_id now contain multiple IDs as strings
+    # aufstieg_liga = db.relationship('League', remote_side=[id], foreign_keys=[aufstieg_liga_id], backref=db.backref('abstiegs_ligen', lazy='dynamic'))
+    # abstieg_liga = db.relationship('League', remote_side=[id], foreign_keys=[abstieg_liga_id], backref=db.backref('aufstiegs_ligen', lazy='dynamic'))
+
+    def get_aufstieg_liga_ids(self):
+        """Get list of promotion league IDs from semicolon-separated string."""
+        if not self.aufstieg_liga_id:
+            return []
+        ids = []
+        for id_str in self.aufstieg_liga_id.split(';'):
+            id_str = id_str.strip()
+            if id_str:
+                try:
+                    # Convert float strings (like "1.0") to int
+                    ids.append(int(float(id_str)))
+                except (ValueError, TypeError):
+                    print(f"WARNING: Could not convert '{id_str}' to integer in aufstieg_liga_id")
+        return ids
+
+    def get_abstieg_liga_ids(self):
+        """Get list of relegation league IDs from semicolon-separated string."""
+        if not self.abstieg_liga_id:
+            return []
+        ids = []
+        for id_str in self.abstieg_liga_id.split(';'):
+            id_str = id_str.strip()
+            if id_str:
+                try:
+                    # Convert float strings (like "1.0") to int
+                    ids.append(int(float(id_str)))
+                except (ValueError, TypeError):
+                    print(f"WARNING: Could not convert '{id_str}' to integer in abstieg_liga_id")
+        return ids
+
+    def get_aufstieg_ligen(self):
+        """Get list of promotion league objects."""
+        ids = self.get_aufstieg_liga_ids()
+        if not ids:
+            return []
+        return League.query.filter(League.id.in_(ids)).all()
+
+    def get_abstieg_ligen(self):
+        """Get list of relegation league objects."""
+        ids = self.get_abstieg_liga_ids()
+        if not ids:
+            return []
+        return League.query.filter(League.id.in_(ids)).all()
 
     def get_fixtures(self):
         """Get all matches for this league organized by match day."""

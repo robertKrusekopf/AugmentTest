@@ -499,6 +499,129 @@
   font-style: italic;
 }
 
+/* Matches Tab Styles */
+.matches-tab {
+  margin-top: 10px;
+}
+
+.matches-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+.matches-table th,
+.matches-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.matches-table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #5f6368;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.matches-table tbody tr:hover {
+  background-color: var(--hover-color);
+}
+
+.matches-table tr.not-participated {
+  opacity: 0.7;
+}
+
+.participation-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.participation-status.participated {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.participation-status.not-participated {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.team-name {
+  font-weight: 500;
+}
+
+.team-name.regular-team {
+  color: var(--primary-color);
+}
+
+.team-name.substitute-team {
+  color: #ff6b35;
+}
+
+.substitute-indicator {
+  font-size: 11px;
+  font-weight: 400;
+  color: #ff6b35;
+  font-style: italic;
+}
+
+.player-score {
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.match-type {
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.match-type.league {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.match-type.cup {
+  background-color: #fff3e0;
+  color: #f57c00;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 20px 0 10px 0;
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--primary-color);
+}
+
+.expand-button {
+  background: none;
+  border: 1px solid var(--border-color);
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--primary-color);
+  transition: all 0.2s;
+}
+
+.expand-button:hover {
+  background-color: var(--primary-color);
+  color: white;
+}
+
 .history-row .appearances {
   text-align: center;
 }

@@ -273,20 +273,15 @@ const PlayerDetail = () => {
           <div className="player-ratings">
             <div className="rating-item">
               <span className="rating-label">Stärke</span>
-              <span className="rating-value">{Math.floor(player.strength)}</span>
+              <span className="rating-value">???</span>
               <div className="strength-bar">
-                <div className="strength-fill" style={{ width: `${player.strength}%` }}></div>
+                <div className="strength-fill" style={{ width: `0%` }}></div>
               </div>
             </div>
             <div className="rating-item">
               <span className="rating-label">Talent</span>
               <div className="talent-stars">
-                {Array.from({ length: 10 }, (_, i) => (
-                  <span
-                    key={i}
-                    className={`star ${i < player.talent ? 'filled' : ''}`}
-                  >★</span>
-                ))}
+                <span>???</span>
               </div>
             </div>
           </div>
@@ -450,9 +445,9 @@ const PlayerDetail = () => {
                   <div key={key} className="attribute-item">
                     <span className="attribute-label">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
                     <div className="attribute-bar">
-                      <div className="attribute-fill" style={{ width: `${value}%` }}></div>
+                      <div className="attribute-fill" style={{ width: `0%` }}></div>
                     </div>
-                    <span className="attribute-value">{Math.floor(value)}</span>
+                    <span className="attribute-value">???</span>
                   </div>
                 ))}
               </div>
@@ -577,6 +572,7 @@ const PlayerDetail = () => {
                         <th>Auswärtsteam</th>
                         <th>Liga/Pokal</th>
                         <th>Teilnahme</th>
+                        <th>Gespielt für</th>
                         <th>Aktionen</th>
                       </tr>
                     </thead>
@@ -605,6 +601,18 @@ const PlayerDetail = () => {
                               <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
                                 {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
                               </span>
+                            </td>
+                            <td>
+                              {match.played_for_team ? (
+                                <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
+                                  {match.played_for_team}
+                                  {match.played_for_team !== player.team && (
+                                    <span className="substitute-indicator"> (Aushilfe)</span>
+                                  )}
+                                </span>
+                              ) : (
+                                '-'
+                              )}
                             </td>
                             <td>
                               <Link to={`/matches/${match.id}`} className="btn btn-small">
@@ -636,6 +644,7 @@ const PlayerDetail = () => {
                         <th>Auswärtsteam</th>
                         <th>Liga/Pokal</th>
                         <th>Teilnahme</th>
+                        <th>Gespielt für</th>
                         <th>Leistung</th>
                         <th>Aktionen</th>
                       </tr>
@@ -669,6 +678,18 @@ const PlayerDetail = () => {
                               <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
                                 {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
                               </span>
+                            </td>
+                            <td>
+                              {match.played_for_team ? (
+                                <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
+                                  {match.played_for_team}
+                                  {match.played_for_team !== player.team && (
+                                    <span className="substitute-indicator"> (Aushilfe)</span>
+                                  )}
+                                </span>
+                              ) : (
+                                '-'
+                              )}
                             </td>
                             <td>
                               {match.player_participated && match.player_performance ? (
@@ -713,16 +734,11 @@ const PlayerDetail = () => {
                 </thead>
                 <tbody>
                   {player.development.map((dev, index) => {
-                    const prevStrength = index > 0 ? player.development[index - 1].strength : dev.strength;
-                    const change = dev.strength - prevStrength;
-
                     return (
                       <tr key={index}>
                         <td>{dev.age}</td>
-                        <td>{dev.strength}</td>
-                        <td className={change > 0 ? 'positive' : change < 0 ? 'negative' : ''}>
-                          {change > 0 ? `+${change}` : change}
-                        </td>
+                        <td>???</td>
+                        <td>???</td>
                       </tr>
                     );
                   })}
