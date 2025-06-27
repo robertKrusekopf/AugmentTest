@@ -1096,6 +1096,8 @@ def get_match(match_id):
             cup_performances = PlayerCupMatchPerformance.query.filter_by(cup_match_id=db_id).all()
             performances_data = [perf.to_dict() for perf in cup_performances]
 
+            # Stroh performances are now loaded automatically via _get_all_cup_performances
+
             # Add additional fields that MatchDetail expects
             cup_match_data.update({
                 'id': match_id,  # Use the frontend ID
@@ -1129,6 +1131,9 @@ def get_match(match_id):
         if match:
             match_data = match.to_dict()
             match_data['is_cup_match'] = False
+
+            # Stroh performances are now loaded automatically via _get_all_performances
+
             return jsonify(match_data)
 
     # If neither found, return 404
@@ -1974,6 +1979,95 @@ def debug_promotion_relegation_structure():
         print(f"Error in promotion_relegation_structure: {e}")
         return jsonify({"error": str(e)}), 500
 
+# Debug endpoint to fix league distribution
+@app.route('/api/debug/fix-league-distribution', methods=['POST'])
+def debug_fix_league_distribution():
+    """Debug endpoint to fix league distribution imbalances."""
+    try:
+        # Get current season
+        current_season = Season.query.filter_by(is_current=True).first()
+        if not current_season:
+            return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+        # Get all leagues grouped by level
+        leagues = League.query.filter_by(season_id=current_season.id).order_by(League.level, League.name).all()
+        leagues_by_level = {}
+
+        for league in leagues:
+            if league.level not in leagues_by_level:
+                leagues_by_level[league.level] = []
+            leagues_by_level[league.level].append(league)
+
+        total_redistributed = 0
+        redistribution_summary = []
+
+        # Process each level that has multiple leagues
+        for level in sorted(leagues_by_level.keys()):
+            level_leagues = leagues_by_level[level]
+
+            if len(level_leagues) <= 1:
+                continue
+
+            # Get all teams in this level
+            all_teams = []
+            current_distribution = {}
+            for league in level_leagues:
+                teams = Team.query.filter_by(league_id=league.id).all()
+                all_teams.extend(teams)
+                current_distribution[league.name] = len(teams)
+
+            total_teams = len(all_teams)
+            num_leagues = len(level_leagues)
+
+            if total_teams == 0:
+                continue
+
+            # Calculate target distribution
+            teams_per_league = total_teams // num_leagues
+            extra_teams = total_teams % num_leagues
+
+            # Redistribute teams
+            team_index = 0
+            target_distribution = {}
+            for i, league in enumerate(level_leagues):
+                target_count = teams_per_league
+                if i < extra_teams:
+                    target_count += 1
+
+                target_distribution[league.name] = target_count
+
+                # Assign teams to this league
+                teams_assigned = 0
+                while teams_assigned < target_count and team_index < len(all_teams):
+                    team = all_teams[team_index]
+                    if team.league_id != league.id:
+                        total_redistributed += 1
+                    team.league_id = league.id
+                    team_index += 1
+                    teams_assigned += 1
+
+            redistribution_summary.append({
+                "level": level,
+                "total_teams": total_teams,
+                "current_distribution": current_distribution,
+                "target_distribution": target_distribution
+            })
+
+        # Commit changes
+        if total_redistributed > 0:
+            db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Liga-Verteilung erfolgreich korrigiert",
+            "teams_redistributed": total_redistributed,
+            "redistribution_summary": redistribution_summary
+        })
+
+    except Exception as e:
+        print(f"Error in fix_league_distribution: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # Lineup management endpoints
 @app.route('/api/matches/<int:match_id>/available-players', methods=['GET'])
 def get_available_players_for_match(match_id):
@@ -2020,14 +2114,9 @@ def get_available_players_for_match(match_id):
     # Make sure we have at least 6 available players
     available_players = [p for p in club_players if p.is_available_current_matchday]
     if len(available_players) < 6:
-        # Make some unavailable players available again
-        players_needed = 6 - len(available_players)
-        players_to_make_available = random.sample(unavailable_players, min(players_needed, len(unavailable_players)))
-        for player_id in players_to_make_available:
-            for player in club_players:
-                if player.id == player_id:
-                    player.is_available_current_matchday = True
-                    break
+        # Instead of making unavailable players available, we'll note that Stroh players will be used
+        stroh_players_needed = 6 - len(available_players)
+        print(f"Lineup setup: Only {len(available_players)} players available for team {team.id}, will need {stroh_players_needed} Stroh player(s) during simulation")
 
     # Check if there's an existing lineup for this match and team
     existing_lineup = UserLineup.query.filter_by(
@@ -2542,4 +2631,5 @@ if __name__ == '__main__':
             print(f"DEBUG: Vorhandene Clubs: {[club.name for club in clubs]}")
 
     print("DEBUG: Starte Flask-Server...")
-    app.run(debug=True)
+    # Für Netzwerkzugriff: host='0.0.0.0' ermöglicht Zugriff von anderen Geräten im Netzwerk
+    app.run(debug=True, host='0.0.0.0', port=5000)

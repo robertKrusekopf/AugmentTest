@@ -65,6 +65,56 @@ def calculate_team_strength(team):
     total_strength = sum(player.strength for player in team.players)
     return total_strength / len(team.players)
 
+def create_stroh_player(weakest_player_strength):
+    """Create a virtual 'Stroh' player with strength 10% lower than the weakest real player.
+
+    Args:
+        weakest_player_strength: The strength of the weakest real player in the team
+
+    Returns:
+        dict: A dictionary representing the Stroh player with all necessary attributes
+    """
+    stroh_strength = max(1, int(weakest_player_strength * 0.9))  # 10% weaker, minimum strength of 1
+
+    # Create a virtual player object as a dictionary
+    # All attributes are 10% weaker than the base strength
+    stroh_player = {
+        'id': 'stroh',  # Special ID to identify this as a Stroh player
+        'name': 'Stroh',
+        'strength': stroh_strength,
+        'konstanz': max(1, int(stroh_strength * 0.95)),  # 5% lower consistency
+        'drucksicherheit': max(1, int(stroh_strength * 0.95)),  # 5% lower pressure resistance
+        'volle': max(1, int(stroh_strength * 0.97)),  # 3% lower full pins
+        'raeumer': max(1, int(stroh_strength * 0.97)),  # 3% lower clearing pins
+        'sicherheit': max(1, int(stroh_strength * 0.95)),  # 5% lower safety
+        'auswaerts': max(1, int(stroh_strength * 0.95)),  # 5% lower away performance
+        'start': max(1, int(stroh_strength * 0.97)),  # 3% lower start performance
+        'mitte': max(1, int(stroh_strength * 0.97)),  # 3% lower middle performance
+        'schluss': max(1, int(stroh_strength * 0.97)),  # 3% lower end performance
+        'ausdauer': max(1, int(stroh_strength * 0.95)),  # 5% lower stamina
+        'short_term_form': 0,  # Neutral form
+        'medium_term_form': 0,  # Neutral form
+        'long_term_form': 0,  # Neutral form
+        'is_stroh': True  # Flag to identify this as a Stroh player
+    }
+
+    return stroh_player
+
+def get_player_attribute(player, attribute_name):
+    """Get an attribute from a player object or dictionary (for Stroh players).
+
+    Args:
+        player: Either a Player model object or a dictionary (for Stroh players)
+        attribute_name: The name of the attribute to retrieve
+
+    Returns:
+        The attribute value
+    """
+    if isinstance(player, dict):
+        return player.get(attribute_name, 0)
+    else:
+        return getattr(player, attribute_name, 0)
+
 def simulate_match(home_team, away_team, match=None, home_team_players=None, away_team_players=None):
     """Simulate a bowling match between two teams and return the result.
 
@@ -103,20 +153,20 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             is_home_team=False
         ).first()
 
-        # If user lineups exist, use them
-        if home_lineup and len(home_lineup.positions) == 6:
+        # If user lineups exist, use them (even if incomplete)
+        if home_lineup and len(home_lineup.positions) > 0:
             # Sort positions by position number
             sorted_positions = sorted(home_lineup.positions, key=lambda p: p.position_number)
             # Get the players in the correct order
             home_team_players = [Player.query.get(pos.player_id) for pos in sorted_positions]
-            print(f"Using user-selected lineup for home team {home_team.name}")
+            print(f"Using user-selected lineup for home team {home_team.name} ({len(home_team_players)} players)")
 
-        if away_lineup and len(away_lineup.positions) == 6:
+        if away_lineup and len(away_lineup.positions) > 0:
             # Sort positions by position number
             sorted_positions = sorted(away_lineup.positions, key=lambda p: p.position_number)
             # Get the players in the correct order
             away_team_players = [Player.query.get(pos.player_id) for pos in sorted_positions]
-            print(f"Using user-selected lineup for away team {away_team.name}")
+            print(f"Using user-selected lineup for away team {away_team.name} ({len(away_team_players)} players)")
 
     # If pre-assigned players are provided, use them
     if home_team_players is not None and away_team_players is not None:
@@ -183,34 +233,18 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
         else:
             current_match_day = None
 
+        # Note: Player flags are already reset by bulk_reset_player_flags() in simulate_match_day()
+        # No need to reset them again here
+
         # Filter out players who have already played on this match day
-        # We use the has_played_current_matchday flag and last_played_matchday to check
+        # Check both has_played_current_matchday and last_played_matchday to prevent players from playing for multiple teams
         if current_match_day:
-            # Reset flags for players who played on a different match day using bulk update
-            # First for home club players
-            home_player_ids = [p.id for p in home_club_players if p.has_played_current_matchday and p.last_played_matchday != current_match_day]
-            if home_player_ids:
-                db.session.execute(
-                    db.update(Player)
-                    .where(Player.id.in_(home_player_ids))
-                    .values(has_played_current_matchday=False)
-                )
-
-            # Then for away club players
-            away_player_ids = [p.id for p in away_club_players if p.has_played_current_matchday and p.last_played_matchday != current_match_day]
-            if away_player_ids:
-                db.session.execute(
-                    db.update(Player)
-                    .where(Player.id.in_(away_player_ids))
-                    .values(has_played_current_matchday=False)
-                )
-
-            # Commit changes to reset flags
-            db.session.commit()
-
-        # Filter out players who have already played on this match day
-        home_club_players = [p for p in home_club_players if not p.has_played_current_matchday]
-        away_club_players = [p for p in away_club_players if not p.has_played_current_matchday]
+            home_club_players = [p for p in home_club_players if not p.has_played_current_matchday and (p.last_played_matchday is None or p.last_played_matchday != current_match_day)]
+            away_club_players = [p for p in away_club_players if not p.has_played_current_matchday and (p.last_played_matchday is None or p.last_played_matchday != current_match_day)]
+        else:
+            # If no current_match_day, just check has_played_current_matchday
+            home_club_players = [p for p in home_club_players if not p.has_played_current_matchday]
+            away_club_players = [p for p in away_club_players if not p.has_played_current_matchday]
 
         # Make sure teams are sorted by league level (lower level number = higher league)
         home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
@@ -246,13 +280,48 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
         home_players = home_team_players.get(home_team.id, [])
         away_players = away_team_players.get(away_team.id, [])
 
-    # Determine which players are substitutes (not originally in the team)
-    home_substitutes = [p for p in home_players if home_team not in p.teams]
-    away_substitutes = [p for p in away_players if away_team not in p.teams]
+    # Fill missing players with "Stroh" players if needed
+    def fill_with_stroh_players(players, team_name):
+        """Fill a team with Stroh players if there are fewer than 6 players."""
+        if len(players) >= 6:
+            return players[:6]  # Take only the first 6 players
 
-    # Make sure we have enough players (at least 1)
-    if not home_players or not away_players:
-        # Default scores if not enough players
+        if len(players) == 0:
+            # If no players at all, create 6 Stroh players with default strength
+            print(f"No players available for {team_name}, using 6 Stroh players")
+            return [create_stroh_player(30) for _ in range(6)]
+
+        # Find the weakest real player to base Stroh strength on
+        real_players = [p for p in players if not (isinstance(p, dict) and p.get('is_stroh', False))]
+        if real_players:
+            weakest_strength = min(p.strength if hasattr(p, 'strength') else p['strength'] for p in real_players)
+        else:
+            weakest_strength = 30  # Default if no real players
+
+        # Add Stroh players to fill the team
+        filled_players = players[:]
+        stroh_needed = 6 - len(players)
+        stroh_strength = max(1, int(weakest_strength * 0.9))  # 10% weaker
+        print(f"Adding {stroh_needed} Stroh player(s) to {team_name} (weakest real player: {weakest_strength}, Stroh strength: {stroh_strength})")
+
+        for _ in range(stroh_needed):
+            filled_players.append(create_stroh_player(weakest_strength))
+
+        return filled_players
+
+    # Fill both teams with Stroh players if needed
+    home_players = fill_with_stroh_players(home_players, home_team.name)
+    away_players = fill_with_stroh_players(away_players, away_team.name)
+
+    # Determine which players are substitutes (not originally in the team)
+    # Only check for real players, not Stroh players
+    home_substitutes = [p for p in home_players if not (isinstance(p, dict) and p.get('is_stroh', False)) and home_team not in p.teams]
+    away_substitutes = [p for p in away_players if not (isinstance(p, dict) and p.get('is_stroh', False)) and away_team not in p.teams]
+
+    # Make sure we have exactly 6 players each (should be guaranteed now)
+    if len(home_players) != 6 or len(away_players) != 6:
+        print(f"Warning: Team size mismatch - Home: {len(home_players)}, Away: {len(away_players)}")
+        # Fallback to default scores
         home_score = 3000 if home_players else 0
         away_score = 3000 if away_players else 0
         home_match_points = 8 if home_score > away_score else (4 if home_score == away_score else 0)
@@ -284,6 +353,8 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
 
     # Player performances to save
     performances = []
+    # Store Stroh player performances separately (not for database)
+    stroh_performances = []
 
     # Simulate each player's performance
     for i, (home_player, away_player) in enumerate(zip(home_players, away_players)):
@@ -296,47 +367,34 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
 
         for lane in range(4):
             # Apply form modifiers to player strength
-            effective_strength = apply_form_to_strength(home_player.strength, home_player)
-
-            # Base score depends on effective player strength (including form)
-            base_score = (effective_strength * 1.5) + 450  # 450-600 base for strength 0-100
-
-            # Adjust for player attributes
-            ausdauer_factor = max(0.8, home_player.ausdauer / 100 - (lane * 0.05))  # Decreases with each lane
-
-            # Apply home advantage
-            base_score *= home_advantage
-
-            # Apply lane quality (affects all players on this lane)
-            base_score *= lane_quality
-
-            # Add randomness using normal distribution
-            # Mean of 1.0, standard deviation based on konstanz (higher konstanz = lower std dev)
-            konstanz_factor = home_player.konstanz / 100  # 0-1 scale
-            std_dev = 0.15 * (2 - konstanz_factor)
-            randomness = np.random.normal(1.0, std_dev)
-
-            # Calculate lane score
-            lane_score = int(base_score * ausdauer_factor * randomness)
+            player_strength = get_player_attribute(home_player, 'strength')
+            effective_strength = apply_form_to_strength(player_strength, home_player)
 
             # Calculate score based solely on effective player strength (including form) and attributes
             # Base score range: 120-180 for strength 0-99
             mean_score = 120 + (effective_strength * 0.6)
 
+            # Apply home advantage
+            mean_score *= home_advantage
+
             # Apply lane quality (affects all players on this lane)
             mean_score *= lane_quality
 
             # Base standard deviation
-            std_dev = 12 - (home_player.konstanz / 20)  # 12 to 7 based on konstanz
+            player_konstanz = get_player_attribute(home_player, 'konstanz')
+            std_dev = 12 - (player_konstanz / 20)  # 12 to 7 based on konstanz
 
             # Apply position-based attribute factor based on player's position in lineup
             # Position i: 0-1 = Start, 2-3 = Mitte, 4-5 = Schluss
             if i in [0, 1]:  # Start pair (positions 1-2)
-                position_factor = 0.8 + (home_player.start / 500)  # 0.8 to 1.0 range
+                player_start = get_player_attribute(home_player, 'start')
+                position_factor = 0.8 + (player_start / 500)  # 0.8 to 1.0 range
             elif i in [2, 3]:  # Middle pair (positions 3-4)
-                position_factor = 0.8 + (home_player.mitte / 500)  # 0.8 to 1.0 range
+                player_mitte = get_player_attribute(home_player, 'mitte')
+                position_factor = 0.8 + (player_mitte / 500)  # 0.8 to 1.0 range
             else:  # Schluss pair (positions 5-6)
-                position_factor = 0.8 + (home_player.schluss / 500)  # 0.8 to 1.0 range
+                player_schluss = get_player_attribute(home_player, 'schluss')
+                position_factor = 0.8 + (player_schluss / 500)  # 0.8 to 1.0 range
 
             # Apply position factor to all lanes
             mean_score *= position_factor
@@ -344,11 +402,14 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             # Apply drucksicherheit only on the last lane (lane 3)
             if lane == 3:  # Last lane - apply drucksicherheit factor
                 # Players with high drucksicherheit perform better on the last lane
-                pressure_factor = 0.9 + (home_player.drucksicherheit / 500)  # 0.9 to 1.1 range
+                player_drucksicherheit = get_player_attribute(home_player, 'drucksicherheit')
+                pressure_factor = 0.9 + (player_drucksicherheit / 500)  # 0.9 to 1.1 range
                 mean_score *= pressure_factor
 
-            # Konstanz and Sicherheit are already factored into the base values
-            # No additional adjustments needed here
+            # Apply stamina factor (decreases with each lane)
+            player_ausdauer = get_player_attribute(home_player, 'ausdauer')
+            ausdauer_factor = max(0.95, player_ausdauer / 100 - (lane * 0.01))  # Decreases with each lane
+            mean_score *= ausdauer_factor
 
             # Generate score from normal distribution and ensure it's within reasonable bounds
             lane_score = int(np.random.normal(mean_score, std_dev))
@@ -365,7 +426,9 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             # Berechne den Volle-Prozentsatz direkt aus den Attributen
             # Formel: 0.5 + (volle / (volle + raeumer)) * 0.3
             # Dies ergibt einen Bereich von ca. 0.5 bis 0.8 je nach Attributverhältnis
-            volle_percentage = 0.5 + (home_player.volle / max(1, home_player.volle + home_player.raeumer)) * 0.3
+            player_volle = get_player_attribute(home_player, 'volle')
+            player_raeumer = get_player_attribute(home_player, 'raeumer')
+            volle_percentage = 0.5 + (player_volle / max(1, player_volle + player_raeumer)) * 0.3
 
             # Füge etwas Zufälligkeit hinzu (±2%)
             volle_percentage += np.random.normal(0, 0.02)
@@ -383,7 +446,8 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             # Note: fehler will be calculated after all lanes are completed
 
         # Calculate realistic fehler based on total score and sicherheit attribute
-        home_player_fehler = calculate_realistic_fehler(home_player_total, home_player.sicherheit)
+        player_sicherheit = get_player_attribute(home_player, 'sicherheit')
+        home_player_fehler = calculate_realistic_fehler(home_player_total, player_sicherheit)
 
         # Simulate 4 lanes for away player
         away_player_lanes = []
@@ -394,25 +458,8 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
 
         for lane in range(4):
             # Apply form modifiers to player strength
-            effective_strength = apply_form_to_strength(away_player.strength, away_player)
-
-            # Base score depends on effective player strength (including form)
-            base_score = (effective_strength * 1.5) + 450  # 450-600 base for strength 0-100
-
-            # Adjust for player attributes
-            ausdauer_factor = max(0.8, away_player.ausdauer / 100 - (lane * 0.05))  # Decreases with each lane
-
-            # Apply lane quality (affects all players on this lane)
-            base_score *= lane_quality
-
-            # Add randomness using normal distribution
-            # Mean of 1.0, standard deviation based on konstanz (higher konstanz = lower std dev)
-            konstanz_factor = away_player.konstanz / 100  # 0-1 scale
-            std_dev = 0.15 * (2 - konstanz_factor)
-            randomness = np.random.normal(1.0, std_dev)
-
-            # Calculate lane score
-            lane_score = int(base_score * ausdauer_factor * randomness)
+            player_strength = get_player_attribute(away_player, 'strength')
+            effective_strength = apply_form_to_strength(player_strength, away_player)
 
             # Calculate score based solely on effective player strength (including form) and attributes
             # Base score range: 120-180 for strength 0-99
@@ -422,24 +469,29 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             mean_score *= lane_quality
 
             # Base standard deviation
-            std_dev = 12 - (away_player.konstanz / 20)  # 12 to 7 based on konstanz
+            player_konstanz = get_player_attribute(away_player, 'konstanz')
+            std_dev = 12 - (player_konstanz / 20)  # 12 to 7 based on konstanz
 
             # Apply away factor (players with high 'auswaerts' attribute perform better away)
             # For away games, apply the auswaerts attribute (0-99)
             # A player with auswaerts 50 will have no adjustment
-            # A player with auswaerts 99 will get +10% boost
-            # A player with auswaerts 0 will get -10% penalty
-            away_factor = 0.9 + (away_player.auswaerts / 1000)  # 0.9 to 1.1 range
+            # A player with auswaerts 99 will get +2% boost
+            # A player with auswaerts 0 will get -2% penalty
+            player_auswaerts = get_player_attribute(away_player, 'auswaerts')
+            away_factor = 0.98 + (player_auswaerts / 2500)  # 0.98 to 1.02 range
             mean_score *= away_factor
 
             # Apply position-based attribute factor based on player's position in lineup
             # Position i: 0-1 = Start, 2-3 = Mitte, 4-5 = Schluss
             if i in [0, 1]:  # Start pair (positions 1-2)
-                position_factor = 0.8 + (away_player.start / 500)  # 0.8 to 1.0 range
+                player_start = get_player_attribute(away_player, 'start')
+                position_factor = 0.8 + (player_start / 500)  # 0.8 to 1.0 range
             elif i in [2, 3]:  # Middle pair (positions 3-4)
-                position_factor = 0.8 + (away_player.mitte / 500)  # 0.8 to 1.0 range
+                player_mitte = get_player_attribute(away_player, 'mitte')
+                position_factor = 0.8 + (player_mitte / 500)  # 0.8 to 1.0 range
             else:  # Schluss pair (positions 5-6)
-                position_factor = 0.8 + (away_player.schluss / 500)  # 0.8 to 1.0 range
+                player_schluss = get_player_attribute(away_player, 'schluss')
+                position_factor = 0.8 + (player_schluss / 500)  # 0.8 to 1.0 range
 
             # Apply position factor to all lanes
             mean_score *= position_factor
@@ -447,14 +499,19 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             # Apply drucksicherheit only on the last lane (lane 3)
             if lane == 3:  # Last lane - apply drucksicherheit factor
                 # Players with high drucksicherheit perform better on the last lane
-                pressure_factor = 0.9 + (away_player.drucksicherheit / 500)  # 0.9 to 1.1 range
+                player_drucksicherheit = get_player_attribute(away_player, 'drucksicherheit')
+                pressure_factor = 0.9 + (player_drucksicherheit / 500)  # 0.9 to 1.1 range
                 mean_score *= pressure_factor
 
-            # Konstanz and Sicherheit are already factored into the base values
-            # No additional adjustments needed here
+            # Apply stamina factor (decreases with each lane)
+            player_ausdauer = get_player_attribute(away_player, 'ausdauer')
+            ausdauer_factor = max(0.95, player_ausdauer / 100 - (lane * 0.01))  # Decreases with each lane
+            mean_score *= ausdauer_factor
 
             # Generate score from normal distribution and ensure it's within reasonable bounds
             lane_score = int(np.random.normal(mean_score, std_dev))
+            # Ensure score is at least 80 and at most 200
+            lane_score = max(80, min(200, lane_score))
 
             # Berechne Volle und Räumer direkt basierend auf den Spielerattributen
             # Spieler mit höherem 'volle' Attribut erzielen mehr Punkte auf die vollen Kegel
@@ -466,7 +523,9 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             # Berechne den Volle-Prozentsatz direkt aus den Attributen
             # Formel: 0.5 + (volle / (volle + raeumer)) * 0.3
             # Dies ergibt einen Bereich von ca. 0.5 bis 0.8 je nach Attributverhältnis
-            volle_percentage = 0.5 + (away_player.volle / max(1, away_player.volle + away_player.raeumer)) * 0.3
+            player_volle = get_player_attribute(away_player, 'volle')
+            player_raeumer = get_player_attribute(away_player, 'raeumer')
+            volle_percentage = 0.5 + (player_volle / max(1, player_volle + player_raeumer)) * 0.3
 
             # Füge etwas Zufälligkeit hinzu (±2%)
             volle_percentage += np.random.normal(0, 0.02)
@@ -484,7 +543,8 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
             # Note: fehler will be calculated after all lanes are completed
 
         # Calculate realistic fehler based on total score and sicherheit attribute
-        away_player_fehler = calculate_realistic_fehler(away_player_total, away_player.sicherheit)
+        player_sicherheit = get_player_attribute(away_player, 'sicherheit')
+        away_player_fehler = calculate_realistic_fehler(away_player_total, player_sicherheit)
 
         # Add to team scores
         home_score += home_player_total
@@ -527,21 +587,46 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
         home_match_points += home_player_match_points
         away_match_points += away_player_match_points
 
-        # Create performance records if match is provided
+        # Create performance records if match is provided (but not for Stroh players)
         if match:
-            # Check if home player is a substitute
-            is_home_substitute = home_player in home_substitutes if 'home_substitutes' in locals() else False
-
-            # Determine if this is a cup match or regular match
+            # Determine if this is a cup match or regular match (do this once for both players)
             from models import CupMatch
             is_cup_match = isinstance(match, CupMatch)
 
-            if is_cup_match:
-                # Create cup match performance
-                from models import PlayerCupMatchPerformance
-                home_perf = PlayerCupMatchPerformance(
-                    player_id=home_player.id,
-                    cup_match_id=match.id,
+            # Check if home player is a Stroh player
+            is_home_stroh = isinstance(home_player, dict) and home_player.get('is_stroh', False)
+
+            # Only create performance records for real players, not Stroh players
+            if not is_home_stroh:
+                # Check if home player is a substitute
+                is_home_substitute = home_player in home_substitutes if 'home_substitutes' in locals() else False
+
+                if is_cup_match:
+                    # Create cup match performance
+                    from models import PlayerCupMatchPerformance
+                    home_perf = PlayerCupMatchPerformance(
+                        player_id=home_player.id,
+                        cup_match_id=match.id,
+                        team_id=home_team.id,
+                        is_home_team=True,
+                        position_number=i+1,
+                        is_substitute=is_home_substitute,
+                        lane1_score=home_player_lanes[0],
+                        lane2_score=home_player_lanes[1],
+                        lane3_score=home_player_lanes[2],
+                        lane4_score=home_player_lanes[3],
+                        total_score=home_player_total,
+                        volle_score=home_player_volle,
+                        raeumer_score=home_player_raeumer,
+                        fehler_count=home_player_fehler,
+                        set_points=home_player_set_points,
+                        match_points=home_player_match_points
+                    )
+                else:
+                    # Create regular match performance
+                    home_perf = PlayerMatchPerformance(
+                        player_id=home_player.id,
+                        match_id=match.id,
                     team_id=home_team.id,
                     is_home_team=True,
                     position_number=i+1,
@@ -557,73 +642,102 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
                     set_points=home_player_set_points,
                     match_points=home_player_match_points
                 )
+                performances.append(home_perf)
             else:
-                # Create regular match performance
-                home_perf = PlayerMatchPerformance(
-                    player_id=home_player.id,
-                    match_id=match.id,
-                    team_id=home_team.id,
-                    is_home_team=True,
-                    position_number=i+1,
-                    is_substitute=is_home_substitute,
-                    lane1_score=home_player_lanes[0],
-                    lane2_score=home_player_lanes[1],
-                    lane3_score=home_player_lanes[2],
-                    lane4_score=home_player_lanes[3],
-                    total_score=home_player_total,
-                    volle_score=home_player_volle,
-                    raeumer_score=home_player_raeumer,
-                    fehler_count=home_player_fehler,
-                    set_points=home_player_set_points,
-                    match_points=home_player_match_points
-                )
-            performances.append(home_perf)
+                # Create Stroh player performance record for display purposes
+                stroh_perf = {
+                    'player_id': 'stroh_home_' + str(i+1),  # Unique ID for Stroh player
+                    'player_name': 'Stroh',
+                    'team_id': home_team.id,
+                    'is_home_team': True,
+                    'position_number': i+1,
+                    'is_substitute': False,
+                    'is_stroh': True,
+                    'lane1_score': home_player_lanes[0],
+                    'lane2_score': home_player_lanes[1],
+                    'lane3_score': home_player_lanes[2],
+                    'lane4_score': home_player_lanes[3],
+                    'total_score': home_player_total,
+                    'volle_score': home_player_volle,
+                    'raeumer_score': home_player_raeumer,
+                    'fehler_count': home_player_fehler,
+                    'set_points': home_player_set_points,
+                    'match_points': home_player_match_points
+                }
+                stroh_performances.append(stroh_perf)
 
-            # Check if away player is a substitute
-            is_away_substitute = away_player in away_substitutes if 'away_substitutes' in locals() else False
+            # Check if away player is a Stroh player
+            is_away_stroh = isinstance(away_player, dict) and away_player.get('is_stroh', False)
 
-            if is_cup_match:
-                # Create cup match performance
-                from models import PlayerCupMatchPerformance
-                away_perf = PlayerCupMatchPerformance(
-                    player_id=away_player.id,
-                    cup_match_id=match.id,
-                    team_id=away_team.id,
-                    is_home_team=False,
-                    position_number=i+1,
-                    is_substitute=is_away_substitute,
-                    lane1_score=away_player_lanes[0],
-                    lane2_score=away_player_lanes[1],
-                    lane3_score=away_player_lanes[2],
-                    lane4_score=away_player_lanes[3],
-                    total_score=away_player_total,
-                    volle_score=away_player_volle,
-                    raeumer_score=away_player_raeumer,
-                    fehler_count=away_player_fehler,
-                    set_points=away_player_set_points,
-                    match_points=away_player_match_points
-                )
+            # Only create performance records for real players, not Stroh players
+            if not is_away_stroh:
+                # Check if away player is a substitute
+                is_away_substitute = away_player in away_substitutes if 'away_substitutes' in locals() else False
+
+                if is_cup_match:
+                    # Create cup match performance
+                    from models import PlayerCupMatchPerformance
+                    away_perf = PlayerCupMatchPerformance(
+                        player_id=away_player.id,
+                        cup_match_id=match.id,
+                        team_id=away_team.id,
+                        is_home_team=False,
+                        position_number=i+1,
+                        is_substitute=is_away_substitute,
+                        lane1_score=away_player_lanes[0],
+                        lane2_score=away_player_lanes[1],
+                        lane3_score=away_player_lanes[2],
+                        lane4_score=away_player_lanes[3],
+                        total_score=away_player_total,
+                        volle_score=away_player_volle,
+                        raeumer_score=away_player_raeumer,
+                        fehler_count=away_player_fehler,
+                        set_points=away_player_set_points,
+                        match_points=away_player_match_points
+                    )
+                else:
+                    # Create regular match performance
+                    away_perf = PlayerMatchPerformance(
+                        player_id=away_player.id,
+                        match_id=match.id,
+                        team_id=away_team.id,
+                        is_home_team=False,
+                        position_number=i+1,
+                        is_substitute=is_away_substitute,
+                        lane1_score=away_player_lanes[0],
+                        lane2_score=away_player_lanes[1],
+                        lane3_score=away_player_lanes[2],
+                        lane4_score=away_player_lanes[3],
+                        total_score=away_player_total,
+                        volle_score=away_player_volle,
+                        raeumer_score=away_player_raeumer,
+                        fehler_count=away_player_fehler,
+                        set_points=away_player_set_points,
+                        match_points=away_player_match_points
+                    )
+                performances.append(away_perf)
             else:
-                # Create regular match performance
-                away_perf = PlayerMatchPerformance(
-                    player_id=away_player.id,
-                    match_id=match.id,
-                    team_id=away_team.id,
-                    is_home_team=False,
-                    position_number=i+1,
-                    is_substitute=is_away_substitute,
-                    lane1_score=away_player_lanes[0],
-                    lane2_score=away_player_lanes[1],
-                    lane3_score=away_player_lanes[2],
-                    lane4_score=away_player_lanes[3],
-                    total_score=away_player_total,
-                    volle_score=away_player_volle,
-                    raeumer_score=away_player_raeumer,
-                    fehler_count=away_player_fehler,
-                    set_points=away_player_set_points,
-                    match_points=away_player_match_points
-                )
-            performances.append(away_perf)
+                # Create Stroh player performance record for display purposes
+                stroh_perf = {
+                    'player_id': 'stroh_away_' + str(i+1),  # Unique ID for Stroh player
+                    'player_name': 'Stroh',
+                    'team_id': away_team.id,
+                    'is_home_team': False,
+                    'position_number': i+1,
+                    'is_substitute': False,
+                    'is_stroh': True,
+                    'lane1_score': away_player_lanes[0],
+                    'lane2_score': away_player_lanes[1],
+                    'lane3_score': away_player_lanes[2],
+                    'lane4_score': away_player_lanes[3],
+                    'total_score': away_player_total,
+                    'volle_score': away_player_volle,
+                    'raeumer_score': away_player_raeumer,
+                    'fehler_count': away_player_fehler,
+                    'set_points': away_player_set_points,
+                    'match_points': away_player_match_points
+                }
+                stroh_performances.append(stroh_perf)
 
 
     # Add 2 additional MP for the team with more total pins
@@ -644,8 +758,21 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
         match.home_match_points = home_match_points
         match.away_match_points = away_match_points
 
+        # Save Stroh performances as JSON in the match
+        if stroh_performances:
+            import json
+            match.stroh_performances = json.dumps(stroh_performances)
+
         # Mark all players as having played on this match day using bulk update
-        player_ids = [p.id for p in home_players + away_players]
+        # Only include real players, not Stroh players
+        player_ids = []
+        for p in home_players + away_players:
+            if isinstance(p, dict) and p.get('is_stroh', False):
+                # Skip Stroh players - they don't get saved to database
+                continue
+            elif hasattr(p, 'id'):
+                player_ids.append(p.id)
+
         if player_ids:
             # Get the match day value (handle both regular matches and cup matches)
             match_day_value = current_match_day if 'current_match_day' in locals() else None
@@ -665,9 +792,16 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
         # Get the home club ID (where the lanes are located)
         home_club_id = home_team.club_id
 
-        # Check for team records - using total team scores across all lanes
+        # Check for team records - using total team scores across all lanes (including Stroh players)
         home_team_total_score = sum(perf.total_score for perf in performances if perf.is_home_team)
         away_team_total_score = sum(perf.total_score for perf in performances if not perf.is_home_team)
+
+        # Add Stroh player scores to team totals
+        for stroh_perf in stroh_performances:
+            if stroh_perf['is_home_team']:
+                home_team_total_score += stroh_perf['total_score']
+            else:
+                away_team_total_score += stroh_perf['total_score']
 
         # Check for home team record
         LaneRecord.check_and_update_record(
@@ -704,7 +838,8 @@ def simulate_match(home_team, away_team, match=None, home_team_players=None, awa
         'away_score': away_score,
         'home_match_points': home_match_points,
         'away_match_points': away_match_points,
-        'winner': home_team.name if home_match_points > away_match_points else (away_team.name if away_match_points > home_match_points else 'Draw')
+        'winner': home_team.name if home_match_points > away_match_points else (away_team.name if away_match_points > home_match_points else 'Draw'),
+        'stroh_performances': stroh_performances  # Include Stroh player performances for display
     }
 
 def simulate_match_day(season):
@@ -763,7 +898,8 @@ def simulate_match_day(season):
     print(f"Simulating match day {next_match_day}")
 
     # Step 2: Reset player flags efficiently
-    bulk_reset_player_flags()
+    # Pass the current match day to prevent players from playing for multiple teams
+    bulk_reset_player_flags(current_match_day=next_match_day)
 
     # Step 3: Get all matches for this match day with optimized query
     try:
@@ -833,6 +969,21 @@ def simulate_match_day(season):
         cache
     )
     print(f"Assigned players to teams in {time.time() - assignment_start:.3f}s")
+
+    # Step 6.5: Immediately update player flags to prevent multiple assignments
+    immediate_player_updates = []
+    for club_id, teams in club_team_players.items():
+        for team_id, players in teams.items():
+            for player in players:
+                # Skip Stroh players - they don't get saved to database
+                if isinstance(player, dict) and player.get('is_stroh', False):
+                    continue
+                player_id = player['id'] if isinstance(player, dict) else player.id
+                immediate_player_updates.append((player_id, True, next_match_day))
+
+    if immediate_player_updates:
+        batch_update_player_flags(immediate_player_updates)
+        print(f"Immediately updated flags for {len(immediate_player_updates)} assigned players")
 
     # Step 7: Simulate all matches in parallel (league and cup matches)
     simulation_start = time.time()
@@ -1130,6 +1281,10 @@ def _simulate_matches_parallel_with_context(matches_data, club_team_players, nex
                     'match_day': next_match_day
                 })
 
+                # Add match_id to all performance data
+                for performance in match_result.get('performances', []):
+                    performance['match_id'] = match_data.match_id
+
                 # Collect player updates
                 player_updates = []
                 for player in home_player_objects + away_player_objects:
@@ -1286,6 +1441,10 @@ def _simulate_matches_sequential(matches_data, club_team_players, next_match_day
                 'is_cup_match': is_cup_match
             })
 
+            # Add match_id to all performance data
+            for performance in match_result.get('performances', []):
+                performance['match_id'] = match_dict.get('match_id')
+
             # Print cup match results
             if is_cup_match:
                 home_team_name = match_dict.get('home_team_name') or home_team.name
@@ -1316,9 +1475,13 @@ def _simulate_matches_sequential(matches_data, club_team_players, next_match_day
             all_performances.extend(match_result.get('performances', []))
             all_lane_records.extend(match_result.get('lane_records', []))
 
-            # Collect player updates
+            # Collect player updates (skip Stroh players)
             for player in home_player_objects + away_player_objects:
                 try:
+                    # Skip Stroh players - they don't get saved to database
+                    if isinstance(player, dict) and player.get('is_stroh', False):
+                        continue
+
                     if hasattr(player, 'id'):
                         player_id = player.id
                     elif isinstance(player, dict) and 'id' in player:
@@ -1435,7 +1598,11 @@ def simulate_match_optimized(home_team, away_team, home_players, away_players, c
                 home_result['performance']['match_points'] = 0.5
                 away_result['performance']['match_points'] = 0.5
 
-        # Store performance data for batch creation
+        # Store performance data for batch creation with correct team information
+        home_result['performance']['team_id'] = home_team.id
+        home_result['performance']['is_home_team'] = True
+        away_result['performance']['team_id'] = away_team.id
+        away_result['performance']['is_home_team'] = False
         performances.extend([home_result['performance'], away_result['performance']])
 
         # Check for potential lane records
@@ -1547,7 +1714,7 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
 
         # Apply away factor for away players
         if not is_home:
-            away_factor = 0.9 + (auswaerts / 1000)  # 0.9 to 1.1 range
+            away_factor = 0.98 + (auswaerts / 2500)  # 0.98 to 1.02 range
             mean_score *= away_factor
 
         # Apply position-based attributes
@@ -1566,7 +1733,7 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
             mean_score *= pressure_factor
 
         # Apply stamina factor (decreases with each lane)
-        ausdauer_factor = max(0.8, ausdauer / 100 - (lane * 0.05))
+        ausdauer_factor = max(0.95, ausdauer / 100 - (lane * 0.01))
         mean_score *= ausdauer_factor
 
         # Add randomness based on consistency
@@ -1725,22 +1892,26 @@ def batch_commit_simulation_results(matches_data, results, all_performances, all
                     # Add missing required fields
                     perf_dict = perf.copy()
 
-                    # Find the corresponding match_id from results
-                    result_index = i // 12  # 12 performances per match (6 home + 6 away)
-                    if result_index < len(results):
-                        match_id = results[result_index].get('match_id')
-                        perf_dict['match_id'] = match_id
+                    # The performance should already have match_id, team_id, and is_home_team set correctly
+                    # from the simulate_single_match function. We don't need to guess based on index.
 
-                        # Determine team_id and is_home_team based on position in list
-                        player_index_in_match = i % 12
-                        perf_dict['is_home_team'] = player_index_in_match < 6
+                    # Only set missing fields if they're not already present
+                    if 'match_id' not in perf_dict:
+                        # Find the corresponding match_id from results
+                        result_index = i // 12  # 12 performances per match (6 home + 6 away)
+                        if result_index < len(results):
+                            match_id = results[result_index].get('match_id')
+                            perf_dict['match_id'] = match_id
 
-                        # Set the correct team_id
-                        if match_id in match_team_mapping:
-                            if perf_dict['is_home_team']:
-                                perf_dict['team_id'] = match_team_mapping[match_id]['home_team_id']
-                            else:
-                                perf_dict['team_id'] = match_team_mapping[match_id]['away_team_id']
+                    # Only set team_id and is_home_team if they're missing
+                    if 'team_id' not in perf_dict or 'is_home_team' not in perf_dict:
+                        # This should not happen in the new implementation, but keep as fallback
+                        match_id = perf_dict.get('match_id')
+                        if match_id and match_id in match_team_mapping:
+                            # We can't reliably determine which team the player belongs to
+                            # without additional information, so we'll skip this performance
+                            print(f"Warning: Performance missing team_id or is_home_team for match {match_id}")
+                            continue
 
                     performance_dicts.append(perf_dict)
                 else:
@@ -1805,35 +1976,7 @@ def process_lane_records_batch(all_lane_records):
             # In a full implementation, you'd check against existing records
 
 
-def batch_update_player_flags(all_player_updates):
-    """
-    Batch update player flags for better performance.
-
-    Args:
-        all_player_updates: List of tuples (player_id, has_played, match_day)
-    """
-    if not all_player_updates:
-        return
-
-    try:
-        # Group updates by player_id to avoid duplicates
-        player_updates_dict = {}
-        for player_id, has_played, match_day in all_player_updates:
-            player_updates_dict[player_id] = (has_played, match_day)
-
-        # Batch update all players
-        for player_id, (has_played, match_day) in player_updates_dict.items():
-            db.session.execute(
-                db.update(Player)
-                .where(Player.id == player_id)
-                .values(
-                    has_played_current_matchday=has_played,
-                    last_played_matchday=match_day
-                )
-            )
-    except Exception as e:
-        print(f"Error in batch update player flags: {str(e)}")
-        raise
+# Removed duplicate function - using the one below
 
 
 def simulate_match_day_fallback(season):
@@ -1994,15 +2137,12 @@ def determine_player_availability(club_id, teams_playing):
     # Check if we still have enough available players
     available_players = len(player_ids) - len(unavailable_player_ids)
 
-    # If we don't have enough available players, reduce the unavailable list
+    # If we don't have enough available players, we'll use Stroh players instead of making real players available
     if available_players < min_players_needed:
-        # Calculate how many more players we need
-        players_needed = min_players_needed - available_players
-
-        # Remove some players from the unavailable list
-        if players_needed > 0 and unavailable_player_ids:
-            # Remove the last N players from unavailable list to make them available
-            unavailable_player_ids = unavailable_player_ids[:-players_needed]
+        # Calculate how many Stroh players we'll need
+        stroh_players_needed = min_players_needed - available_players
+        print(f"Club ID {club_id}: Only {available_players} players available, need {min_players_needed}. Will use {stroh_players_needed} Stroh player(s).")
+        # Note: Stroh players will be created during match simulation, not here
 
     # Perform all updates in a single transaction
     if unavailable_player_ids:
@@ -2175,8 +2315,9 @@ def simulate_season(season, create_new_season=True):
         print(f"Simulating match day {next_match_day} across all leagues and cups")
 
         # Reset player availability flags efficiently
+        # Pass the current match day to prevent players from playing for multiple teams
         from performance_optimizations import bulk_reset_player_flags
-        bulk_reset_player_flags()
+        bulk_reset_player_flags(current_match_day=next_match_day)
 
         # Determine which clubs have matches on this match day
         clubs_with_matches = set()
@@ -2364,10 +2505,20 @@ def simulate_season(season, create_new_season=True):
 
                 match_day_results.append(match_result)
 
-                # Collect player updates for batch processing
+                # Collect player updates for batch processing (skip Stroh players)
                 # Convert player objects to IDs if necessary
-                home_player_ids = [p.id if hasattr(p, 'id') else p for p in home_players]
-                away_player_ids = [p.id if hasattr(p, 'id') else p for p in away_players]
+                home_player_ids = []
+                away_player_ids = []
+
+                for p in home_players:
+                    if isinstance(p, dict) and p.get('is_stroh', False):
+                        continue  # Skip Stroh players
+                    home_player_ids.append(p.id if hasattr(p, 'id') else p)
+
+                for p in away_players:
+                    if isinstance(p, dict) and p.get('is_stroh', False):
+                        continue  # Skip Stroh players
+                    away_player_ids.append(p.id if hasattr(p, 'id') else p)
 
                 for player_id in home_player_ids + away_player_ids:
                     all_player_updates.append((player_id, True, next_match_day))
@@ -3463,99 +3614,57 @@ def calculate_standings(league):
 
     return standings
 
-def select_target_league_id(available_league_ids, old_to_new_mapping, new_leagues):
+def select_target_league_id(available_league_ids, old_to_new_mapping, new_leagues, distribution_tracker=None):
     """
-    Select the best target league ID from available options.
-    For now, uses the first available league, but could be enhanced with more logic.
+    Select the best target league ID from available options with load balancing.
+    Distributes teams evenly across available leagues to prevent overcrowding.
+
+    Args:
+        available_league_ids: List of possible target league IDs
+        old_to_new_mapping: Mapping from old to new league IDs
+        new_leagues: List of new league objects
+        distribution_tracker: Dict tracking team counts per league for load balancing
     """
+    # Get valid target league IDs
+    valid_target_ids = []
     for old_league_id in available_league_ids:
         new_league_id = old_to_new_mapping.get(old_league_id)
-        if new_league_id:
-            # Verify the league exists in new_leagues
-            if any(nl.id == new_league_id for nl in new_leagues):
-                return new_league_id
-    return None
+        if new_league_id and any(nl.id == new_league_id for nl in new_leagues):
+            valid_target_ids.append(new_league_id)
 
-def _update_league_references(leagues, leagues_by_level):
-    """
-    Update league references in aufstieg_liga_id and abstieg_liga_id fields
-    to use current season league IDs based on league attributes.
-    """
-    print("Updating league references to current season IDs...")
+    if not valid_target_ids:
+        return None
 
-    # Create a mapping from league name to current league ID for each level
-    league_lookup_by_name_level = {}
-    for league in leagues:
-        key = (league.name, league.level)
-        league_lookup_by_name_level[key] = league.id
+    # If no distribution tracker provided, distribute evenly by sorting IDs
+    if distribution_tracker is None:
+        # Sort by ID to ensure consistent distribution instead of always picking first
+        valid_target_ids.sort()
+        # Use a simple round-robin approach based on the number of calls
+        if not hasattr(select_target_league_id, '_call_counter'):
+            select_target_league_id._call_counter = 0
+        select_target_league_id._call_counter += 1
+        return valid_target_ids[select_target_league_id._call_counter % len(valid_target_ids)]
 
-    updates_made = 0
+    # Find the league with the fewest teams assigned so far
+    min_teams = float('inf')
+    best_league_id = None
 
-    for league in leagues:
-        # Update promotion league IDs
-        if league.aufstieg_liga_id:
-            old_ids = league.get_aufstieg_liga_ids()
-            new_ids = []
+    for league_id in valid_target_ids:
+        current_count = distribution_tracker.get(league_id, 0)
+        if current_count < min_teams:
+            min_teams = current_count
+            best_league_id = league_id
+        elif current_count == min_teams and best_league_id is None:
+            # If counts are equal, prefer the league with lower ID for consistency
+            best_league_id = league_id
 
-            for old_id in old_ids:
-                # Try to find the corresponding league in current season by ID first
-                found_league = None
-                for candidate in leagues:
-                    if candidate.id == old_id:
-                        found_league = candidate
-                        break
+    # Update the tracker
+    if best_league_id:
+        distribution_tracker[best_league_id] = distribution_tracker.get(best_league_id, 0) + 1
 
-                if found_league:
-                    new_ids.append(found_league.id)
-                else:
-                    # League not found by ID, try to find by level relationship
-                    target_level = league.level - 1
-                    if target_level in leagues_by_level:
-                        # Try to match by position in the original structure
-                        # This is a heuristic - take leagues at target level in order
-                        target_leagues = leagues_by_level[target_level]
-                        if target_leagues:
-                            # For simplicity, map to the first available league at target level
-                            new_ids.append(target_leagues[0].id)
+    return best_league_id
 
-            if new_ids and new_ids != old_ids:
-                league.aufstieg_liga_id = ';'.join(map(str, new_ids))
-                updates_made += 1
 
-        # Update relegation league IDs
-        if league.abstieg_liga_id:
-            old_ids = league.get_abstieg_liga_ids()
-            new_ids = []
-
-            for old_id in old_ids:
-                # Try to find the corresponding league in current season by ID first
-                found_league = None
-                for candidate in leagues:
-                    if candidate.id == old_id:
-                        found_league = candidate
-                        break
-
-                if found_league:
-                    new_ids.append(found_league.id)
-                else:
-                    # League not found by ID, try to find by level relationship
-                    target_level = league.level + 1
-                    if target_level in leagues_by_level:
-                        # Try to match by position in the original structure
-                        target_leagues = leagues_by_level[target_level]
-                        if target_leagues:
-                            # For simplicity, map to the first available league at target level
-                            new_ids.append(target_leagues[0].id)
-
-            if new_ids and new_ids != old_ids:
-                league.abstieg_liga_id = ';'.join(map(str, new_ids))
-                updates_made += 1
-
-    if updates_made > 0:
-        db.session.commit()
-        print(f"Updated {updates_made} league references")
-    else:
-        print("No league reference updates needed")
 
 
 def balance_promotion_relegation_spots(season_id, old_to_new_league_mapping=None):
@@ -3581,8 +3690,8 @@ def balance_promotion_relegation_spots(season_id, old_to_new_league_mapping=None
             leagues_by_level[league.level] = []
         leagues_by_level[league.level].append(league)
 
-    # First, update league IDs in promotion/relegation fields to current season IDs
-    _update_league_references(leagues, leagues_by_level)
+    # Note: League references are now updated in create_new_season before this function is called
+    # For first season (old_to_new_league_mapping is None), league references are already correct
 
     changes_made = 0
 
@@ -3609,12 +3718,21 @@ def balance_promotion_relegation_spots(season_id, old_to_new_league_mapping=None
             required_relegation_spots = len(feeding_leagues)
 
             # Only adjust if there are feeding leagues and the current spots don't match
+            # Also check if the league has valid relegation targets before setting relegation spots
             if required_relegation_spots > 0:
-                if league.anzahl_absteiger != required_relegation_spots:
+                # Only set relegation spots if the league has valid relegation targets
+                valid_relegation_targets = league.get_abstieg_liga_ids()
+                if valid_relegation_targets and league.anzahl_absteiger != required_relegation_spots:
                     old_spots = league.anzahl_absteiger
                     league.anzahl_absteiger = required_relegation_spots
                     changes_made += 1
                     print(f"  {league.name} (Level {league.level}): Changed relegation spots from {old_spots} to {required_relegation_spots}")
+                elif not valid_relegation_targets and league.anzahl_absteiger > 0:
+                    # League has relegation spots but no valid targets - remove spots
+                    old_spots = league.anzahl_absteiger
+                    league.anzahl_absteiger = 0
+                    changes_made += 1
+                    print(f"  {league.name} (Level {league.level}): Removed relegation spots (no valid relegation targets) - was {old_spots}")
 
                 # Also update promotion spots for the feeding leagues
                 for feeding_league in feeding_leagues:
@@ -3624,11 +3742,16 @@ def balance_promotion_relegation_spots(season_id, old_to_new_league_mapping=None
                         print(f"    {feeding_league.name} (Level {feeding_league.level}): Set promotion spots to 1")
             elif required_relegation_spots == 0 and level < max(leagues_by_level.keys()):
                 # This league has no feeding leagues but is not the bottom level
-                # Keep at least 1 relegation spot unless it's the bottom level
-                if league.anzahl_absteiger == 0:
+                # Only set relegation spots if the league has valid relegation targets
+                if league.anzahl_absteiger == 0 and league.get_abstieg_liga_ids():
                     league.anzahl_absteiger = 1
                     changes_made += 1
-                    print(f"  {league.name} (Level {league.level}): Set minimum 1 relegation spot (no feeding leagues)")
+                    print(f"  {league.name} (Level {league.level}): Set minimum 1 relegation spot (no feeding leagues, but has relegation targets)")
+                elif league.anzahl_absteiger > 0 and not league.get_abstieg_liga_ids():
+                    # League has relegation spots but no valid targets - remove spots
+                    league.anzahl_absteiger = 0
+                    changes_made += 1
+                    print(f"  {league.name} (Level {league.level}): Removed relegation spots (no valid relegation targets)")
 
     # Special case: Check if top-level leagues have promotion spots when they shouldn't
     top_level = min(leagues_by_level.keys()) if leagues_by_level else 1
@@ -3660,6 +3783,10 @@ def balance_promotion_relegation_spots(season_id, old_to_new_league_mapping=None
 def create_new_season(old_season):
     """Create a new season based on the old one."""
     print("Creating new season...")
+
+    # Reset the call counter for league selection to ensure fair distribution
+    if hasattr(select_target_league_id, '_call_counter'):
+        select_target_league_id._call_counter = 0
 
     # Keep the old season as current for now
     # We'll only change it after everything is set up
@@ -3702,6 +3829,47 @@ def create_new_season(old_season):
     for i, old_league in enumerate(old_leagues):
         old_to_new_league_mapping[old_league.id] = new_leagues[i].id
 
+    # CRITICAL: Update all aufstieg_liga_id and abstieg_liga_id references to use new league IDs
+    # This must happen BEFORE team assignments to ensure correct promotion/relegation targets
+    print("Updating league references to new season IDs...")
+    for new_league in new_leagues:
+        # Update promotion league IDs
+        if new_league.aufstieg_liga_id:
+            old_ids = new_league.get_aufstieg_liga_ids()
+            new_ids = []
+            for old_id in old_ids:
+                if old_id in old_to_new_league_mapping:
+                    new_ids.append(old_to_new_league_mapping[old_id])
+                else:
+                    print(f"WARNING: Could not map promotion league ID {old_id} for league {new_league.name}")
+            if new_ids:
+                new_league.aufstieg_liga_id = ';'.join(map(str, new_ids))
+                print(f"Updated promotion targets for {new_league.name}: {new_ids}")
+            else:
+                # If no valid new IDs found, clear the field
+                new_league.aufstieg_liga_id = None
+                print(f"WARNING: No valid promotion targets found for {new_league.name}, cleared aufstieg_liga_id")
+
+        # Update relegation league IDs
+        if new_league.abstieg_liga_id:
+            old_ids = new_league.get_abstieg_liga_ids()
+            new_ids = []
+            for old_id in old_ids:
+                if old_id in old_to_new_league_mapping:
+                    new_ids.append(old_to_new_league_mapping[old_id])
+                else:
+                    print(f"WARNING: Could not map relegation league ID {old_id} for league {new_league.name}")
+            if new_ids:
+                new_league.abstieg_liga_id = ';'.join(map(str, new_ids))
+                print(f"Updated relegation targets for {new_league.name}: {new_ids}")
+            else:
+                # If no valid new IDs found, clear the field
+                new_league.abstieg_liga_id = None
+                print(f"WARNING: No valid relegation targets found for {new_league.name}, cleared abstieg_liga_id")
+
+    db.session.commit()
+    print("Successfully updated all league references to new season IDs")
+
     # Balance promotion and relegation spots for the new season
     balance_promotion_relegation_spots(new_season.id, old_to_new_league_mapping)
 
@@ -3710,6 +3878,35 @@ def create_new_season(old_season):
 
     # Create a mapping of teams to their new leagues
     team_to_new_league = {}
+
+    # Initialize distribution tracker for load balancing
+    # Pre-populate with current team counts to ensure proper load balancing
+    league_distribution_tracker = {}
+    for new_league in new_leagues:
+        # Count teams that will stay in this league (mapped from old leagues)
+        corresponding_old_league_id = None
+        for old_id, new_id in old_to_new_league_mapping.items():
+            if new_id == new_league.id:
+                corresponding_old_league_id = old_id
+                break
+
+        if corresponding_old_league_id:
+            # Count teams in the old league that will stay (not promoted/relegated)
+            old_league = next((ol for ol in old_leagues if ol.id == corresponding_old_league_id), None)
+            if old_league:
+                standings = calculate_standings(old_league)
+                staying_teams = 0
+                for j, standing in enumerate(standings):
+                    # Count teams that are not promoted or relegated
+                    is_promoted = j < old_league.anzahl_aufsteiger and old_league.level > 1
+                    is_relegated = j >= len(standings) - old_league.anzahl_absteiger and old_league.level < max(ol.level for ol in old_leagues)
+                    if not is_promoted and not is_relegated:
+                        staying_teams += 1
+                league_distribution_tracker[new_league.id] = staying_teams
+            else:
+                league_distribution_tracker[new_league.id] = 0
+        else:
+            league_distribution_tracker[new_league.id] = 0
 
     # First, get the final standings for each old league
     for i, old_league in enumerate(old_leagues):
@@ -3728,39 +3925,61 @@ def create_new_season(old_season):
 
             # Apply promotions/relegations based on standings and set status
             if j < old_league.anzahl_aufsteiger and i > 0:  # Promotion (except for top league)
-                team.previous_season_status = 'promoted'
                 # Get promotion league IDs from the old league
                 promotion_league_ids = old_league.get_aufstieg_liga_ids()
                 if promotion_league_ids:
-                    target_new_league_id = select_target_league_id(promotion_league_ids, old_to_new_league_mapping, new_leagues)
+                    target_new_league_id = select_target_league_id(
+                        promotion_league_ids,
+                        old_to_new_league_mapping,
+                        new_leagues,
+                        league_distribution_tracker
+                    )
                     if target_new_league_id:
+                        # Only mark as promoted if we actually found a target league
+                        team.previous_season_status = 'promoted'
                         target_league_name = next((nl.name for nl in new_leagues if nl.id == target_new_league_id), "Unknown")
                         print(f"Team {team.name} promoted from {old_league.name} to {target_league_name}")
                     else:
-                        print(f"WARNING: Could not find valid promotion league for {team.name} from {old_league.name}")
+                        # If no valid promotion league found, team stays in same league
+                        target_new_league_id = old_to_new_league_mapping.get(old_league.id)
+                        print(f"WARNING: Could not find valid promotion league for {team.name} from {old_league.name} - team stays in same league")
                 else:
-                    print(f"WARNING: No promotion leagues defined for {old_league.name}")
+                    # If no promotion leagues defined, team stays in same league
+                    target_new_league_id = old_to_new_league_mapping.get(old_league.id)
+                    print(f"WARNING: No promotion leagues defined for {old_league.name} - team {team.name} stays in same league")
             elif j >= len(standings) - old_league.anzahl_absteiger and i < len(old_leagues) - 1:  # Relegation (except for bottom league)
-                team.previous_season_status = 'relegated'
                 # Get relegation league IDs from the old league
                 relegation_league_ids = old_league.get_abstieg_liga_ids()
                 if relegation_league_ids:
-                    target_new_league_id = select_target_league_id(relegation_league_ids, old_to_new_league_mapping, new_leagues)
+                    target_new_league_id = select_target_league_id(
+                        relegation_league_ids,
+                        old_to_new_league_mapping,
+                        new_leagues,
+                        league_distribution_tracker
+                    )
                     if target_new_league_id:
+                        # Only mark as relegated if we actually found a target league
+                        team.previous_season_status = 'relegated'
                         target_league_name = next((nl.name for nl in new_leagues if nl.id == target_new_league_id), "Unknown")
                         print(f"Team {team.name} relegated from {old_league.name} to {target_league_name}")
                     else:
-                        print(f"WARNING: Could not find valid relegation league for {team.name} from {old_league.name}")
+                        # If no valid relegation league found, team stays in same league
+                        target_new_league_id = old_to_new_league_mapping.get(old_league.id)
+                        print(f"WARNING: Could not find valid relegation league for {team.name} from {old_league.name} - team stays in same league")
                 else:
-                    print(f"WARNING: No relegation leagues defined for {old_league.name}")
+                    # If no relegation leagues defined, team stays in same league
+                    target_new_league_id = old_to_new_league_mapping.get(old_league.id)
+                    print(f"WARNING: No relegation leagues defined for {old_league.name} - team {team.name} stays in same league")
             elif j == 0 and old_league.level == 1:  # Champion of top league
                 team.previous_season_status = 'champion'
                 print(f"Team {team.name} is champion of level {old_league.level}")
                 # Champions stay in the same league
                 target_new_league_id = old_to_new_league_mapping.get(old_league.id)
+                # Note: Distribution tracker already accounts for staying teams in initialization
             else:
                 # Team stays in the same league
                 target_new_league_id = old_to_new_league_mapping.get(old_league.id)
+                # Note: Distribution tracker already accounts for staying teams in initialization
 
             # Map team to the target league
             if target_new_league_id:
@@ -3769,6 +3988,12 @@ def create_new_season(old_season):
                 print(f"Team {team.name} (ID: {team.id}) mapped to new league {target_league_name} (ID: {target_new_league_id})")
             else:
                 print(f"WARNING: Could not determine target league for team {team.name}")
+
+    # Print distribution summary
+    print("\n=== LEAGUE DISTRIBUTION SUMMARY ===")
+    for league_id, team_count in league_distribution_tracker.items():
+        league_name = next((nl.name for nl in new_leagues if nl.id == league_id), f"League {league_id}")
+        print(f"{league_name}: {team_count} teams")
 
     # Now update all teams to point to their new leagues
     teams = Team.query.all()

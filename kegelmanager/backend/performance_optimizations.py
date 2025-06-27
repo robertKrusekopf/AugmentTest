@@ -36,8 +36,13 @@ def create_performance_indexes():
         print(f"Error creating indexes: {str(e)}")
 
 
-def bulk_reset_player_flags():
-    """Optimized bulk reset of player flags using raw SQL."""
+def bulk_reset_player_flags(current_match_day=None):
+    """
+    Optimized bulk reset of player flags using raw SQL.
+
+    Args:
+        current_match_day: If provided, only reset flags for players who played on a different match day
+    """
     try:
         start_time = time.time()
 
@@ -46,10 +51,19 @@ def bulk_reset_player_flags():
             text("UPDATE player SET is_available_current_matchday = 1")
         )
 
-        # Reset match day flags only for players who have played
-        result2 = db.session.execute(
-            text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1")
-        )
+        # Reset match day flags - behavior depends on current_match_day parameter
+        if current_match_day is not None:
+            # Only reset flags for players who played on a different match day
+            # This prevents players from playing for multiple teams in the same season
+            result2 = db.session.execute(
+                text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1 AND (last_played_matchday IS NULL OR last_played_matchday != :match_day)"),
+                {"match_day": current_match_day}
+            )
+        else:
+            # Reset all match day flags (used for season simulation)
+            result2 = db.session.execute(
+                text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1")
+            )
 
         db.session.commit()
 
@@ -103,10 +117,9 @@ def optimized_player_availability(club_id, teams_playing):
         player_ids = [int(pid) for pid in player_ids_str.split(',')]
 
         # Determine unavailable players (16.7% chance)
-        unavailable_count = max(0, min(
-            int(total_players * 0.167),
-            total_players - min_players_needed
-        ))
+        # But ensure we don't make too many unavailable that we'd need Stroh players
+        max_unavailable = total_players - min_players_needed
+        unavailable_count = min(int(total_players * 0.167), max_unavailable)
 
         if unavailable_count > 0:
             unavailable_ids = random.sample(player_ids, unavailable_count)

@@ -3,6 +3,7 @@ Module for assigning players to teams within a club for a match day.
 """
 
 from models import db, Player, Team, Match
+from sqlalchemy import or_
 
 def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     """
@@ -55,10 +56,15 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
 
     # Get all available players from this club with optimized query
     # Load only the attributes we need for sorting to reduce memory usage
+    # Filter out players who have already played on this match day
     available_players = Player.query.filter_by(
         club_id=club_id,
-        is_available_current_matchday=True,
-        has_played_current_matchday=False
+        is_available_current_matchday=True
+    ).filter(
+        or_(
+            Player.last_played_matchday.is_(None),
+            Player.last_played_matchday != match_day
+        )
     ).options(
         db.load_only(Player.id, Player.strength, Player.konstanz, Player.drucksicherheit, Player.volle, Player.raeumer)
     ).all()

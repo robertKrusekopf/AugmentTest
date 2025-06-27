@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
-import { getClubs } from '../services/api';
+import { getClubs, simulateSeason, getCurrentSeason, transitionToNewSeason } from '../services/api';
+import { invalidateAfterSimulation, invalidateAfterSeasonTransition } from '../services/apiCache';
 import './Settings.css';
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('general');
   const [clubs, setClubs] = useState([]);
+  const [multiSeasonCount, setMultiSeasonCount] = useState(1);
+  const [simulatingMultiSeason, setSimulatingMultiSeason] = useState(false);
   const [settings, setSettings] = useState({
     general: {
       language: 'de',
@@ -108,6 +111,64 @@ const Settings = () => {
     }, 3000);
   };
 
+  const handleMultiSeasonSimulation = async () => {
+    if (multiSeasonCount < 1 || multiSeasonCount > 50) {
+      alert('Bitte geben Sie eine Anzahl zwischen 1 und 50 ein.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Sind Sie sicher, dass Sie ${multiSeasonCount} Saison(en) simulieren möchten? Dies kann einige Zeit dauern.`);
+    if (!confirmed) return;
+
+    try {
+      setSimulatingMultiSeason(true);
+
+      for (let i = 0; i < multiSeasonCount; i++) {
+        console.log(`Simuliere Saison ${i + 1} von ${multiSeasonCount}...`);
+
+        // Hole aktuelle Saison
+        const currentSeason = await getCurrentSeason();
+
+        // Simuliere die komplette Saison
+        await simulateSeason(currentSeason.id, false);
+
+        // Führe Saisonwechsel durch (außer bei der letzten Iteration)
+        if (i < multiSeasonCount - 1) {
+          await transitionToNewSeason();
+        }
+      }
+
+      // Invalidiere Cache nach der Simulation
+      invalidateAfterSimulation();
+      invalidateAfterSeasonTransition();
+
+      setMessage({
+        show: true,
+        type: 'success',
+        text: `${multiSeasonCount} Saison(en) erfolgreich simuliert!`
+      });
+
+      // Verstecke Nachricht nach 5 Sekunden
+      setTimeout(() => {
+        setMessage({ show: false, type: '', text: '' });
+      }, 5000);
+
+    } catch (error) {
+      console.error('Fehler bei der Multi-Saison-Simulation:', error);
+      setMessage({
+        show: true,
+        type: 'error',
+        text: 'Fehler bei der Multi-Saison-Simulation. Bitte versuchen Sie es erneut.'
+      });
+
+      setTimeout(() => {
+        setMessage({ show: false, type: '', text: '' });
+      }, 5000);
+    } finally {
+      setSimulatingMultiSeason(false);
+    }
+  };
+
   const resetSettings = () => {
     if (window.confirm('Möchten Sie wirklich alle Einstellungen zurücksetzen?')) {
       const defaultSettings = {
@@ -192,6 +253,12 @@ const Settings = () => {
             onClick={() => setActiveTab('display')}
           >
             Anzeige
+          </div>
+          <div
+            className={`tab ${activeTab === 'cheats' ? 'active' : ''}`}
+            onClick={() => setActiveTab('cheats')}
+          >
+            Cheats
           </div>
         </div>
 
@@ -339,6 +406,41 @@ const Settings = () => {
                   checked={settings.display.showStatistics}
                   onChange={(e) => handleSettingChange('display', 'showStatistics', e.target.checked)}
                 />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'cheats' && (
+            <div className="settings-section">
+              <h2>Cheat-Optionen</h2>
+              <p className="cheat-warning">
+                ⚠️ Diese Optionen sind nur für Testzwecke gedacht und können das Spielerlebnis beeinträchtigen.
+              </p>
+
+              <div className="setting-item">
+                <label htmlFor="multiSeasonCount">Mehrere Saisons simulieren</label>
+                <div className="multi-season-controls">
+                  <input
+                    type="number"
+                    id="multiSeasonCount"
+                    min="1"
+                    max="50"
+                    value={multiSeasonCount}
+                    onChange={(e) => setMultiSeasonCount(parseInt(e.target.value) || 1)}
+                    disabled={simulatingMultiSeason}
+                  />
+                  <button
+                    className={`btn btn-warning ${simulatingMultiSeason ? 'loading' : ''}`}
+                    onClick={handleMultiSeasonSimulation}
+                    disabled={simulatingMultiSeason}
+                  >
+                    {simulatingMultiSeason ? 'Simuliere...' : `${multiSeasonCount} Saison(en) simulieren`}
+                  </button>
+                </div>
+                <small className="setting-description">
+                  Simuliert die angegebene Anzahl von Saisons automatisch hintereinander.
+                  Jede Saison wird vollständig simuliert und anschließend wird ein Saisonwechsel durchgeführt.
+                </small>
               </div>
             </div>
           )}

@@ -123,41 +123,52 @@ def update_all_players_form():
 def get_player_total_form_modifier(player):
     """
     Calculate the total form modifier for a player.
-    
+
     Args:
-        player (Player): The player to calculate form for
-        
+        player (Player or dict): The player to calculate form for, or a dict for Stroh players
+
     Returns:
         float: Total form modifier (sum of all active form modifiers)
     """
+    # Check if this is a Stroh player (dictionary)
+    if isinstance(player, dict):
+        # Stroh players don't have form modifiers
+        return 0.0
+
     total_modifier = 0.0
-    
+
     if player.form_short_remaining_days > 0:
         total_modifier += player.form_short_term
-    
+
     if player.form_medium_remaining_days > 0:
         total_modifier += player.form_medium_term
-    
+
     if player.form_long_remaining_days > 0:
         total_modifier += player.form_long_term
-    
+
     return total_modifier
 
 
 def apply_form_to_strength(base_strength, player):
     """
     Apply form modifiers to a player's base strength.
-    
+
     Args:
         base_strength (int): The player's base strength value
-        player (Player): The player object with form modifiers
-        
+        player (Player or dict): The player object with form modifiers, or a dict for Stroh players
+
     Returns:
         int: Modified strength value (clamped between 1 and 99)
     """
+    # Check if this is a Stroh player (dictionary)
+    if isinstance(player, dict):
+        # Stroh players don't have form modifiers, return base strength
+        return max(1, min(99, int(base_strength)))
+
+    # For real players, apply form modifiers
     form_modifier = get_player_total_form_modifier(player)
     modified_strength = base_strength + form_modifier
-    
+
     # Clamp the result between 1 and 99
     return max(1, min(99, int(round(modified_strength))))
 

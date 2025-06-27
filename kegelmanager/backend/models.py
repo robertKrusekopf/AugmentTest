@@ -829,6 +829,23 @@ class Club(db.Model):
     players = db.relationship('Player', back_populates='club')
     finances = db.relationship('Finance', back_populates='club')
 
+    def get_best_league_level(self):
+        """Get the best (lowest) league level of all teams belonging to this club."""
+        if not self.teams:
+            return None
+
+        # Get all league levels of teams belonging to this club
+        league_levels = []
+        for team in self.teams:
+            if team.league and team.league.level:
+                league_levels.append(team.league.level)
+
+        if not league_levels:
+            return None
+
+        # Return the best (lowest) league level
+        return min(league_levels)
+
     def to_dict(self):
         # Create emblem URL based on verein_id
         emblem_url = None
@@ -1250,6 +1267,7 @@ class Match(db.Model):
     is_played = db.Column(db.Boolean, default=False, index=True)
     match_day = db.Column(db.Integer, index=True)  # Spieltag (1, 2, 3, ...)
     round = db.Column(db.Integer, default=1)  # 1 = Hinrunde, 2 = Rückrunde
+    stroh_performances = db.Column(db.Text)  # JSON string for Stroh player performances
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1292,8 +1310,23 @@ class Match(db.Model):
             'is_played': self.is_played,
             'match_day': self.match_day,
             'round': self.round,
-            'performances': [perf.to_dict() for perf in self.performances] if self.is_played else []
+            'performances': self._get_all_performances()
         }
+
+    def _get_all_performances(self):
+        """Get all performances including Stroh players."""
+        performances = [perf.to_dict() for perf in self.performances] if self.is_played else []
+
+        # Add Stroh performances if they exist
+        if self.stroh_performances:
+            import json
+            try:
+                stroh_perfs = json.loads(self.stroh_performances)
+                performances.extend(stroh_perfs)
+            except (json.JSONDecodeError, TypeError):
+                pass  # Ignore invalid JSON
+
+        return performances
 
 class Season(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -1661,6 +1694,7 @@ class CupMatch(db.Model):
     home_set_points = db.Column(db.Float)
     away_set_points = db.Column(db.Float)
     winner_team_id = db.Column(db.Integer, db.ForeignKey('team.id'))
+    stroh_performances = db.Column(db.Text)  # JSON string for Stroh player performances
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1712,8 +1746,30 @@ class CupMatch(db.Model):
             'away_score': self.away_score,
             'home_set_points': self.home_set_points,
             'away_set_points': self.away_set_points,
-            'winner_team_id': self.winner_team_id
+            'winner_team_id': self.winner_team_id,
+            'performances': self._get_all_cup_performances()
         }
+
+    def _get_all_cup_performances(self):
+        """Get all cup performances including Stroh players."""
+        from models import PlayerCupMatchPerformance
+        performances = []
+
+        # Get regular performances
+        if self.is_played:
+            cup_performances = PlayerCupMatchPerformance.query.filter_by(cup_match_id=self.id).all()
+            performances = [perf.to_dict() for perf in cup_performances]
+
+        # Add Stroh performances if they exist
+        if self.stroh_performances:
+            import json
+            try:
+                stroh_perfs = json.loads(self.stroh_performances)
+                performances.extend(stroh_perfs)
+            except (json.JSONDecodeError, TypeError):
+                pass  # Ignore invalid JSON
+
+        return performances
 
 
 class LeagueHistory(db.Model):

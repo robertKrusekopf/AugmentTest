@@ -299,10 +299,11 @@ const MatchDetail = () => {
                     setPoints: homePerf.set_points || 0,
                     matchPoints: homePerf.match_points || 0,
                     total: homePerf.total_score,
-                    isSubstitute: homePerf.is_substitute || false
+                    isSubstitute: homePerf.is_substitute || false,
+                    isStroh: homePerf.is_stroh || false
                   } : {
                     id: 0,
-                    name: 'Kein Spieler',
+                    name: 'Stroh',  // Changed from 'Kein Spieler' to 'Stroh'
                     lane1: 0,
                     lane2: 0,
                     lane3: 0,
@@ -310,7 +311,8 @@ const MatchDetail = () => {
                     setPoints: 0,
                     matchPoints: 0,
                     total: 0,
-                    isSubstitute: false
+                    isSubstitute: false,
+                    isStroh: true  // Mark as Stroh player
                   };
 
                   const awayPlayer = awayPerf ? {
@@ -323,10 +325,11 @@ const MatchDetail = () => {
                     setPoints: awayPerf.set_points || 0,
                     matchPoints: awayPerf.match_points || 0,
                     total: awayPerf.total_score,
-                    isSubstitute: awayPerf.is_substitute || false
+                    isSubstitute: awayPerf.is_substitute || false,
+                    isStroh: awayPerf.is_stroh || false
                   } : {
                     id: 0,
-                    name: 'Kein Spieler',
+                    name: 'Stroh',  // Changed from 'Kein Spieler' to 'Stroh'
                     lane1: 0,
                     lane2: 0,
                     lane3: 0,
@@ -334,19 +337,23 @@ const MatchDetail = () => {
                     setPoints: 0,
                     matchPoints: 0,
                     total: 0,
-                    isSubstitute: false
+                    isSubstitute: false,
+                    isStroh: true  // Mark as Stroh player
                   };
 
                   return (
                     <tr key={i} className={homePlayer.matchPoints > awayPlayer.matchPoints ? 'home-win' : homePlayer.matchPoints < awayPlayer.matchPoints ? 'away-win' : 'draw'}>
                       <td className="player-name">
-                        {homePlayer.id > 0 ? (
+                        {homePlayer.id > 0 && !homePlayer.isStroh ? (
                           <>
                             <Link to={`/players/${homePlayer.id}`}>{homePlayer.name}</Link>
                             {homePlayer.isSubstitute && <span className="substitute-badge" title="Ersatzspieler"> (E)</span>}
                           </>
                         ) : (
-                          homePlayer.name
+                          <>
+                            <span className={homePlayer.isStroh ? "stroh-player" : ""}>{homePlayer.name}</span>
+                            {homePlayer.isStroh && <span className="stroh-badge" title="Stroh-Spieler"> (S)</span>}
+                          </>
                         )}
                       </td>
                       <td className="lane-score">{homePlayer.lane1}</td>
@@ -364,13 +371,16 @@ const MatchDetail = () => {
                       <td className="lane-score">{awayPlayer.lane2}</td>
                       <td className="lane-score">{awayPlayer.lane1}</td>
                       <td className="player-name">
-                        {awayPlayer.id > 0 ? (
+                        {awayPlayer.id > 0 && !awayPlayer.isStroh ? (
                           <>
                             <Link to={`/players/${awayPlayer.id}`}>{awayPlayer.name}</Link>
                             {awayPlayer.isSubstitute && <span className="substitute-badge" title="Ersatzspieler"> (E)</span>}
                           </>
                         ) : (
-                          awayPlayer.name
+                          <>
+                            <span className={awayPlayer.isStroh ? "stroh-player" : ""}>{awayPlayer.name}</span>
+                            {awayPlayer.isStroh && <span className="stroh-badge" title="Stroh-Spieler"> (S)</span>}
+                          </>
                         )}
                       </td>
                     </tr>

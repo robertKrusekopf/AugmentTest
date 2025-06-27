@@ -54,18 +54,15 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     # Make sure we have at least 6 available players
     available_players = [p for p in club_players if p.is_available_current_matchday]
     if len(available_players) < 6:
-        # Make some unavailable players available again
-        players_needed = 6 - len(available_players)
-        players_to_make_available = random.sample(unavailable_players, min(players_needed, len(unavailable_players)))
-        for player_id in players_to_make_available:
-            for player in club_players:
-                if player.id == player_id:
-                    player.is_available_current_matchday = True
-                    break
-    
-    # Get available players again after making some available
-    available_players = [p for p in club_players if p.is_available_current_matchday]
-    
+        # Instead of making unavailable players available, we'll note that Stroh players will be needed
+        stroh_players_needed = 6 - len(available_players)
+        print(f"Auto lineup: Only {len(available_players)} players available for team {team_id}, will need {stroh_players_needed} Stroh player(s) during simulation")
+
+        # If we have no players at all, we can't create a lineup
+        if len(available_players) == 0:
+            print(f"No players available for team {team_id}, cannot create lineup")
+            return None
+
     # Sort players by a weighted rating of their attributes
     def player_rating(player):
         return (
@@ -75,12 +72,12 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
             player.volle * 0.15 +     # 15% weight on full pins
             player.raeumer * 0.15     # 15% weight on clearing pins
         )
-    
+
     available_players.sort(key=player_rating, reverse=True)
-    
-    # Take the top 6 players
-    selected_players = available_players[:6]
-    
+
+    # Take all available players (may be less than 6)
+    selected_players = available_players
+
     # Create a new lineup
     lineup = UserLineup(
         match_id=match_id,
@@ -89,8 +86,8 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     )
     db.session.add(lineup)
     db.session.flush()  # Get the ID for the new lineup
-    
-    # Add the positions
+
+    # Add the positions for all available players
     for i, player in enumerate(selected_players):
         position = LineupPosition(
             lineup_id=lineup.id,

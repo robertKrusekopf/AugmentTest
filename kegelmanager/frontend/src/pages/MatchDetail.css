@@ -537,3 +537,19 @@
     border-radius: 0;
   }
 }
+
+/* Stroh player styles */
+.stroh-badge {
+  background-color: #dc3545;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-weight: bold;
+  margin-left: 5px;
+}
+
+.stroh-player {
+  color: #dc3545;
+  font-style: italic;
+}
