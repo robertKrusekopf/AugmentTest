@@ -434,7 +434,7 @@ class Team(db.Model):
                 'match_type': 'league',
                 'match_day': match.match_day or 0
             }
-            all_played_matches.append((match.match_day or 0, match_data))
+            all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
         # Get away league matches
         away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True).all()
@@ -451,7 +451,7 @@ class Team(db.Model):
                 'match_type': 'league',
                 'match_day': match.match_day or 0
             }
-            all_played_matches.append((match.match_day or 0, match_data))
+            all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
         # Get home cup matches - use raw SQL to avoid circular dependency
         try:
@@ -499,7 +499,7 @@ class Team(db.Model):
                     'match_type': 'cup',
                     'match_day': cup_match_row.cup_match_day or 0
                 }
-                all_played_matches.append((cup_match_row.cup_match_day or 0, match_data))
+                all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
             # Get away cup matches
             away_cup_matches_raw = db.session.execute(
@@ -544,13 +544,13 @@ class Team(db.Model):
                     'match_type': 'cup',
                     'match_day': cup_match_row.cup_match_day or 0
                 }
-                all_played_matches.append((cup_match_row.cup_match_day or 0, match_data))
+                all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
         except Exception as e:
             print(f"Error loading cup matches for team {self.id}: {e}")
             # Continue without cup matches if there's an error
 
-        # Sort by match_day (newest first for recent matches)
-        all_played_matches.sort(key=lambda x: x[0] or 0, reverse=True)
+        # Sort by actual match date (newest first for recent matches)
+        all_played_matches.sort(key=lambda x: x[0], reverse=True)
         # Get all recent matches but mark the first 5 as visible by default
         recent_matches = []
         for i, match_tuple in enumerate(all_played_matches):
@@ -578,7 +578,7 @@ class Team(db.Model):
                 'match_type': 'league',
                 'match_day': match.match_day or 0
             }
-            all_upcoming_matches.append((match.match_day or 0, match_data))
+            all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
         # Get away league matches
         away_matches = Match.query.filter_by(away_team_id=self.id, is_played=False).all()
@@ -596,7 +596,7 @@ class Team(db.Model):
                 'match_type': 'league',
                 'match_day': match.match_day or 0
             }
-            all_upcoming_matches.append((match.match_day or 0, match_data))
+            all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
         # Get upcoming cup matches - use raw SQL to avoid circular import
         try:
@@ -643,7 +643,7 @@ class Team(db.Model):
                     'match_type': 'cup',
                     'match_day': cup_match_row.cup_match_day or 0
                 }
-                all_upcoming_matches.append((cup_match_row.cup_match_day or 0, match_data))
+                all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
             # Query upcoming away cup matches
             away_cup_matches_raw = db.session.execute(
@@ -688,13 +688,13 @@ class Team(db.Model):
                     'match_type': 'cup',
                     'match_day': cup_match_row.cup_match_day or 0
                 }
-                all_upcoming_matches.append((cup_match_row.cup_match_day or 0, match_data))
+                all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
         except Exception as e:
             print(f"Error loading upcoming cup matches for team {self.id}: {e}")
             # Continue without cup matches if there's an error
 
-        # Sort by match_day (earliest first for upcoming matches)
-        all_upcoming_matches.sort(key=lambda x: x[0] or 999)
+        # Sort by actual match date (earliest first for upcoming matches)
+        all_upcoming_matches.sort(key=lambda x: x[0])
         # Get all upcoming matches but mark the first 5 as visible by default
         upcoming_matches = []
         for i, match_tuple in enumerate(all_upcoming_matches):

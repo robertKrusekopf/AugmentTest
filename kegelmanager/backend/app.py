@@ -15,59 +15,80 @@ load_dotenv()
 # Ensure database directory exists
 db_manager.ensure_db_dir_exists()
 
-# Überprüfe, ob eine Datenbank in der .env-Datei oder in selected_db.txt angegeben ist
-env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-db_config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selected_db.txt")
-selected_db_path = None
+# Database configuration
+def get_configured_database_path():
+    """
+    Get the configured database path from configuration files.
+    Raises an exception if no valid database is configured.
+    """
+    env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    db_config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selected_db.txt")
 
-print("=== DEBUG: Starte Datenbankauswahl ===")
+    print("=== DEBUG: Starte Datenbankauswahl ===")
 
-# Versuche zuerst, die Datenbank aus der separaten Konfigurationsdatei zu laden
-if os.path.exists(db_config_file):
-    print(f"DEBUG: Konfigurationsdatei gefunden: {db_config_file}")
-    try:
-        with open(db_config_file, "r") as f:
-            db_path = f.read().strip()
-            print(f"DEBUG: Datenbankpfad aus Konfigurationsdatei: {db_path}")
-            if os.path.exists(db_path):
-                selected_db_path = db_path
-                print(f"DEBUG: Verwende Datenbank aus Konfigurationsdatei: {selected_db_path}")
-            else:
-                print(f"DEBUG: Datenbank aus Konfigurationsdatei existiert nicht: {db_path}")
-    except Exception as e:
-        print(f"DEBUG: Fehler beim Lesen der Konfigurationsdatei: {str(e)}")
+    # Try configuration file first
+    if os.path.exists(db_config_file):
+        print(f"DEBUG: Konfigurationsdatei gefunden: {db_config_file}")
+        try:
+            with open(db_config_file, "r") as f:
+                db_path = f.read().strip()
+                print(f"DEBUG: Datenbankpfad aus Konfigurationsdatei: {db_path}")
+                if os.path.exists(db_path):
+                    print(f"DEBUG: Verwende Datenbank aus Konfigurationsdatei: {db_path}")
+                    return db_path
+                else:
+                    raise FileNotFoundError(f"Datenbank aus Konfigurationsdatei existiert nicht: {db_path}")
+        except Exception as e:
+            raise RuntimeError(f"Fehler beim Lesen der Konfigurationsdatei: {str(e)}")
 
-# Wenn keine Datenbank aus der Konfigurationsdatei geladen wurde, versuche es mit der .env-Datei
-if not selected_db_path and os.path.exists(env_file):
-    print(f"DEBUG: .env-Datei gefunden: {env_file}")
-    try:
-        with open(env_file, "r") as f:
-            env_content = f.read()
-            print(f"DEBUG: Inhalt der .env-Datei: {env_content}")
-            for line in env_content.splitlines():
-                if line.startswith("DATABASE_PATH="):
-                    db_path = line.strip().split("=", 1)[1]
-                    if os.path.exists(db_path):
-                        selected_db_path = db_path
-                        print(f"DEBUG: Verwende ausgewählte Datenbank aus .env-Datei: {selected_db_path}")
-                        break
-                    else:
-                        print(f"DEBUG: Ausgewählte Datenbank aus .env-Datei existiert nicht: {db_path}")
-    except Exception as e:
-        print(f"DEBUG: Fehler beim Lesen der .env-Datei: {str(e)}")
-else:
-    print("DEBUG: Keine .env-Datei gefunden oder bereits Datenbank aus Konfigurationsdatei geladen")
+    # Try .env file
+    if os.path.exists(env_file):
+        print(f"DEBUG: .env-Datei gefunden: {env_file}")
+        try:
+            with open(env_file, "r") as f:
+                env_content = f.read()
+                print(f"DEBUG: Inhalt der .env-Datei: {env_content}")
+                for line in env_content.splitlines():
+                    if line.startswith("DATABASE_PATH="):
+                        db_path = line.strip().split("=", 1)[1]
+                        if os.path.exists(db_path):
+                            print(f"DEBUG: Verwende ausgewählte Datenbank aus .env-Datei: {db_path}")
+                            return db_path
+                        else:
+                            raise FileNotFoundError(f"Ausgewählte Datenbank aus .env-Datei existiert nicht: {db_path}")
+                # If we reach here, no DATABASE_PATH was found in .env
+                raise ValueError("Keine DATABASE_PATH in .env-Datei gefunden")
+        except Exception as e:
+            raise RuntimeError(f"Fehler beim Lesen der .env-Datei: {str(e)}")
 
-# Default database path
-default_db_path = os.path.join(db_manager.get_database_dir(), "kegelmanager_default.db")
-print(f"DEBUG: Standard-Datenbank-Pfad: {default_db_path}")
+    # No configuration found
+    raise FileNotFoundError(
+        "Keine Datenbank-Konfiguration gefunden. "
+        "Bitte erstellen Sie eine 'selected_db.txt' Datei oder konfigurieren Sie DATABASE_PATH in der .env-Datei."
+    )
 
-# Falls keine Datenbank ausgewählt wurde, verwende die Standard-Datenbank
-if not selected_db_path:
+# Get the configured database path (will raise exception if not properly configured)
+try:
+    selected_db_path = get_configured_database_path()
+    print(f"DEBUG: Verwende konfigurierte Datenbank: {selected_db_path}")
+except Exception as e:
+    print(f"FEHLER: {str(e)}")
+    print("Erstelle Standard-Datenbank...")
+
+    # Erstelle das instance Verzeichnis falls es nicht existiert
+    instance_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instance")
+    os.makedirs(instance_dir, exist_ok=True)
+
+    # Erstelle Standard-Datenbank
+    default_db_path = os.path.join(instance_dir, "kegelmanager_default.db")
+
+    # Schreibe den Pfad in die Konfigurationsdatei
+    db_config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selected_db.txt")
+    with open(db_config_file, "w") as f:
+        f.write(default_db_path)
+
     selected_db_path = default_db_path
-    print(f"DEBUG: Verwende Standard-Datenbank: {selected_db_path}")
-else:
-    print(f"DEBUG: Verwende ausgewählte Datenbank: {selected_db_path}")
+    print(f"DEBUG: Standard-Datenbank erstellt: {selected_db_path}")
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{selected_db_path}'
@@ -1730,10 +1751,12 @@ def simulate_match():
     if not current_season:
         return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
 
-    # Find the current match day
-    from simulation import find_next_match_day
-    current_match_day = find_next_match_day(current_season.id)
-    if not current_match_day:
+    # Find the current match day using date-based logic
+    from season_calendar import get_next_match_date
+    next_calendar_day = get_next_match_date(current_season.id)
+    if next_calendar_day:
+        current_match_day = next_calendar_day.match_day_number
+    else:
         current_match_day = 1  # Default to match day 1 for individual simulations
 
     # Create cache manager

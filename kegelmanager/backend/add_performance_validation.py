@@ -17,10 +17,16 @@ def get_database_path():
         with open(env_file, "r") as f:
             for line in f:
                 if line.startswith("DATABASE_PATH="):
-                    return line.split("=", 1)[1].strip()
-    
-    # Fallback to default path
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "instance", "kegelmanager_default.db")
+                    db_path = line.split("=", 1)[1].strip()
+                    if os.path.exists(db_path):
+                        return db_path
+                    else:
+                        raise FileNotFoundError(f"Datenbank aus .env-Datei existiert nicht: {db_path}")
+
+    raise FileNotFoundError(
+        "Keine DATABASE_PATH in .env-Datei gefunden. "
+        "Bitte konfigurieren Sie DATABASE_PATH in der .env-Datei."
+    )
 
 def backup_database(db_path):
     """Create a backup of the database before making changes."""

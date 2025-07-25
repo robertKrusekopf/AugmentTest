@@ -57,10 +57,8 @@ def list_databases():
 
             status = "OK"
         except Exception as e:
-            current_season = "Fehler"
-            club_count = 0
-            player_count = 0
-            status = f"Fehler: {str(e)}"
+            # Don't hide database errors with fallback values
+            raise RuntimeError(f"Fehler beim Lesen der Datenbank {db_file}: {str(e)}")
 
         databases.append({
             "name": db_name,
