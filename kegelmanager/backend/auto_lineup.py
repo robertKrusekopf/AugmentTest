@@ -4,6 +4,122 @@ Module for automatically creating lineups for AI-controlled teams.
 from models import db, Player, Team, UserLineup, LineupPosition, Match
 import random
 
+def randomize_player_positions(available_players):
+    """
+    Randomly assign positions to the 6 selected players.
+
+    Args:
+        available_players: List of available players
+
+    Returns:
+        dict: Dictionary mapping position numbers (1-6) to players
+    """
+    # If we have 6 or fewer players, use all of them
+    if len(available_players) <= 6:
+        players_to_position = available_players[:]
+    else:
+        # If we have more than 6 players, select the best 6 based on overall rating
+        from simulation import calculate_player_rating
+        available_players.sort(key=calculate_player_rating, reverse=True)
+        players_to_position = available_players[:6]
+
+    # Filter out None values (real players only)
+    real_players = [p for p in players_to_position if p is not None]
+
+    if len(real_players) == 0:
+        # No real players available
+        return {i: None for i in range(1, 7)}
+
+    # Randomly shuffle the real players
+    random.shuffle(real_players)
+
+    # Create position mapping
+    positions = {}
+    for i in range(6):
+        if i < len(real_players):
+            positions[i + 1] = real_players[i]
+        else:
+            positions[i + 1] = None
+
+    return positions
+
+def optimize_player_positions(available_players):
+    """
+    Optimize player positions based on their Start/Mitte/Schluss attributes.
+
+    Args:
+        available_players: List of available players
+
+    Returns:
+        dict: Dictionary mapping position numbers (1-6) to players
+    """
+    # If we have 6 or fewer players, use all of them
+    if len(available_players) <= 6:
+        players_to_position = available_players
+    else:
+        # If we have more than 6 players, select the best 6 based on overall rating
+        from simulation import calculate_player_rating
+        available_players.sort(key=calculate_player_rating, reverse=True)
+        players_to_position = available_players[:6]
+
+    # If we have fewer than 6 players, fill remaining positions with None
+    # (Stroh players will be handled during simulation)
+    while len(players_to_position) < 6:
+        players_to_position.append(None)
+
+    # Use the centralized position scoring function
+    from simulation import calculate_position_score as central_position_score
+
+    def calculate_position_score(player, position):
+        """Calculate how well a player fits a specific position (1-6)."""
+        if player is None:
+            return 0
+
+        # Use the centralized function for consistency
+        return central_position_score(player, position)
+
+    # Find the optimal assignment using a greedy approach
+    # For small teams (6 players), we can afford to check all permutations
+    # For efficiency, we'll use a greedy approach that should work well
+
+    real_players = [p for p in players_to_position if p is not None]
+
+    if len(real_players) == 0:
+        # No real players available
+        return {i: None for i in range(1, 7)}
+
+    # Calculate scores for all player-position combinations
+    position_scores = {}
+    for player in real_players:
+        for position in range(1, 7):
+            position_scores[(player.id, position)] = calculate_position_score(player, position)
+
+    # Use greedy assignment: assign each position to the best available player
+    assigned_players = set()
+    optimal_positions = {}
+
+    # Sort positions by importance: Start (1,2), Mitte (3,4), Schluss (5,6)
+    position_order = [1, 2, 3, 4, 5, 6]
+
+    for position in position_order:
+        best_player = None
+        best_score = -1
+
+        for player in real_players:
+            if player.id not in assigned_players:
+                score = position_scores[(player.id, position)]
+                if score > best_score:
+                    best_score = score
+                    best_player = player
+
+        if best_player:
+            optimal_positions[position] = best_player
+            assigned_players.add(best_player.id)
+        else:
+            optimal_positions[position] = None
+
+    return optimal_positions
+
 def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     """
     Create an automatic lineup for a team.
@@ -39,22 +155,14 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
         print(f"Not enough players found for club ID {team.club_id}")
         return None
     
-    # Reset player availability flags for this club
-    for player in club_players:
-        player.is_available_current_matchday = True
-    
-    # Determine player availability (16.7% chance of being unavailable)
-    unavailable_players = []
-    for player in club_players:
-        # 16.7% chance of being unavailable
-        if random.random() < 0.167:
-            player.is_available_current_matchday = False
-            unavailable_players.append(player.id)
-    
-    # Make sure we have at least 6 available players
+    # Use centralized player availability determination
+    from performance_optimizations import determine_player_availability
+    determine_player_availability(team.club_id, 1)  # 1 team playing
+
+    # Get available players after availability determination
     available_players = [p for p in club_players if p.is_available_current_matchday]
     if len(available_players) < 6:
-        # Instead of making unavailable players available, we'll note that Stroh players will be needed
+        # Note that Stroh players will be needed
         stroh_players_needed = 6 - len(available_players)
         print(f"Auto lineup: Only {len(available_players)} players available for team {team_id}, will need {stroh_players_needed} Stroh player(s) during simulation")
 
@@ -63,20 +171,8 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
             print(f"No players available for team {team_id}, cannot create lineup")
             return None
 
-    # Sort players by a weighted rating of their attributes
-    def player_rating(player):
-        return (
-            player.strength * 0.5 +  # 50% weight on strength
-            player.konstanz * 0.1 +   # 10% weight on consistency
-            player.drucksicherheit * 0.1 +  # 10% weight on pressure resistance
-            player.volle * 0.15 +     # 15% weight on full pins
-            player.raeumer * 0.15     # 15% weight on clearing pins
-        )
-
-    available_players.sort(key=player_rating, reverse=True)
-
-    # Take all available players (may be less than 6)
-    selected_players = available_players
+    # Randomly assign positions to the selected players
+    random_positions = randomize_player_positions(available_players)
 
     # Create a new lineup
     lineup = UserLineup(
@@ -87,14 +183,15 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     db.session.add(lineup)
     db.session.flush()  # Get the ID for the new lineup
 
-    # Add the positions for all available players
-    for i, player in enumerate(selected_players):
-        position = LineupPosition(
-            lineup_id=lineup.id,
-            player_id=player.id,
-            position_number=i + 1
-        )
-        db.session.add(position)
+    # Add the positions based on random positioning
+    for position_number, player in random_positions.items():
+        if player is not None:  # Only add positions for real players
+            position = LineupPosition(
+                lineup_id=lineup.id,
+                player_id=player.id,
+                position_number=position_number
+            )
+            db.session.add(position)
     
     # Save changes to database
     db.session.commit()

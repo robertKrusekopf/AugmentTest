@@ -3,6 +3,47 @@ from datetime import datetime, timedelta, timezone
 from models import db, Match, Player, Team, League, Season
 from form_system import apply_form_to_strength, get_player_total_form_modifier
 
+# Central player rating formula for SQL queries
+PLAYER_RATING_SQL = "(strength * 0.5 + konstanz * 0.1 + drucksicherheit * 0.1 + volle * 0.15 + raeumer * 0.15)"
+
+
+class SimplePlayer:
+    """Simple player object created from dictionary data for simulation compatibility."""
+    def __init__(self, data):
+        if isinstance(data, dict):
+            for key, value in data.items():
+                setattr(self, key, value)
+        else:
+            # If data is not a dictionary, it might already be a player object
+            # Copy all attributes from the source object
+            if hasattr(data, '__dict__'):
+                for key, value in data.__dict__.items():
+                    setattr(self, key, value)
+            else:
+                # Fallback: create a minimal player object
+                print(f"Warning: SimplePlayer received unexpected data type: {type(data)}")
+                print(f"Data content: {data}")
+                self.id = getattr(data, 'id', 'unknown')
+                self.name = getattr(data, 'name', 'Unknown Player')
+                self.strength = getattr(data, 'strength', 50)
+                # Set default values for all expected attributes
+                self.konstanz = getattr(data, 'konstanz', 50)
+                self.drucksicherheit = getattr(data, 'drucksicherheit', 50)
+                self.volle = getattr(data, 'volle', 50)
+                self.raeumer = getattr(data, 'raeumer', 50)
+                self.ausdauer = getattr(data, 'ausdauer', 50)
+                self.sicherheit = getattr(data, 'sicherheit', 50)
+                self.auswaerts = getattr(data, 'auswaerts', 50)
+                self.start = getattr(data, 'start', 50)
+                self.mitte = getattr(data, 'mitte', 50)
+                self.schluss = getattr(data, 'schluss', 50)
+                self.form_short_term = getattr(data, 'form_short_term', 0.0)
+                self.form_medium_term = getattr(data, 'form_medium_term', 0.0)
+                self.form_long_term = getattr(data, 'form_long_term', 0.0)
+                self.form_short_remaining_days = getattr(data, 'form_short_remaining_days', 0)
+                self.form_medium_remaining_days = getattr(data, 'form_medium_remaining_days', 0)
+                self.form_long_remaining_days = getattr(data, 'form_long_remaining_days', 0)
+
 def calculate_realistic_fehler(total_score, sicherheit_attribute):
     """
     Calculate realistic error count (Fehlwürfe) based on total score and safety attribute.
@@ -92,13 +133,113 @@ def create_stroh_player(weakest_player_strength):
         'mitte': max(1, int(stroh_strength * 0.97)),  # 3% lower middle performance
         'schluss': max(1, int(stroh_strength * 0.97)),  # 3% lower end performance
         'ausdauer': max(1, int(stroh_strength * 0.95)),  # 5% lower stamina
-        'short_term_form': 0,  # Neutral form
-        'medium_term_form': 0,  # Neutral form
-        'long_term_form': 0,  # Neutral form
+        'form_short_term': 0,  # Neutral form
+        'form_medium_term': 0,  # Neutral form
+        'form_long_term': 0,  # Neutral form
+        'form_short_remaining_days': 0,  # No active form
+        'form_medium_remaining_days': 0,  # No active form
+        'form_long_remaining_days': 0,  # No active form
         'is_stroh': True  # Flag to identify this as a Stroh player
     }
 
     return stroh_player
+
+
+def fill_with_stroh_players(players, team_name):
+    """Fill a team with Stroh players if there are fewer than 6 players.
+
+    Args:
+        players: List of players (can be Player objects or dicts)
+        team_name: Name of the team for logging purposes
+
+    Returns:
+        List of exactly 6 players (mix of real players and Stroh players)
+    """
+    if len(players) >= 6:
+        return players[:6]  # Take only the first 6 players
+
+    if len(players) == 0:
+        # If no players at all, create 6 Stroh players with default strength
+        print(f"No players available for {team_name}, using 6 Stroh players")
+        return [create_stroh_player(30) for _ in range(6)]
+
+    # Find the weakest real player to base Stroh strength on
+    real_players = [p for p in players if not (isinstance(p, dict) and p.get('is_stroh', False))]
+    if real_players:
+        weakest_strength = min(p.strength if hasattr(p, 'strength') else p['strength'] for p in real_players)
+    else:
+        weakest_strength = 30  # Default if no real players
+
+    # Add Stroh players to fill the team
+    filled_players = players[:]
+    stroh_needed = 6 - len(players)
+    print(f"Adding {stroh_needed} Stroh player(s) to {team_name} (weakest real player: {weakest_strength})")
+
+    for _ in range(stroh_needed):
+        filled_players.append(create_stroh_player(weakest_strength))
+
+    return filled_players
+
+
+def calculate_player_rating(player, include_youth_bonus=False):
+    """Calculate a weighted rating for a player based on their attributes.
+
+    This is the standard formula used throughout the application for player ranking.
+
+    Args:
+        player: Player object or dict with attributes
+        include_youth_bonus: Whether to include youth bonus for players under 25
+
+    Returns:
+        float: Weighted rating of the player
+    """
+    # Get attributes (works for both Player objects and dicts)
+    strength = get_player_attribute(player, 'strength')
+    konstanz = get_player_attribute(player, 'konstanz')
+    drucksicherheit = get_player_attribute(player, 'drucksicherheit')
+    volle = get_player_attribute(player, 'volle')
+    raeumer = get_player_attribute(player, 'raeumer')
+
+    # Standard rating formula
+    base_rating = (
+        strength * 0.5 +           # 50% weight on strength
+        konstanz * 0.1 +           # 10% weight on consistency
+        drucksicherheit * 0.1 +    # 10% weight on pressure resistance
+        volle * 0.15 +             # 15% weight on full pins
+        raeumer * 0.15             # 15% weight on clearing pins
+    )
+
+    # Optional youth bonus for redistribution
+    if include_youth_bonus and hasattr(player, 'age') and player.age < 25:
+        youth_bonus = 25 - player.age
+        return base_rating + youth_bonus
+
+    return base_rating
+
+
+def calculate_position_score(player, position):
+    """Calculate player score for a specific position including position bonus.
+
+    Args:
+        player: Player object or dict with attributes
+        position: Position number (1-6, where 1-2=Start, 3-4=Mitte, 5-6=Schluss)
+
+    Returns:
+        float: Player score including position-specific bonus
+    """
+    # Use standard rating as base
+    base_score = calculate_player_rating(player)
+
+    # Add position-specific bonus based on Start/Mitte/Schluss attributes
+    if position in [1, 2]:  # Start positions
+        position_bonus = get_player_attribute(player, 'start') * 0.3
+    elif position in [3, 4]:  # Mitte positions
+        position_bonus = get_player_attribute(player, 'mitte') * 0.3
+    else:  # Schluss positions (5, 6)
+        position_bonus = get_player_attribute(player, 'schluss') * 0.3
+
+    return base_score + position_bonus
+
 
 def get_player_attribute(player, attribute_name):
     """Get an attribute from a player object or dictionary (for Stroh players).
@@ -115,732 +256,10 @@ def get_player_attribute(player, attribute_name):
     else:
         return getattr(player, attribute_name, 0)
 
-def simulate_match(home_team, away_team, match=None, home_team_players=None, away_team_players=None):
-    """Simulate a bowling match between two teams and return the result.
 
-    In bowling, 6 players from each team play 4 lanes with 30 throws each.
-    Players compete directly against each other (1st vs 1st, 2nd vs 2nd, etc.).
-    For each lane, the player with more pins gets 1 set point (SP).
-    If both players score the same on a lane, each gets 0.5 SP.
-    The player with more SP gets 1 match point (MP).
-    If both players have 2 SP each, the player with more total pins gets the MP.
-    The team with more total pins gets 2 additional MP.
-    The team with more MP wins the match.
 
-    Args:
-        home_team: The home team
-        away_team: The away team
-        match: The match object (optional)
-        home_team_players: Pre-assigned players for the home team (optional)
-        away_team_players: Pre-assigned players for the away team (optional)
-    """
-    from models import PlayerMatchPerformance, db, Player, Team, UserLineup
-    import random
 
-    # Check for user-selected lineups if a match is provided
-    if match:
-        # Check for home team lineup
-        home_lineup = UserLineup.query.filter_by(
-            match_id=match.id,
-            team_id=home_team.id,
-            is_home_team=True
-        ).first()
 
-        # Check for away team lineup
-        away_lineup = UserLineup.query.filter_by(
-            match_id=match.id,
-            team_id=away_team.id,
-            is_home_team=False
-        ).first()
-
-        # If user lineups exist, use them (even if incomplete)
-        if home_lineup and len(home_lineup.positions) > 0:
-            # Sort positions by position number
-            sorted_positions = sorted(home_lineup.positions, key=lambda p: p.position_number)
-            # Get the players in the correct order
-            home_team_players = [Player.query.get(pos.player_id) for pos in sorted_positions]
-            print(f"Using user-selected lineup for home team {home_team.name} ({len(home_team_players)} players)")
-
-        if away_lineup and len(away_lineup.positions) > 0:
-            # Sort positions by position number
-            sorted_positions = sorted(away_lineup.positions, key=lambda p: p.position_number)
-            # Get the players in the correct order
-            away_team_players = [Player.query.get(pos.player_id) for pos in sorted_positions]
-            print(f"Using user-selected lineup for away team {away_team.name} ({len(away_team_players)} players)")
-
-    # If pre-assigned players are provided, use them
-    if home_team_players is not None and away_team_players is not None:
-        home_players = home_team_players
-        away_players = away_team_players
-
-    else:
-        # If no pre-assigned players, use the old method to assign players
-        print(f"No pre-assigned players for match {home_team.name} vs {away_team.name}, using old method")
-
-        # Get all teams from the same club as the home team
-        home_club_teams = Team.query.filter_by(club_id=home_team.club_id).all()
-        # Sort teams by league level (lower level number = higher league)
-        home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
-
-        # Get all teams from the same club as the away team
-        away_club_teams = Team.query.filter_by(club_id=away_team.club_id).all()
-        # Sort teams by league level (lower level number = higher league)
-        away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
-
-        # Get all available players from the home club
-        home_club_players = Player.query.filter_by(club_id=home_team.club_id, is_available_current_matchday=True).all()
-        # Get all available players from the away club
-        away_club_players = Player.query.filter_by(club_id=away_team.club_id, is_available_current_matchday=True).all()
-
-        # Sort available players by a combination of attributes (best players first)
-        # We'll use a weighted average of strength and other key attributes
-        def player_rating(player):
-            # Calculate a weighted rating based on key attributes including form
-            # Apply form modifiers to strength for more accurate rating
-            effective_strength = apply_form_to_strength(player.strength, player)
-            return (
-                effective_strength * 0.5 +  # 50% weight on effective strength (including form)
-                player.konstanz * 0.1 +   # 10% weight on consistency
-                player.drucksicherheit * 0.1 +  # 10% weight on pressure resistance
-                player.volle * 0.15 +     # 15% weight on full pins
-                player.raeumer * 0.15     # 15% weight on clearing pins
-            )
-
-        # Sort players by their calculated rating
-        home_club_players.sort(key=player_rating, reverse=True)
-        away_club_players.sort(key=player_rating, reverse=True)
-
-        # Assign players to teams based on team level (best players to first team, etc.)
-        home_team_players = {}
-        away_team_players = {}
-
-        # Initialize player lists for each team
-        for team in home_club_teams:
-            home_team_players[team.id] = []
-
-        for team in away_club_teams:
-            away_team_players[team.id] = []
-
-        # Get the current match day if a match is provided
-        # Handle both regular matches and cup matches
-        if match:
-            if hasattr(match, 'match_day'):
-                current_match_day = match.match_day
-            elif hasattr(match, 'cup_match_day'):
-                current_match_day = match.cup_match_day
-            else:
-                current_match_day = None
-        else:
-            current_match_day = None
-
-        # Note: Player flags are already reset by bulk_reset_player_flags() in simulate_match_day()
-        # No need to reset them again here
-
-        # Filter out players who have already played on this match day
-        # Check both has_played_current_matchday and last_played_matchday to prevent players from playing for multiple teams
-        if current_match_day:
-            home_club_players = [p for p in home_club_players if not p.has_played_current_matchday and (p.last_played_matchday is None or p.last_played_matchday != current_match_day)]
-            away_club_players = [p for p in away_club_players if not p.has_played_current_matchday and (p.last_played_matchday is None or p.last_played_matchday != current_match_day)]
-        else:
-            # If no current_match_day, just check has_played_current_matchday
-            home_club_players = [p for p in home_club_players if not p.has_played_current_matchday]
-            away_club_players = [p for p in away_club_players if not p.has_played_current_matchday]
-
-        # Make sure teams are sorted by league level (lower level number = higher league)
-        home_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
-        away_club_teams.sort(key=lambda t: t.league.level if t.league else 999)
-
-        # Assign players to home teams (best teams first)
-        used_home_players = set()  # Track which players have been assigned
-        for team in home_club_teams:
-            home_team_players[team.id] = []
-            # For each team, assign up to 6 players who haven't been used yet
-            needed_players = 6 - len(home_team_players[team.id])
-            available_players = [p for p in home_club_players if p.id not in used_home_players]
-
-            # Take the top N available players for this team
-            for player in available_players[:needed_players]:
-                home_team_players[team.id].append(player)
-                used_home_players.add(player.id)
-
-        # Assign players to away teams (best teams first)
-        used_away_players = set()  # Track which players have been assigned
-        for team in away_club_teams:
-            away_team_players[team.id] = []
-            # For each team, assign up to 6 players who haven't been used yet
-            needed_players = 6 - len(away_team_players[team.id])
-            available_players = [p for p in away_club_players if p.id not in used_away_players]
-
-            # Take the top N available players for this team
-            for player in available_players[:needed_players]:
-                away_team_players[team.id].append(player)
-                used_away_players.add(player.id)
-
-        # Get the players for the current match
-        home_players = home_team_players.get(home_team.id, [])
-        away_players = away_team_players.get(away_team.id, [])
-
-    # Fill missing players with "Stroh" players if needed
-    def fill_with_stroh_players(players, team_name):
-        """Fill a team with Stroh players if there are fewer than 6 players."""
-        if len(players) >= 6:
-            return players[:6]  # Take only the first 6 players
-
-        if len(players) == 0:
-            # If no players at all, create 6 Stroh players with default strength
-            print(f"No players available for {team_name}, using 6 Stroh players")
-            return [create_stroh_player(30) for _ in range(6)]
-
-        # Find the weakest real player to base Stroh strength on
-        real_players = [p for p in players if not (isinstance(p, dict) and p.get('is_stroh', False))]
-        if real_players:
-            weakest_strength = min(p.strength if hasattr(p, 'strength') else p['strength'] for p in real_players)
-        else:
-            weakest_strength = 30  # Default if no real players
-
-        # Add Stroh players to fill the team
-        filled_players = players[:]
-        stroh_needed = 6 - len(players)
-        stroh_strength = max(1, int(weakest_strength * 0.9))  # 10% weaker
-        print(f"Adding {stroh_needed} Stroh player(s) to {team_name} (weakest real player: {weakest_strength}, Stroh strength: {stroh_strength})")
-
-        for _ in range(stroh_needed):
-            filled_players.append(create_stroh_player(weakest_strength))
-
-        return filled_players
-
-    # Fill both teams with Stroh players if needed
-    home_players = fill_with_stroh_players(home_players, home_team.name)
-    away_players = fill_with_stroh_players(away_players, away_team.name)
-
-    # Determine which players are substitutes (not originally in the team)
-    # Only check for real players, not Stroh players
-    home_substitutes = [p for p in home_players if not (isinstance(p, dict) and p.get('is_stroh', False)) and home_team not in p.teams]
-    away_substitutes = [p for p in away_players if not (isinstance(p, dict) and p.get('is_stroh', False)) and away_team not in p.teams]
-
-    # Make sure we have exactly 6 players each (should be guaranteed now)
-    if len(home_players) != 6 or len(away_players) != 6:
-        print(f"Warning: Team size mismatch - Home: {len(home_players)}, Away: {len(away_players)}")
-        # Fallback to default scores
-        home_score = 3000 if home_players else 0
-        away_score = 3000 if away_players else 0
-        home_match_points = 8 if home_score > away_score else (4 if home_score == away_score else 0)
-        away_match_points = 8 if away_score > home_score else (4 if home_score == away_score else 0)
-
-        return {
-            'home_team': home_team.name,
-            'away_team': away_team.name,
-            'home_score': home_score,
-            'away_score': away_score,
-            'home_match_points': home_match_points,
-            'away_match_points': away_match_points,
-            'winner': home_team.name if home_match_points > away_match_points else (away_team.name if away_match_points > home_match_points else 'Draw')
-        }
-
-
-    # Add home advantage (fixed 5%)
-    home_advantage = 1.05  # 5% advantage for home team
-
-    # Get the home club's lane quality (affects both teams)
-    home_club = home_team.club
-    lane_quality = home_club.lane_quality if home_club else 1.0  # Default to neutral if no club found
-
-    # Initialize scores and match points
-    home_score = 0
-    away_score = 0
-    home_match_points = 0
-    away_match_points = 0
-
-    # Player performances to save
-    performances = []
-    # Store Stroh player performances separately (not for database)
-    stroh_performances = []
-
-    # Simulate each player's performance
-    for i, (home_player, away_player) in enumerate(zip(home_players, away_players)):
-        # Simulate 4 lanes for home player
-        home_player_lanes = []
-        home_player_total = 0
-        home_player_volle = 0
-        home_player_raeumer = 0
-        home_player_fehler = 0
-
-        for lane in range(4):
-            # Apply form modifiers to player strength
-            player_strength = get_player_attribute(home_player, 'strength')
-            effective_strength = apply_form_to_strength(player_strength, home_player)
-
-            # Calculate score based solely on effective player strength (including form) and attributes
-            # Base score range: 120-180 for strength 0-99
-            mean_score = 120 + (effective_strength * 0.6)
-
-            # Apply home advantage
-            mean_score *= home_advantage
-
-            # Apply lane quality (affects all players on this lane)
-            mean_score *= lane_quality
-
-            # Base standard deviation
-            player_konstanz = get_player_attribute(home_player, 'konstanz')
-            std_dev = 12 - (player_konstanz / 20)  # 12 to 7 based on konstanz
-
-            # Apply position-based attribute factor based on player's position in lineup
-            # Position i: 0-1 = Start, 2-3 = Mitte, 4-5 = Schluss
-            if i in [0, 1]:  # Start pair (positions 1-2)
-                player_start = get_player_attribute(home_player, 'start')
-                position_factor = 0.8 + (player_start / 500)  # 0.8 to 1.0 range
-            elif i in [2, 3]:  # Middle pair (positions 3-4)
-                player_mitte = get_player_attribute(home_player, 'mitte')
-                position_factor = 0.8 + (player_mitte / 500)  # 0.8 to 1.0 range
-            else:  # Schluss pair (positions 5-6)
-                player_schluss = get_player_attribute(home_player, 'schluss')
-                position_factor = 0.8 + (player_schluss / 500)  # 0.8 to 1.0 range
-
-            # Apply position factor to all lanes
-            mean_score *= position_factor
-
-            # Apply drucksicherheit only on the last lane (lane 3)
-            if lane == 3:  # Last lane - apply drucksicherheit factor
-                # Players with high drucksicherheit perform better on the last lane
-                player_drucksicherheit = get_player_attribute(home_player, 'drucksicherheit')
-                pressure_factor = 0.9 + (player_drucksicherheit / 500)  # 0.9 to 1.1 range
-                mean_score *= pressure_factor
-
-            # Apply stamina factor (decreases with each lane)
-            player_ausdauer = get_player_attribute(home_player, 'ausdauer')
-            ausdauer_factor = max(0.95, player_ausdauer / 100 - (lane * 0.01))  # Decreases with each lane
-            mean_score *= ausdauer_factor
-
-            # Generate score from normal distribution and ensure it's within reasonable bounds
-            lane_score = int(np.random.normal(mean_score, std_dev))
-            # Ensure score is at least 80 and at most 200
-            lane_score = max(80, min(200, lane_score))
-
-            # Berechne Volle und Räumer direkt basierend auf den Spielerattributen
-            # Spieler mit höherem 'volle' Attribut erzielen mehr Punkte auf die vollen Kegel
-
-            # Berechne den Anteil der Volle-Punkte basierend auf den Attributen
-            # Spieler mit höherem volle-Attribut erzielen mehr Punkte auf die vollen Kegel
-            # Spieler mit höherem raeumer-Attribut erzielen mehr Punkte auf die Räumer
-
-            # Berechne den Volle-Prozentsatz direkt aus den Attributen
-            # Formel: 0.5 + (volle / (volle + raeumer)) * 0.3
-            # Dies ergibt einen Bereich von ca. 0.5 bis 0.8 je nach Attributverhältnis
-            player_volle = get_player_attribute(home_player, 'volle')
-            player_raeumer = get_player_attribute(home_player, 'raeumer')
-            volle_percentage = 0.5 + (player_volle / max(1, player_volle + player_raeumer)) * 0.3
-
-            # Füge etwas Zufälligkeit hinzu (±2%)
-            volle_percentage += np.random.normal(0, 0.02)
-
-            # Begrenze den Prozentsatz auf sinnvolle Werte (0.55-0.75)
-            volle_percentage = max(0.55, min(0.75, volle_percentage))
-
-            lane_volle = int(lane_score * volle_percentage)
-            lane_raeumer = lane_score - lane_volle  # Rest auf Räumer
-
-            home_player_lanes.append(lane_score)
-            home_player_total += lane_score
-            home_player_volle += lane_volle
-            home_player_raeumer += lane_raeumer
-            # Note: fehler will be calculated after all lanes are completed
-
-        # Calculate realistic fehler based on total score and sicherheit attribute
-        player_sicherheit = get_player_attribute(home_player, 'sicherheit')
-        home_player_fehler = calculate_realistic_fehler(home_player_total, player_sicherheit)
-
-        # Simulate 4 lanes for away player
-        away_player_lanes = []
-        away_player_total = 0
-        away_player_volle = 0
-        away_player_raeumer = 0
-        away_player_fehler = 0
-
-        for lane in range(4):
-            # Apply form modifiers to player strength
-            player_strength = get_player_attribute(away_player, 'strength')
-            effective_strength = apply_form_to_strength(player_strength, away_player)
-
-            # Calculate score based solely on effective player strength (including form) and attributes
-            # Base score range: 120-180 for strength 0-99
-            mean_score = 120 + (effective_strength * 0.6)
-
-            # Apply lane quality (affects all players on this lane)
-            mean_score *= lane_quality
-
-            # Base standard deviation
-            player_konstanz = get_player_attribute(away_player, 'konstanz')
-            std_dev = 12 - (player_konstanz / 20)  # 12 to 7 based on konstanz
-
-            # Apply away factor (players with high 'auswaerts' attribute perform better away)
-            # For away games, apply the auswaerts attribute (0-99)
-            # A player with auswaerts 50 will have no adjustment
-            # A player with auswaerts 99 will get +2% boost
-            # A player with auswaerts 0 will get -2% penalty
-            player_auswaerts = get_player_attribute(away_player, 'auswaerts')
-            away_factor = 0.98 + (player_auswaerts / 2500)  # 0.98 to 1.02 range
-            mean_score *= away_factor
-
-            # Apply position-based attribute factor based on player's position in lineup
-            # Position i: 0-1 = Start, 2-3 = Mitte, 4-5 = Schluss
-            if i in [0, 1]:  # Start pair (positions 1-2)
-                player_start = get_player_attribute(away_player, 'start')
-                position_factor = 0.8 + (player_start / 500)  # 0.8 to 1.0 range
-            elif i in [2, 3]:  # Middle pair (positions 3-4)
-                player_mitte = get_player_attribute(away_player, 'mitte')
-                position_factor = 0.8 + (player_mitte / 500)  # 0.8 to 1.0 range
-            else:  # Schluss pair (positions 5-6)
-                player_schluss = get_player_attribute(away_player, 'schluss')
-                position_factor = 0.8 + (player_schluss / 500)  # 0.8 to 1.0 range
-
-            # Apply position factor to all lanes
-            mean_score *= position_factor
-
-            # Apply drucksicherheit only on the last lane (lane 3)
-            if lane == 3:  # Last lane - apply drucksicherheit factor
-                # Players with high drucksicherheit perform better on the last lane
-                player_drucksicherheit = get_player_attribute(away_player, 'drucksicherheit')
-                pressure_factor = 0.9 + (player_drucksicherheit / 500)  # 0.9 to 1.1 range
-                mean_score *= pressure_factor
-
-            # Apply stamina factor (decreases with each lane)
-            player_ausdauer = get_player_attribute(away_player, 'ausdauer')
-            ausdauer_factor = max(0.95, player_ausdauer / 100 - (lane * 0.01))  # Decreases with each lane
-            mean_score *= ausdauer_factor
-
-            # Generate score from normal distribution and ensure it's within reasonable bounds
-            lane_score = int(np.random.normal(mean_score, std_dev))
-            # Ensure score is at least 80 and at most 200
-            lane_score = max(80, min(200, lane_score))
-
-            # Berechne Volle und Räumer direkt basierend auf den Spielerattributen
-            # Spieler mit höherem 'volle' Attribut erzielen mehr Punkte auf die vollen Kegel
-
-            # Berechne den Anteil der Volle-Punkte basierend auf den Attributen
-            # Spieler mit höherem volle-Attribut erzielen mehr Punkte auf die vollen Kegel
-            # Spieler mit höherem raeumer-Attribut erzielen mehr Punkte auf die Räumer
-
-            # Berechne den Volle-Prozentsatz direkt aus den Attributen
-            # Formel: 0.5 + (volle / (volle + raeumer)) * 0.3
-            # Dies ergibt einen Bereich von ca. 0.5 bis 0.8 je nach Attributverhältnis
-            player_volle = get_player_attribute(away_player, 'volle')
-            player_raeumer = get_player_attribute(away_player, 'raeumer')
-            volle_percentage = 0.5 + (player_volle / max(1, player_volle + player_raeumer)) * 0.3
-
-            # Füge etwas Zufälligkeit hinzu (±2%)
-            volle_percentage += np.random.normal(0, 0.02)
-
-            # Begrenze den Prozentsatz auf sinnvolle Werte (0.55-0.75)
-            volle_percentage = max(0.55, min(0.75, volle_percentage))
-
-            lane_volle = int(lane_score * volle_percentage)
-            lane_raeumer = lane_score - lane_volle  # Rest auf Räumer
-
-            away_player_lanes.append(lane_score)
-            away_player_total += lane_score
-            away_player_volle += lane_volle
-            away_player_raeumer += lane_raeumer
-            # Note: fehler will be calculated after all lanes are completed
-
-        # Calculate realistic fehler based on total score and sicherheit attribute
-        player_sicherheit = get_player_attribute(away_player, 'sicherheit')
-        away_player_fehler = calculate_realistic_fehler(away_player_total, player_sicherheit)
-
-        # Add to team scores
-        home_score += home_player_total
-        away_score += away_player_total
-
-        # Calculate set points (SP) for each lane
-        home_player_set_points = 0
-        away_player_set_points = 0
-
-        for lane in range(4):
-            if home_player_lanes[lane] > away_player_lanes[lane]:
-                home_player_set_points += 1
-            elif home_player_lanes[lane] < away_player_lanes[lane]:
-                away_player_set_points += 1
-            else:
-                # Tie on this lane, both get 0.5 SP
-                home_player_set_points += 0.5
-                away_player_set_points += 0.5
-
-        # Calculate match points (MP) for this player duel
-        home_player_match_points = 0
-        away_player_match_points = 0
-
-        if home_player_set_points > away_player_set_points:
-            home_player_match_points = 1
-        elif home_player_set_points < away_player_set_points:
-            away_player_match_points = 1
-        else:
-            # Tie on set points, player with more total pins gets the MP
-            if home_player_total > away_player_total:
-                home_player_match_points = 1
-            elif home_player_total < away_player_total:
-                away_player_match_points = 1
-            else:
-                # Complete tie, both get 0.5 MP (unlikely but possible)
-                home_player_match_points = 0.5
-                away_player_match_points = 0.5
-
-        # Add to team match points
-        home_match_points += home_player_match_points
-        away_match_points += away_player_match_points
-
-        # Create performance records if match is provided (but not for Stroh players)
-        if match:
-            # Determine if this is a cup match or regular match (do this once for both players)
-            from models import CupMatch
-            is_cup_match = isinstance(match, CupMatch)
-
-            # Check if home player is a Stroh player
-            is_home_stroh = isinstance(home_player, dict) and home_player.get('is_stroh', False)
-
-            # Only create performance records for real players, not Stroh players
-            if not is_home_stroh:
-                # Check if home player is a substitute
-                is_home_substitute = home_player in home_substitutes if 'home_substitutes' in locals() else False
-
-                if is_cup_match:
-                    # Create cup match performance
-                    from models import PlayerCupMatchPerformance
-                    home_perf = PlayerCupMatchPerformance(
-                        player_id=home_player.id,
-                        cup_match_id=match.id,
-                        team_id=home_team.id,
-                        is_home_team=True,
-                        position_number=i+1,
-                        is_substitute=is_home_substitute,
-                        lane1_score=home_player_lanes[0],
-                        lane2_score=home_player_lanes[1],
-                        lane3_score=home_player_lanes[2],
-                        lane4_score=home_player_lanes[3],
-                        total_score=home_player_total,
-                        volle_score=home_player_volle,
-                        raeumer_score=home_player_raeumer,
-                        fehler_count=home_player_fehler,
-                        set_points=home_player_set_points,
-                        match_points=home_player_match_points
-                    )
-                else:
-                    # Create regular match performance
-                    home_perf = PlayerMatchPerformance(
-                        player_id=home_player.id,
-                        match_id=match.id,
-                    team_id=home_team.id,
-                    is_home_team=True,
-                    position_number=i+1,
-                    is_substitute=is_home_substitute,
-                    lane1_score=home_player_lanes[0],
-                    lane2_score=home_player_lanes[1],
-                    lane3_score=home_player_lanes[2],
-                    lane4_score=home_player_lanes[3],
-                    total_score=home_player_total,
-                    volle_score=home_player_volle,
-                    raeumer_score=home_player_raeumer,
-                    fehler_count=home_player_fehler,
-                    set_points=home_player_set_points,
-                    match_points=home_player_match_points
-                )
-                performances.append(home_perf)
-            else:
-                # Create Stroh player performance record for display purposes
-                stroh_perf = {
-                    'player_id': 'stroh_home_' + str(i+1),  # Unique ID for Stroh player
-                    'player_name': 'Stroh',
-                    'team_id': home_team.id,
-                    'is_home_team': True,
-                    'position_number': i+1,
-                    'is_substitute': False,
-                    'is_stroh': True,
-                    'lane1_score': home_player_lanes[0],
-                    'lane2_score': home_player_lanes[1],
-                    'lane3_score': home_player_lanes[2],
-                    'lane4_score': home_player_lanes[3],
-                    'total_score': home_player_total,
-                    'volle_score': home_player_volle,
-                    'raeumer_score': home_player_raeumer,
-                    'fehler_count': home_player_fehler,
-                    'set_points': home_player_set_points,
-                    'match_points': home_player_match_points
-                }
-                stroh_performances.append(stroh_perf)
-
-            # Check if away player is a Stroh player
-            is_away_stroh = isinstance(away_player, dict) and away_player.get('is_stroh', False)
-
-            # Only create performance records for real players, not Stroh players
-            if not is_away_stroh:
-                # Check if away player is a substitute
-                is_away_substitute = away_player in away_substitutes if 'away_substitutes' in locals() else False
-
-                if is_cup_match:
-                    # Create cup match performance
-                    from models import PlayerCupMatchPerformance
-                    away_perf = PlayerCupMatchPerformance(
-                        player_id=away_player.id,
-                        cup_match_id=match.id,
-                        team_id=away_team.id,
-                        is_home_team=False,
-                        position_number=i+1,
-                        is_substitute=is_away_substitute,
-                        lane1_score=away_player_lanes[0],
-                        lane2_score=away_player_lanes[1],
-                        lane3_score=away_player_lanes[2],
-                        lane4_score=away_player_lanes[3],
-                        total_score=away_player_total,
-                        volle_score=away_player_volle,
-                        raeumer_score=away_player_raeumer,
-                        fehler_count=away_player_fehler,
-                        set_points=away_player_set_points,
-                        match_points=away_player_match_points
-                    )
-                else:
-                    # Create regular match performance
-                    away_perf = PlayerMatchPerformance(
-                        player_id=away_player.id,
-                        match_id=match.id,
-                        team_id=away_team.id,
-                        is_home_team=False,
-                        position_number=i+1,
-                        is_substitute=is_away_substitute,
-                        lane1_score=away_player_lanes[0],
-                        lane2_score=away_player_lanes[1],
-                        lane3_score=away_player_lanes[2],
-                        lane4_score=away_player_lanes[3],
-                        total_score=away_player_total,
-                        volle_score=away_player_volle,
-                        raeumer_score=away_player_raeumer,
-                        fehler_count=away_player_fehler,
-                        set_points=away_player_set_points,
-                        match_points=away_player_match_points
-                    )
-                performances.append(away_perf)
-            else:
-                # Create Stroh player performance record for display purposes
-                stroh_perf = {
-                    'player_id': 'stroh_away_' + str(i+1),  # Unique ID for Stroh player
-                    'player_name': 'Stroh',
-                    'team_id': away_team.id,
-                    'is_home_team': False,
-                    'position_number': i+1,
-                    'is_substitute': False,
-                    'is_stroh': True,
-                    'lane1_score': away_player_lanes[0],
-                    'lane2_score': away_player_lanes[1],
-                    'lane3_score': away_player_lanes[2],
-                    'lane4_score': away_player_lanes[3],
-                    'total_score': away_player_total,
-                    'volle_score': away_player_volle,
-                    'raeumer_score': away_player_raeumer,
-                    'fehler_count': away_player_fehler,
-                    'set_points': away_player_set_points,
-                    'match_points': away_player_match_points
-                }
-                stroh_performances.append(stroh_perf)
-
-
-    # Add 2 additional MP for the team with more total pins
-    if home_score > away_score:
-        home_match_points += 2
-    elif away_score > home_score:
-        away_match_points += 2
-    else:
-        # Tie on total pins, both get 1 MP
-        home_match_points += 1
-        away_match_points += 1
-
-    # Save performances to database if match is provided
-    if match and performances:
-        db.session.add_all(performances)
-
-        # Update match with match points
-        match.home_match_points = home_match_points
-        match.away_match_points = away_match_points
-
-        # Save Stroh performances as JSON in the match
-        if stroh_performances:
-            import json
-            match.stroh_performances = json.dumps(stroh_performances)
-
-        # Mark all players as having played on this match day using bulk update
-        # Only include real players, not Stroh players
-        player_ids = []
-        for p in home_players + away_players:
-            if isinstance(p, dict) and p.get('is_stroh', False):
-                # Skip Stroh players - they don't get saved to database
-                continue
-            elif hasattr(p, 'id'):
-                player_ids.append(p.id)
-
-        if player_ids:
-            # Get the match day value (handle both regular matches and cup matches)
-            match_day_value = current_match_day if 'current_match_day' in locals() else None
-            if match_day_value is not None:
-                db.session.execute(
-                    db.update(Player)
-                    .where(Player.id.in_(player_ids))
-                    .values(
-                        has_played_current_matchday=True,
-                        last_played_matchday=match_day_value
-                    )
-                )
-
-        # Check for lane records
-        from models import LaneRecord
-
-        # Get the home club ID (where the lanes are located)
-        home_club_id = home_team.club_id
-
-        # Check for team records - using total team scores across all lanes (including Stroh players)
-        home_team_total_score = sum(perf.total_score for perf in performances if perf.is_home_team)
-        away_team_total_score = sum(perf.total_score for perf in performances if not perf.is_home_team)
-
-        # Add Stroh player scores to team totals
-        for stroh_perf in stroh_performances:
-            if stroh_perf['is_home_team']:
-                home_team_total_score += stroh_perf['total_score']
-            else:
-                away_team_total_score += stroh_perf['total_score']
-
-        # Check for home team record
-        LaneRecord.check_and_update_record(
-            club_id=home_club_id,
-            score=home_team_total_score,
-            team=home_team,
-            match_id=match.id
-        )
-
-        # Check for away team record
-        LaneRecord.check_and_update_record(
-            club_id=home_club_id,
-            score=away_team_total_score,
-            team=away_team,
-            match_id=match.id
-        )
-
-        # Check for individual player records - using total player scores across all lanes
-        for perf in performances:
-            player = Player.query.get(perf.player_id)
-
-            # Use the total score across all 4 lanes
-            LaneRecord.check_and_update_record(
-                club_id=home_club_id,
-                score=perf.total_score,
-                player=player,
-                match_id=match.id
-            )
-
-    return {
-        'home_team': home_team.name,
-        'away_team': away_team.name,
-        'home_score': home_score,
-        'away_score': away_score,
-        'home_match_points': home_match_points,
-        'away_match_points': away_match_points,
-        'winner': home_team.name if home_match_points > away_match_points else (away_team.name if away_match_points > home_match_points else 'Draw'),
-        'stroh_performances': stroh_performances  # Include Stroh player performances for display
-    }
 
 def simulate_match_day(season):
     """
@@ -885,9 +304,12 @@ def simulate_match_day(season):
             print(f"Generating missing fixtures for league {league.name}")
             generate_fixtures(league, season)
 
-    # Step 1: Find the next match day to simulate
-    next_match_day = find_next_match_day(season.id)
-    if not next_match_day:
+    # Step 1: Find the next match date to simulate using date-based logic
+    from season_calendar import get_next_match_date, mark_calendar_day_simulated
+
+    next_calendar_day = get_next_match_date(season.id)
+
+    if not next_calendar_day:
         return {
             'season': season.name,
             'matches_simulated': 0,
@@ -895,28 +317,34 @@ def simulate_match_day(season):
             'message': 'Keine ungespielte Spiele gefunden. Die Saison ist abgeschlossen.'
         }
 
-    print(f"Simulating match day {next_match_day}")
+    print(f"Simulating date {next_calendar_day.calendar_date} ({next_calendar_day.day_type}) for season {season.name}")
 
     # Step 2: Reset player flags efficiently
     # Pass the current match day to prevent players from playing for multiple teams
-    bulk_reset_player_flags(current_match_day=next_match_day)
+    bulk_reset_player_flags(current_match_day=next_calendar_day.match_day_number)
 
-    # Step 3: Get all matches for this match day with optimized query
-    try:
-        matches_data = optimized_match_queries(season.id, next_match_day)
-        cup_matches_data = get_cup_matches_for_match_day(season.id, next_match_day)
+    # Step 3: Get matches for this calendar day using date-based logic
+    matches_data = []
+    cup_matches_data = []
 
-        if not matches_data and not cup_matches_data:
-            return {
-                'season': season.name,
-                'matches_simulated': 0,
-                'results': [],
-                'message': f'Keine Spiele für Spieltag {next_match_day} gefunden.'
-            }
-    except Exception as e:
-        print(f"Error getting match data: {str(e)}")
-        # Fallback to original method
-        return simulate_match_day_fallback(season)
+    # Get matches by date
+    match_date = next_calendar_day.calendar_date
+
+    # Get league matches for this date
+    matches_data = get_league_matches_for_date(season.id, match_date)
+
+    # Get cup matches for this date
+    cup_matches_data = get_cup_matches_for_date(season.id, match_date)
+
+    if not matches_data and not cup_matches_data:
+        return {
+            'season': season.name,
+            'matches_simulated': 0,
+            'results': [],
+            'message': f'Keine Spiele für Datum {match_date} gefunden.'
+        }
+
+    print(f"Found {len(matches_data)} league matches and {len(cup_matches_data)} cup matches for date {match_date}")
 
     # Step 4: Determine clubs and teams playing (from both league and cup matches)
     clubs_with_matches = set()
@@ -964,7 +392,7 @@ def simulate_match_day(season):
     cache = CacheManager()
     club_team_players = batch_assign_players_to_teams(
         clubs_with_matches,
-        next_match_day,
+        next_calendar_day.match_day_number,
         season.id,
         cache
     )
@@ -979,7 +407,7 @@ def simulate_match_day(season):
                 if isinstance(player, dict) and player.get('is_stroh', False):
                     continue
                 player_id = player['id'] if isinstance(player, dict) else player.id
-                immediate_player_updates.append((player_id, True, next_match_day))
+                immediate_player_updates.append((player_id, True, next_calendar_day.match_day_number))
 
     if immediate_player_updates:
         batch_update_player_flags(immediate_player_updates)
@@ -998,7 +426,7 @@ def simulate_match_day(season):
     results, all_performances, all_player_updates, all_lane_records = simulate_matches_parallel(
         all_matches_data,
         club_team_players,
-        next_match_day,
+        next_calendar_day.match_day_number,
         cache
     )
     print(f"Simulated {len(results)} matches ({len(matches_data or [])} league, {len(cup_matches_data or [])} cup) in parallel in {time.time() - simulation_start:.3f}s")
@@ -1007,11 +435,13 @@ def simulate_match_day(season):
     commit_start = time.time()
     batch_commit_simulation_results(
         matches_data,
+        cup_matches_data,
         results,
         all_performances,
         all_player_updates,
         all_lane_records,
-        next_match_day
+        next_calendar_day.match_day_number,
+        next_calendar_day.calendar_date  # Pass the correct calendar date
     )
     print(f"Committed all changes in {time.time() - commit_start:.3f}s")
 
@@ -1021,15 +451,21 @@ def simulate_match_day(season):
     # Step 9: Check for completed cup rounds and advance if necessary
     if cup_matches_data:
         try:
-            advance_completed_cup_rounds(season.id, next_match_day)
+            advance_completed_cup_rounds(season.id, next_calendar_day.match_day_number)
         except Exception as e:
             print(f"Error advancing cup rounds: {str(e)}")
+
+    # Step 10: Mark calendar day as simulated
+    mark_calendar_day_simulated(next_calendar_day.id)
 
     return {
         'season': season.name,
         'matches_simulated': len(results),
         'results': results,
-        'match_day': next_match_day
+        'match_day': next_calendar_day.match_day_number,
+        'calendar_week': getattr(next_calendar_day, 'week_number', 1),
+        'day_type': next_calendar_day.day_type,
+        'match_date': next_calendar_day.calendar_date.isoformat() if next_calendar_day.calendar_date else None
     }
 
 
@@ -1249,22 +685,24 @@ def _simulate_matches_parallel_with_context(matches_data, club_team_players, nex
 
                 for player_data in home_players:
                     if isinstance(player_data, dict):
-                        # Create a simple object from dictionary
-                        player_obj = type('Player', (), player_data)()
+                        # Create a simple object from dictionary with proper attribute assignment
+                        player_obj = SimplePlayer(player_data)
                         home_player_objects.append(player_obj)
                     else:
                         home_player_objects.append(player_data)
 
                 for player_data in away_players:
                     if isinstance(player_data, dict):
-                        # Create a simple object from dictionary
-                        player_obj = type('Player', (), player_data)()
+                        # Create a simple object from dictionary with proper attribute assignment
+                        player_obj = SimplePlayer(player_data)
                         away_player_objects.append(player_obj)
                     else:
                         away_player_objects.append(player_data)
 
+                # Note: Position optimization is already handled in club_player_assignment.py
+
                 # Simulate the match without database operations
-                match_result = simulate_match_optimized(
+                match_result = simulate_match(
                     match.home_team,
                     match.away_team,
                     home_player_objects,
@@ -1285,9 +723,12 @@ def _simulate_matches_parallel_with_context(matches_data, club_team_players, nex
                 for performance in match_result.get('performances', []):
                     performance['match_id'] = match_data.match_id
 
-                # Collect player updates
+                # Collect player updates (skip Stroh players)
                 player_updates = []
                 for player in home_player_objects + away_player_objects:
+                    # Skip Stroh players - they don't get saved to database
+                    if isinstance(player, dict) and player.get('is_stroh', False):
+                        continue
                     player_id = player.id if hasattr(player, 'id') else player['id']
                     player_updates.append((player_id, True, next_match_day))
 
@@ -1406,22 +847,24 @@ def _simulate_matches_sequential(matches_data, club_team_players, next_match_day
 
             for player_data in home_players:
                 if isinstance(player_data, dict):
-                    # Create a simple object from dictionary
-                    player_obj = type('Player', (), player_data)()
+                    # Create a simple object from dictionary with proper attribute assignment
+                    player_obj = SimplePlayer(player_data)
                     home_player_objects.append(player_obj)
                 else:
                     home_player_objects.append(player_data)
 
             for player_data in away_players:
                 if isinstance(player_data, dict):
-                    # Create a simple object from dictionary
-                    player_obj = type('Player', (), player_data)()
+                    # Create a simple object from dictionary with proper attribute assignment
+                    player_obj = SimplePlayer(player_data)
                     away_player_objects.append(player_obj)
                 else:
                     away_player_objects.append(player_data)
 
+            # Note: Position optimization is already handled in club_player_assignment.py
+
             # Simulate the match without database operations
-            match_result = simulate_match_optimized(
+            match_result = simulate_match(
                 home_team,
                 away_team,
                 home_player_objects,
@@ -1513,12 +956,36 @@ def _simulate_matches_sequential(matches_data, club_team_players, next_match_day
     return results, all_performances, all_player_updates, all_lane_records
 
 
-def simulate_match_optimized(home_team, away_team, home_players, away_players, cache_manager):
+def simulate_match(home_team, away_team, home_players, away_players, cache_manager):
     """
-    Optimized match simulation without immediate database operations.
+    Simulate a bowling match between two teams and return the result.
+
+    In bowling, 6 players from each team play 4 lanes with 30 throws each.
+    Players compete directly against each other (1st vs 1st, 2nd vs 2nd, etc.).
+    For each lane, the player with more pins gets 1 set point (SP).
+    If both players score the same on a lane, each gets 0.5 SP.
+    The player with more SP gets 1 match point (MP).
+    If both players have 2 SP each, the player with more total pins gets the MP.
+    The team with more total pins gets 2 additional MP.
+    The team with more MP wins the match.
 
     This version collects all data and returns it for batch processing.
+
+    Args:
+        home_team: The home team
+        away_team: The away team
+        home_players: Pre-assigned players for the home team
+        away_players: Pre-assigned players for the away team
+        cache_manager: CacheManager instance for performance optimization
+
+    Returns:
+        dict: Match result with scores, match points, performances, and lane records
     """
+
+    # Fill both teams with Stroh players if needed
+    home_players = fill_with_stroh_players(home_players, home_team.name)
+    away_players = fill_with_stroh_players(away_players, away_team.name)
+
     # Use cached lane quality
     home_club_id = home_team.club_id
     lane_quality = cache_manager.get_lane_quality(home_club_id)
@@ -1534,6 +1001,7 @@ def simulate_match_optimized(home_team, away_team, home_players, away_players, c
 
     performances = []
     lane_records = []
+    stroh_performances = []  # Store Stroh player performances separately
 
     # Simulate each player pair (6 pairs total)
     for i, (home_player, away_player) in enumerate(zip(home_players, away_players)):
@@ -1599,20 +1067,39 @@ def simulate_match_optimized(home_team, away_team, home_players, away_players, c
                 away_result['performance']['match_points'] = 0.5
 
         # Store performance data for batch creation with correct team information
-        home_result['performance']['team_id'] = home_team.id
-        home_result['performance']['is_home_team'] = True
-        away_result['performance']['team_id'] = away_team.id
-        away_result['performance']['is_home_team'] = False
-        performances.extend([home_result['performance'], away_result['performance']])
+        # Only store performances for real players, not Stroh players
+        if not (isinstance(home_player, dict) and home_player.get('is_stroh', False)):
+            # Ensure team_id and is_home_team are properly set to prevent data corruption
+            home_result['performance']['team_id'] = home_team.id
+            home_result['performance']['is_home_team'] = True
 
-        # Check for potential lane records
-        player_id_home = home_player.id if hasattr(home_player, 'id') else home_player['id']
-        player_id_away = away_player.id if hasattr(away_player, 'id') else away_player['id']
+            # Validate that the team_id is correct (home team should match home_team.id)
+            if home_result['performance']['team_id'] != home_team.id:
+                print(f"ERROR: Home player performance has wrong team_id: {home_result['performance']['team_id']} != {home_team.id}")
+                continue
 
-        lane_records.extend([
-            {'club_id': home_club_id, 'score': home_result['total_score'], 'player_id': player_id_home},
-            {'club_id': home_club_id, 'score': away_result['total_score'], 'player_id': player_id_away}
-        ])
+            performances.append(home_result['performance'])
+
+        if not (isinstance(away_player, dict) and away_player.get('is_stroh', False)):
+            # Ensure team_id and is_home_team are properly set to prevent data corruption
+            away_result['performance']['team_id'] = away_team.id
+            away_result['performance']['is_home_team'] = False
+
+            # Validate that the team_id is correct (away team should match away_team.id)
+            if away_result['performance']['team_id'] != away_team.id:
+                print(f"ERROR: Away player performance has wrong team_id: {away_result['performance']['team_id']} != {away_team.id}")
+                continue
+
+            performances.append(away_result['performance'])
+
+        # Check for potential lane records (only for real players, not Stroh players)
+        if not (isinstance(home_player, dict) and home_player.get('is_stroh', False)):
+            player_id_home = home_player.id if hasattr(home_player, 'id') else home_player['id']
+            lane_records.append({'club_id': home_club_id, 'score': home_result['total_score'], 'player_id': player_id_home})
+
+        if not (isinstance(away_player, dict) and away_player.get('is_stroh', False)):
+            player_id_away = away_player.id if hasattr(away_player, 'id') else away_player['id']
+            lane_records.append({'club_id': home_club_id, 'score': away_result['total_score'], 'player_id': player_id_away})
 
     # Add 2 additional MP for the team with more total pins
     if home_score > away_score:
@@ -1667,12 +1154,20 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
                 return obj.get(attr, default)
             else:
                 print(f"Warning: Player object is neither dict nor has attributes. Type: {type(obj)}, Attr: {attr}")
+                print(f"Object content: {obj}")
+                if hasattr(obj, '__dict__'):
+                    print(f"Object __dict__: {obj.__dict__}")
+                else:
+                    print("Object has no __dict__ attribute")
                 return default
         except Exception as e:
             print(f"Error accessing attribute '{attr}' from player object: {str(e)}")
             print(f"Player object type: {type(obj)}")
+            print(f"Object content: {obj}")
             if isinstance(obj, dict):
                 print(f"Available keys: {list(obj.keys())}")
+            elif hasattr(obj, '__dict__'):
+                print(f"Object __dict__: {obj.__dict__}")
             return default
 
     player_id = get_attr(player, 'id')
@@ -1688,12 +1183,27 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
     mitte = get_attr(player, 'mitte', 50)
     schluss = get_attr(player, 'schluss', 50)
 
-    # Apply form modifiers
+    # Apply form modifiers using the percentage-based approach from form_system.py
     form_short = get_attr(player, 'form_short_term', 0.0)
     form_medium = get_attr(player, 'form_medium_term', 0.0)
     form_long = get_attr(player, 'form_long_term', 0.0)
 
-    effective_strength = strength + (strength * (form_short + form_medium + form_long))
+    # Check if form is active (remaining days > 0)
+    form_short_active = get_attr(player, 'form_short_remaining_days', 0) > 0
+    form_medium_active = get_attr(player, 'form_medium_remaining_days', 0) > 0
+    form_long_active = get_attr(player, 'form_long_remaining_days', 0) > 0
+
+    # Only apply form modifiers if they are active
+    total_form_modifier = 0.0
+    if form_short_active:
+        total_form_modifier += form_short
+    if form_medium_active:
+        total_form_modifier += form_medium
+    if form_long_active:
+        total_form_modifier += form_long
+
+    # Apply form as percentage modifier: strength * (1 + form_modifier)
+    effective_strength = strength * (1 + total_form_modifier)
     effective_strength = max(1, min(99, effective_strength))  # Clamp to valid range
 
     # Simulate 4 lanes
@@ -1761,9 +1271,11 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
     set_points = 0  # This will be calculated in the match simulation
 
     # Create performance data structure
+    # Note: team_id and is_home_team should be set by the calling function
     performance_data = {
         'player_id': player_id,
-        'team_id': None,  # Will be set later in batch_commit_simulation_results
+        'team_id': None,  # MUST be set by calling function to prevent data corruption
+        'is_home_team': None,  # MUST be set by calling function to prevent data corruption
         'position_number': position + 1,
         'is_substitute': False,  # We'll handle substitutes separately
         'lane1_score': lane_scores[0],
@@ -1789,24 +1301,49 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
     }
 
 
-def batch_commit_simulation_results(matches_data, results, all_performances, all_player_updates, all_lane_records, next_match_day):
+def batch_commit_simulation_results(matches_data, cup_matches_data, results, all_performances, all_player_updates, all_lane_records, next_match_day, calendar_date=None):
     """
     Batch commit all simulation results to the database.
 
     Args:
-        matches_data: Original match data
-        results: Match results
+        matches_data: Original league match data for today
+        cup_matches_data: Original cup match data for today
+        results: Match results (both league and cup matches)
         all_performances: All player performances
         all_player_updates: All player flag updates
         all_lane_records: All lane record checks
         next_match_day: The match day being simulated
+        calendar_date: The correct calendar date for this match day
     """
-    from performance_optimizations import batch_create_performances
+    from performance_optimizations import batch_create_performances, batch_create_cup_performances
     import time
 
     start_time = time.time()
 
     try:
+        # Create sets of match IDs that were actually played today
+        # This prevents updating dates for matches that weren't played today
+        league_matches_today = set()
+        cup_matches_today = set()
+
+        # Get league match IDs from matches_data (these were played today)
+        if matches_data:
+            for match_data in matches_data:
+                match_id = getattr(match_data, 'match_id', None)
+                if match_id:
+                    league_matches_today.add(match_id)
+
+        # Get cup match IDs from cup_matches_data (these were played today)
+        if cup_matches_data:
+            for cup_match_data in cup_matches_data:
+                # cup_matches_data contains dictionaries with 'match_id' or 'cup_match_id'
+                if isinstance(cup_match_data, dict):
+                    match_id = cup_match_data.get('match_id') or cup_match_data.get('cup_match_id')
+                else:
+                    match_id = getattr(cup_match_data, 'cup_match_id', None) or getattr(cup_match_data, 'match_id', None)
+                if match_id:
+                    cup_matches_today.add(match_id)
+
         # Update match records (both league and cup matches)
         league_match_updates = {}
         cup_match_updates = {}
@@ -1840,12 +1377,34 @@ def batch_commit_simulation_results(matches_data, results, all_performances, all
                     update_data['home_set_points'] = result['home_match_points']
                     update_data['away_set_points'] = result['away_match_points']
 
+                    # Only update match_date if this cup match was scheduled for today
+                    if calendar_date and match_id in cup_matches_today:
+                        # For cup matches, store as date only (not datetime)
+                        if hasattr(calendar_date, 'date'):
+                            update_data['match_date'] = calendar_date.date()
+                        else:
+                            update_data['match_date'] = calendar_date
+
                     cup_match_updates[match_id] = update_data
                 else:
-                    # For league matches, add match points and date
+                    # For league matches, add match points and preserve correct date
                     update_data['home_match_points'] = result['home_match_points']
                     update_data['away_match_points'] = result['away_match_points']
-                    update_data['match_date'] = datetime.now(timezone.utc)
+
+                    # Only update match_date if this league match was scheduled for today
+                    if calendar_date and match_id in league_matches_today:
+                        # Convert date to datetime at 15:00 (3 PM) with timezone
+                        if hasattr(calendar_date, 'date'):
+                            # calendar_date is already a datetime
+                            update_data['match_date'] = calendar_date
+                        else:
+                            # calendar_date is a date, convert to datetime
+                            update_data['match_date'] = datetime.combine(
+                                calendar_date,
+                                datetime.min.time().replace(hour=15),
+                                tzinfo=timezone.utc
+                            )
+                    # If no calendar_date provided or match not scheduled today, don't update match_date
 
                     league_match_updates[match_id] = update_data
 
@@ -1869,60 +1428,92 @@ def batch_commit_simulation_results(matches_data, results, all_performances, all
                 )
                 print(f"POKAL: Updated cup match {match_id} with winner_team_id={updates.get('winner_team_id')}")
 
-        # Batch create performances
+        # Batch create performances - separate league and cup performances
         if all_performances:
-            # Convert performance data to proper format and add missing fields
-            performance_dicts = []
+            # Separate performances by type
+            league_performances = []
+            cup_performances = []
 
-            # Create a mapping from match_id to team_ids for quick lookup
-            match_team_mapping = {}
+            # Create mappings for both league and cup matches
+            league_match_mapping = {}
+            cup_match_mapping = {}
+
             for result in results:
                 match_id = result.get('match_id')
-                if match_id:
-                    # Get the match to find team IDs
-                    match = Match.query.get(match_id)
-                    if match:
-                        match_team_mapping[match_id] = {
-                            'home_team_id': match.home_team_id,
-                            'away_team_id': match.away_team_id
-                        }
+                is_cup_match = result.get('is_cup_match', False)
 
+                if match_id:
+                    if is_cup_match:
+                        # Get cup match to find team IDs
+                        from models import CupMatch
+                        cup_match = CupMatch.query.get(match_id)
+                        if cup_match:
+                            cup_match_mapping[match_id] = {
+                                'home_team_id': cup_match.home_team_id,
+                                'away_team_id': cup_match.away_team_id
+                            }
+                    else:
+                        # Get league match to find team IDs
+                        match = Match.query.get(match_id)
+                        if match:
+                            league_match_mapping[match_id] = {
+                                'home_team_id': match.home_team_id,
+                                'away_team_id': match.away_team_id
+                            }
+
+            # Process each performance and categorize by type
             for i, perf in enumerate(all_performances):
                 if isinstance(perf, dict):
-                    # Add missing required fields
                     perf_dict = perf.copy()
 
-                    # The performance should already have match_id, team_id, and is_home_team set correctly
-                    # from the simulate_single_match function. We don't need to guess based on index.
+                    # Check if this performance has a match_id
+                    match_id = perf_dict.get('match_id')
+                    if not match_id:
+                        print(f"WARNING: Performance {i} missing match_id, skipping")
+                        continue
 
-                    # Only set missing fields if they're not already present
-                    if 'match_id' not in perf_dict:
-                        # Find the corresponding match_id from results
-                        result_index = i // 12  # 12 performances per match (6 home + 6 away)
-                        if result_index < len(results):
-                            match_id = results[result_index].get('match_id')
-                            perf_dict['match_id'] = match_id
+                    # Determine if this is a cup match or league match
+                    # Check if match_id exists in cup_match_mapping or league_match_mapping
+                    is_cup_performance = match_id in cup_match_mapping
+                    is_league_performance = match_id in league_match_mapping
 
-                    # Only set team_id and is_home_team if they're missing
-                    if 'team_id' not in perf_dict or 'is_home_team' not in perf_dict:
-                        # This should not happen in the new implementation, but keep as fallback
-                        match_id = perf_dict.get('match_id')
-                        if match_id and match_id in match_team_mapping:
-                            # We can't reliably determine which team the player belongs to
-                            # without additional information, so we'll skip this performance
-                            print(f"Warning: Performance missing team_id or is_home_team for match {match_id}")
-                            continue
+                    if not is_cup_performance and not is_league_performance:
+                        print(f"WARNING: Performance {i} has unknown match_id {match_id}, skipping")
+                        continue
 
-                    performance_dicts.append(perf_dict)
+                    # Validate required fields
+                    if not (perf_dict.get('player_id') and perf_dict.get('team_id')):
+                        print(f"WARNING: Performance {i} missing player_id or team_id, skipping")
+                        continue
+
+                    if is_cup_performance:
+                        # Convert match_id to cup_match_id for cup performances
+                        perf_dict['cup_match_id'] = perf_dict.pop('match_id')
+                        cup_performances.append(perf_dict)
+                    else:
+                        # Keep as league performance
+                        league_performances.append(perf_dict)
                 else:
                     # Convert object to dict if needed
-                    performance_dicts.append(perf.__dict__)
+                    perf_dict = perf.__dict__.copy()
+                    match_id = perf_dict.get('match_id')
 
-            # Filter out performances without required fields
-            valid_performances = [p for p in performance_dicts if p.get('match_id') and p.get('player_id') and p.get('team_id')]
+                    if match_id in cup_match_mapping:
+                        perf_dict['cup_match_id'] = perf_dict.pop('match_id')
+                        cup_performances.append(perf_dict)
+                    elif match_id in league_match_mapping:
+                        league_performances.append(perf_dict)
+                    else:
+                        print(f"WARNING: Object performance has unknown match_id {match_id}, skipping")
 
-            if valid_performances:
-                batch_create_performances(valid_performances)
+            # Create performances in their respective tables
+            if league_performances:
+                print(f"Creating {len(league_performances)} league performances")
+                batch_create_performances(league_performances)
+
+            if cup_performances:
+                print(f"Creating {len(cup_performances)} cup performances")
+                batch_create_cup_performances(cup_performances)
 
         # Batch update player flags
         if all_player_updates:
@@ -1979,205 +1570,14 @@ def process_lane_records_batch(all_lane_records):
 # Removed duplicate function - using the one below
 
 
-def simulate_match_day_fallback(season):
-    """Fallback to original simulation method if optimized version fails."""
-    print("Using fallback simulation method")
-
-    results = []
-
-    # Get all leagues in the season
-    leagues = season.leagues
-    print(f"Fallback: Found {len(leagues)} leagues in season {season.name}")
-
-    # Check if leagues have fixtures, generate if missing
-    for league in leagues:
-        teams_in_league = Team.query.filter_by(league_id=league.id).all()
-        matches_in_league = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
-
-        print(f"Fallback: League {league.name}: {len(teams_in_league)} teams, {matches_in_league} matches")
-
-        if len(teams_in_league) >= 2 and matches_in_league == 0:
-            print(f"Fallback: Generating missing fixtures for league {league.name}")
-            generate_fixtures(league, season)
-
-    # Find the earliest unplayed match day across all leagues
-    unplayed_match_days = []
-
-    for league in leagues:
-        # Get all unplayed matches ordered by match day
-        unplayed_matches = Match.query.filter(
-            Match.league_id == league.id,
-            Match.season_id == season.id,
-            Match.is_played == False,
-            Match.match_day.isnot(None)
-        ).order_by(Match.match_day).all()
-
-        if unplayed_matches:
-            # Get the earliest match day that has unplayed matches for this league
-            league_next_match_day = unplayed_matches[0].match_day
-            unplayed_match_days.append((league, league_next_match_day))
-
-    # If no unplayed matches, return empty results
-    if not unplayed_match_days:
-        return {
-            'season': season.name,
-            'matches_simulated': 0,
-            'results': [],
-            'message': 'Keine ungespielte Spiele gefunden. Die Saison ist abgeschlossen.'
-        }
-
-    # Find the earliest match day across all leagues
-    global_next_match_day = min(unplayed_match_days, key=lambda x: x[1])[1]
-
-    print(f"Fallback: Simulating global match day {global_next_match_day}")
-
-    # Reset player availability flags for all players
-    reset_player_availability()
-
-    # Get matches for this match day
-    matches_to_simulate = []
-    for league in leagues:
-        league_matches = Match.query.filter(
-            Match.league_id == league.id,
-            Match.season_id == season.id,
-            Match.is_played == False,
-            Match.match_day == global_next_match_day
-        ).all()
-        matches_to_simulate.extend(league_matches)
-
-    print(f"Fallback: Found {len(matches_to_simulate)} matches to simulate")
-
-    if not matches_to_simulate:
-        return {
-            'season': season.name,
-            'matches_simulated': 0,
-            'results': [],
-            'message': f'Keine Spiele für Spieltag {global_next_match_day} gefunden.'
-        }
-
-    # Simulate each match
-    for match in matches_to_simulate:
-        try:
-            result = simulate_match(match.home_team, match.away_team, match=match)
-            results.append(result)
-
-            # Update match in database
-            match.home_score = result['home_score']
-            match.away_score = result['away_score']
-            match.home_match_points = result['home_match_points']
-            match.away_match_points = result['away_match_points']
-            match.is_played = True
-            match.date_played = datetime.now()
-
-        except Exception as e:
-            print(f"Fallback: Error simulating match {match.id}: {str(e)}")
-
-    # Commit all changes
-    db.session.commit()
-
-    return {
-        'season': season.name,
-        'matches_simulated': len(results),
-        'results': results,
-        'message': f'Fallback simulation completed: {len(results)} matches simulated'
-    }
-
-def reset_player_availability():
-    """Reset the is_available_current_matchday flag for all players."""
-    # Use a bulk update operation instead of loading all players into memory
-    result = db.session.execute(
-        db.update(Player)
-        .values(is_available_current_matchday=True)
-    )
-    db.session.commit()
-    print(f"Reset availability flags for all players (affected rows: {result.rowcount})")
-
-def determine_player_availability(club_id, teams_playing):
-    """Determine which players are available for a club on the current match day.
-
-    Args:
-        club_id: The ID of the club
-        teams_playing: Number of teams from this club playing on this match day
-    """
-    import random
-
-    # Get count of players from this club using a single query
-    total_players_count = db.session.query(db.func.count()).filter(
-        Player.club_id == club_id
-    ).scalar()
-
-    if total_players_count == 0:
-        print(f"No players found for club ID {club_id}")
-        return
-
-    # Calculate how many players we need at minimum (6 per team)
-    min_players_needed = teams_playing * 6
-
-    # If we don't have enough players, make all available
-    if total_players_count <= min_players_needed:
-        # Make sure all players are available using bulk update
-        db.session.execute(
-            db.update(Player)
-            .where(Player.club_id == club_id)
-            .values(is_available_current_matchday=True)
-        )
-        print(f"Club ID {club_id} has only {total_players_count} players, need {min_players_needed}. All players will be available.")
-        return
-
-    # Get all player IDs in a single query
-    player_ids = [row[0] for row in db.session.query(Player.id).filter_by(club_id=club_id).all()]
-
-    # Determine unavailable players (16.7% chance of being unavailable)
-    unavailable_player_ids = []
-    for player_id in player_ids:
-        # 16.7% chance of being unavailable
-        if random.random() < 0.167:
-            unavailable_player_ids.append(player_id)
-
-    # Check if we still have enough available players
-    available_players = len(player_ids) - len(unavailable_player_ids)
-
-    # If we don't have enough available players, we'll use Stroh players instead of making real players available
-    if available_players < min_players_needed:
-        # Calculate how many Stroh players we'll need
-        stroh_players_needed = min_players_needed - available_players
-        print(f"Club ID {club_id}: Only {available_players} players available, need {min_players_needed}. Will use {stroh_players_needed} Stroh player(s).")
-        # Note: Stroh players will be created during match simulation, not here
-
-    # Perform all updates in a single transaction
-    if unavailable_player_ids:
-        # First, set all players as available
-        db.session.execute(
-            db.update(Player)
-            .where(Player.club_id == club_id)
-            .values(is_available_current_matchday=True)
-        )
-
-        # Then mark selected players as unavailable
-        db.session.execute(
-            db.update(Player)
-            .where(Player.id.in_(unavailable_player_ids))
-            .values(is_available_current_matchday=False)
-        )
-    else:
-        # All players available
-        db.session.execute(
-            db.update(Player)
-            .where(Player.club_id == club_id)
-            .values(is_available_current_matchday=True)
-        )
 
 
-def reset_player_matchday_flags():
-    """Reset the has_played_current_matchday flag for all players."""
-    # Only update players that have the flag set to True
-    result = db.session.execute(
-        db.update(Player)
-        .where(Player.has_played_current_matchday == True)
-        .values(has_played_current_matchday=False)
-    )
-    db.session.commit()
-    print(f"Reset match day flags for players (affected rows: {result.rowcount})")
+
+
+# Function removed - use determine_player_availability from performance_optimizations.py directly
+
+
+
 
 def batch_update_player_flags(player_updates):
     """
@@ -2239,354 +1639,128 @@ def batch_update_player_flags(player_updates):
         raise
 
 def simulate_season(season, create_new_season=True):
-    """Simulate all matches for a season.
+    """Simulate all matches for a season by repeatedly calling simulate_match_day.
 
     Args:
         season: The season to simulate
         create_new_season: Whether to create a new season after simulation (default: True)
     """
-    from club_player_assignment import assign_players_to_teams_for_match_day
-
-    results = []
-    new_season_created = False
-    new_season_id = None
+    print(f"Simulating entire season: {season.name} (ID: {season.id})")
+    print(f"Create new season after simulation: {create_new_season}")
 
     # Get all leagues in the season
     leagues = season.leagues
-
-    print(f"Simulating entire season: {season.name} (ID: {season.id})")
     print(f"Number of leagues: {len(leagues)}")
-    print(f"Create new season after simulation: {create_new_season}")
 
-    # Check if cups exist for this season
-    from models import Cup, CupMatch
-    cups = Cup.query.filter_by(season_id=season.id).all()
-    total_cup_matches = 0
-    unplayed_cup_matches = 0
-    all_cup_match_days = set()
-
-    for cup in cups:
-        cup_match_count = CupMatch.query.filter_by(cup_id=cup.id).count()
-        unplayed_count = CupMatch.query.filter_by(cup_id=cup.id, is_played=False).count()
-        total_cup_matches += cup_match_count
-        unplayed_cup_matches += unplayed_count
-        print(f"POKAL: Cup {cup.name} has {cup_match_count} matches ({unplayed_count} unplayed)")
-
-        # Show cup match days for this cup
-        cup_match_days = db.session.query(CupMatch.cup_match_day).filter_by(cup_id=cup.id, is_played=False).distinct().all()
-        if cup_match_days:
-            match_days_list = [str(day[0]) for day in cup_match_days if day[0] is not None]
-            print(f"POKAL: Cup {cup.name} has unplayed matches on match days: {', '.join(match_days_list)}")
-            # Add to overall set
-            for day in cup_match_days:
-                if day[0] is not None:
-                    all_cup_match_days.add(day[0])
-
-        # Also show ALL cup match days (including played ones) for debugging
-        all_cup_days = db.session.query(CupMatch.cup_match_day).filter_by(cup_id=cup.id).distinct().all()
-        if all_cup_days:
-            all_days_list = [str(day[0]) for day in all_cup_days if day[0] is not None]
-            print(f"POKAL: Cup {cup.name} ALL match days (played and unplayed): {', '.join(all_days_list)}")
-
-    print(f"POKAL: Total {len(cups)} cups with {total_cup_matches} matches ({unplayed_cup_matches} unplayed) in season")
-
-    if all_cup_match_days:
-        sorted_cup_days = sorted(all_cup_match_days)
-        print(f"POKAL: All unplayed cup match days in season: {', '.join(map(str, sorted_cup_days))}")
-    else:
-        print("POKAL: No unplayed cup match days found in season")
-
-    # First, ensure all leagues have fixtures generated
+    # Check if any leagues are empty
+    empty_leagues = []
     for league in leagues:
-        # Generate matches if they don't exist
-        if not league.matches:
-            print(f"No matches found for league {league.name}, generating fixtures...")
+        teams = Team.query.filter_by(league_id=league.id).all()
+        if len(teams) == 0:
+            empty_leagues.append(league.name)
+
+    if empty_leagues:
+        error_msg = f"Cannot simulate season: The following leagues have no teams: {', '.join(empty_leagues)}. Please check the season transition logic."
+        print(f"ERROR: {error_msg}")
+        return {
+            'season': season.name,
+            'matches_simulated': 0,
+            'results': [],
+            'error': error_msg,
+            'new_season_created': False,
+            'new_season_id': None
+        }
+
+    # Initialize cups for the season if they don't exist
+    try:
+        from app import auto_initialize_cups
+        auto_initialize_cups(season.id)
+        print("Cups initialized successfully")
+    except Exception as e:
+        print(f"Warning: Could not initialize cups: {str(e)}")
+
+    # Ensure all leagues have fixtures generated
+    for league in leagues:
+        teams_in_league = Team.query.filter_by(league_id=league.id).all()
+        matches_in_league = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
+
+        if len(teams_in_league) >= 2 and matches_in_league == 0:
+            print(f"Generating missing fixtures for league {league.name}")
             generate_fixtures(league, season)
 
-    # Simulate match day by match day using the same logic as simulate_match_day
-    # This ensures that both league and cup matches are properly simulated in the correct order
+    # Track total results and matches simulated
+    all_results = []
+    total_matches_simulated = 0
+    new_season_created = False
+    new_season_id = None
+
+    # Simulate the season by repeatedly calling simulate_match_day until complete
+    match_day_count = 0
     while True:
-        # Find the next match day to simulate (same logic as simulate_match_day)
-        next_match_day = find_next_match_day(season.id)
-        if not next_match_day:
-            print("No more unplayed matches found. Season simulation complete.")
+        match_day_count += 1
+        print(f"\n--- Simulating match day {match_day_count} ---")
+
+        # Use the same logic as the single match day simulation
+        match_day_result = simulate_match_day(season)
+
+        # Check if simulation is complete
+        if match_day_result['matches_simulated'] == 0:
+            print("Season simulation complete - no more matches to simulate")
             break
 
-        print(f"Simulating match day {next_match_day} across all leagues and cups")
+        # Add results to our total
+        all_results.extend(match_day_result.get('results', []))
+        total_matches_simulated += match_day_result['matches_simulated']
 
-        # Reset player availability flags efficiently
-        # Pass the current match day to prevent players from playing for multiple teams
-        from performance_optimizations import bulk_reset_player_flags
-        bulk_reset_player_flags(current_match_day=next_match_day)
+        print(f"Match day {match_day_count} complete: {match_day_result['matches_simulated']} matches simulated")
 
-        # Determine which clubs have matches on this match day
-        clubs_with_matches = set()
-        teams_playing = {}  # Dictionary to track how many teams each club has playing
+    print(f"\nSeason simulation finished after {match_day_count-1} match days")
+    print(f"Total matches simulated: {total_matches_simulated}")
 
-        # First, identify all clubs that have teams playing on this match day
-        for league in leagues:
-            unplayed_matches = Match.query.filter_by(
-                league_id=league.id,
-                season_id=season.id,
-                is_played=False,
-                match_day=next_match_day
-            ).all()
+    # Check if season is complete and handle end-of-season processing
+    from models import Cup, CupMatch
 
-            for match in unplayed_matches:
-                home_club_id = match.home_team.club_id
-                away_club_id = match.away_team.club_id
+    # Check if all league matches are played
+    total_league_matches = Match.query.filter_by(season_id=season.id).count()
+    played_league_matches = Match.query.filter_by(season_id=season.id, is_played=True).count()
 
-                clubs_with_matches.add(home_club_id)
-                clubs_with_matches.add(away_club_id)
+    # Check if all cup matches are played
+    cups = Cup.query.filter_by(season_id=season.id).all()
+    total_cup_matches = 0
+    played_cup_matches = 0
 
-                # Count how many teams each club has playing
-                teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
-                teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
+    for cup in cups:
+        cup_matches = CupMatch.query.filter_by(cup_id=cup.id).all()
+        total_cup_matches += len(cup_matches)
+        played_cup_matches += len([m for m in cup_matches if m.is_played])
 
-        # Also check for cup matches on this match day using the same function as simulate_match_day
-        cup_matches_data = get_cup_matches_for_match_day(season.id, next_match_day)
-        print(f"POKAL: Found {len(cup_matches_data)} cup matches for match day {next_match_day}")
+    season_complete = (played_league_matches == total_league_matches and
+                      played_cup_matches == total_cup_matches)
 
-        # Get actual CupMatch objects for simulation
-        from models import CupMatch, Cup
-        cup_matches = []
-        for cup_match_data in cup_matches_data:
-            cup_match = CupMatch.query.get(cup_match_data['match_id'])
-            if cup_match:
-                cup_matches.append(cup_match)
+    print(f"League matches: {played_league_matches}/{total_league_matches}")
+    print(f"Cup matches: {played_cup_matches}/{total_cup_matches}")
+    print(f"Season complete: {season_complete}")
 
-        for cup_match in cup_matches:
-            home_club_id = cup_match.home_team.club_id
-            away_club_id = cup_match.away_team.club_id
-
-            clubs_with_matches.add(home_club_id)
-            clubs_with_matches.add(away_club_id)
-
-            # Count how many teams each club has playing
-            teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
-            teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
-
-        # Batch process player availability for all clubs
+    if season_complete and create_new_season:
+        print("Season is complete, processing end of season...")
         try:
-            for club_id in clubs_with_matches:
-                determine_player_availability(club_id, teams_playing.get(club_id, 0))
-
-            # Commit all availability changes at once
-            db.session.commit()
-
-        except Exception as e:
-            db.session.rollback()
-            print(f"Error setting player availability for match day {next_match_day}: {str(e)}")
-            raise
-
-        # Assign players to teams for each club
-        club_team_players = {}
-        for club_id in clubs_with_matches:
-            club_team_players[club_id] = assign_players_to_teams_for_match_day(
-                club_id,
-                next_match_day,
-                season.id
-            )
-
-        # Simulate matches for this match day across all leagues
-        match_day_results = []
-        all_player_updates = []
-
-        # Simulate league matches
-        for league in leagues:
-            # Get all unplayed matches for this match day in this league
-            unplayed_matches = Match.query.filter_by(
-                league_id=league.id,
-                season_id=season.id,
-                is_played=False,
-                match_day=next_match_day
-            ).all()
-
-            if unplayed_matches:
-                print(f"Simulating match day {next_match_day} for league {league.name} with {len(unplayed_matches)} matches")
-
-            # Simulate each match in this match day
-            for match in unplayed_matches:
-                home_team = match.home_team
-                away_team = match.away_team
-
-                # Get assigned players
-                home_players = club_team_players.get(home_team.club_id, {}).get(home_team.id, [])
-                away_players = club_team_players.get(away_team.club_id, {}).get(away_team.id, [])
-
-                # Simulate the match
-                match_result = simulate_match(
-                    home_team,
-                    away_team,
-                    match=match,
-                    home_team_players=home_players,
-                    away_team_players=away_players
-                )
-
-                # Update match record
-                match.home_score = match_result['home_score']
-                match.away_score = match_result['away_score']
-                match.home_match_points = match_result['home_match_points']
-                match.away_match_points = match_result['away_match_points']
-                match.is_played = True
-                match.match_date = datetime.now(timezone.utc)
-
-                # Add team names to the result for better display
-                match_result['home_team_name'] = home_team.name
-                match_result['away_team_name'] = away_team.name
-                match_result['league_name'] = league.name
-                match_result['match_day'] = next_match_day
-
-                match_day_results.append(match_result)
-
-                # Collect player updates for batch processing
-                # Convert player objects to IDs if necessary
-                home_player_ids = [p.id if hasattr(p, 'id') else p for p in home_players]
-                away_player_ids = [p.id if hasattr(p, 'id') else p for p in away_players]
-
-                for player_id in home_player_ids + away_player_ids:
-                    all_player_updates.append((player_id, True, next_match_day))
-
-        # Simulate cup matches for this match day
-        if cup_matches:
-            print(f"POKAL: Simulating {len(cup_matches)} cup matches for match day {next_match_day}")
-
-            for cup_match in cup_matches:
-                home_team = cup_match.home_team
-                away_team = cup_match.away_team
-
-                # Get assigned players
-                home_players = club_team_players.get(home_team.club_id, {}).get(home_team.id, [])
-                away_players = club_team_players.get(away_team.club_id, {}).get(away_team.id, [])
-
-                # Simulate the match
-                match_result = simulate_match(
-                    home_team,
-                    away_team,
-                    match=cup_match,
-                    home_team_players=home_players,
-                    away_team_players=away_players
-                )
-
-                # Update cup match record
-                cup_match.home_score = match_result['home_score']
-                cup_match.away_score = match_result['away_score']
-                cup_match.home_set_points = match_result['home_match_points']
-                cup_match.away_set_points = match_result['away_match_points']
-                cup_match.is_played = True
-                cup_match.match_date = datetime.now(timezone.utc).date()
-
-                # Determine and set the winner (essential for cup advancement)
-                if match_result['home_match_points'] > match_result['away_match_points']:
-                    cup_match.winner_team_id = home_team.id
-                    winner_name = home_team.name
-                elif match_result['away_match_points'] > match_result['home_match_points']:
-                    cup_match.winner_team_id = away_team.id
-                    winner_name = away_team.name
-                else:
-                    # In case of a tie on match points, the team with more total pins wins
-                    if match_result['home_score'] > match_result['away_score']:
-                        cup_match.winner_team_id = home_team.id
-                        winner_name = home_team.name
-                    else:
-                        cup_match.winner_team_id = away_team.id
-                        winner_name = away_team.name
-
-                # Print cup match result
-                print(f"POKAL: {cup_match.cup.name} {cup_match.round_name} - {home_team.name} {match_result['home_score']}:{match_result['away_score']} {away_team.name} ({match_result['home_match_points']}:{match_result['away_match_points']} SP) - Winner: {winner_name}")
-
-                # Add team names to the result for better display
-                match_result['home_team_name'] = home_team.name
-                match_result['away_team_name'] = away_team.name
-                match_result['cup_name'] = cup_match.cup.name
-                match_result['round_name'] = cup_match.round_name
-                match_result['match_day'] = next_match_day
-                match_result['is_cup_match'] = True
-
-                match_day_results.append(match_result)
-
-                # Collect player updates for batch processing (skip Stroh players)
-                # Convert player objects to IDs if necessary
-                home_player_ids = []
-                away_player_ids = []
-
-                for p in home_players:
-                    if isinstance(p, dict) and p.get('is_stroh', False):
-                        continue  # Skip Stroh players
-                    home_player_ids.append(p.id if hasattr(p, 'id') else p)
-
-                for p in away_players:
-                    if isinstance(p, dict) and p.get('is_stroh', False):
-                        continue  # Skip Stroh players
-                    away_player_ids.append(p.id if hasattr(p, 'id') else p)
-
-                for player_id in home_player_ids + away_player_ids:
-                    all_player_updates.append((player_id, True, next_match_day))
-
-        # Batch update player flags
-        if all_player_updates:
-            batch_update_player_flags(all_player_updates)
-
-        # Save all changes to database after each match day
-        db.session.commit()
-        print(f"Simulated {len(match_day_results)} matches for match day {next_match_day}")
-
-        # Check for completed cup rounds and advance if necessary
-        # This must be called after every match day, not just when cup matches exist on this day
-        try:
-            advance_completed_cup_rounds(season.id, next_match_day)
-        except Exception as e:
-            print(f"Error advancing cup rounds: {str(e)}")
-
-        # Reset player flags after the match day is complete
-        reset_player_matchday_flags()
-
-        # Add results from this match day to overall results
-        results.extend(match_day_results)
-
-    print(f"Simulated {len(results)} matches in total")
-
-    # Explicitly recalculate standings for each league
-    for league in leagues:
-        print(f"Recalculating standings for league: {league.name}")
-        standings = calculate_standings(league)
-        print(f"League {league.name} has {len(standings)} teams in standings")
-
-    # Process end of season (promotions/relegations) only if create_new_season is True
-    if create_new_season:
-        # Check if all league matches are played
-        all_league_matches_played = all(match.is_played for league in leagues for match in league.matches)
-
-        # Check if all cup matches are played
-        from models import Cup, CupMatch
-        all_cup_matches_played = True
-        cups = Cup.query.filter_by(season_id=season.id).all()
-        for cup in cups:
-            cup_matches = CupMatch.query.filter_by(cup_id=cup.id).all()
-            if not all(match.is_played for match in cup_matches):
-                all_cup_matches_played = False
-                break
-
-        # Only process end of season if ALL matches (league and cup) are played
-        if all_league_matches_played and all_cup_matches_played:
-            print("All league and cup matches played, processing end of season...")
-            process_end_of_season(season)
-
-            # Get the new current season
-            new_season = Season.query.filter_by(is_current=True).first()
-            if new_season and new_season.id != season.id:
+            new_season = process_end_of_season(season)
+            if new_season:
                 new_season_created = True
                 new_season_id = new_season.id
                 print(f"New season created: {new_season.name} (ID: {new_season.id})")
-        else:
-            unplayed_league_matches = sum(1 for league in leagues for match in league.matches if not match.is_played)
-            unplayed_cup_matches = sum(1 for cup in cups for match in CupMatch.query.filter_by(cup_id=cup.id).all() if not match.is_played)
+        except Exception as e:
+            print(f"Error creating new season: {str(e)}")
+    else:
+        if not season_complete:
+            unplayed_league_matches = total_league_matches - played_league_matches
+            unplayed_cup_matches = total_cup_matches - played_cup_matches
             print(f"Season not complete: {unplayed_league_matches} league matches and {unplayed_cup_matches} cup matches still unplayed")
 
     return {
         'season': season.name,
-        'matches_simulated': len(results),
-        'results': results,
+        'matches_simulated': total_matches_simulated,
+        'results': all_results,
         'new_season_created': new_season_created,
         'new_season_id': new_season_id
     }
@@ -2814,29 +1988,12 @@ def generate_fixtures(league, season):
 
     db.session.commit()
 
-    # Set match dates (one match day per week starting from season start date)
+    # Note: Match dates will be set later in init_db.py using unified calendar-based logic
+    # This avoids calling set_all_match_dates_unified multiple times (once per league)
+    print(f"Generated fixtures for league {league.name} - dates will be set by unified calendar logic")
+
+    # Get all matches for verification (needed regardless of which method was used above)
     matches = Match.query.filter_by(league_id=league.id, season_id=season.id).all()
-    match_days = {}
-
-    # Group matches by match day
-    for match in matches:
-        if match.match_day not in match_days:
-            match_days[match.match_day] = []
-        match_days[match.match_day].append(match)
-
-    # Set dates for each match day (one week apart)
-    for match_day, day_matches in match_days.items():
-        # Calculate date for this match day (season start + (match_day-1) weeks)
-        match_date = season.start_date + timedelta(days=(match_day-1) * 7)
-
-        # Set the same date for all matches on this match day
-        for match in day_matches:
-            # Convert date to datetime at 15:00 (3 PM)
-            match.match_date = datetime.combine(
-                match_date,
-                datetime.min.time().replace(hour=15),
-                tzinfo=timezone.utc
-            )
 
     # Verify home/away alternation for each team
     team_matches = {}
@@ -4079,6 +3236,22 @@ def create_new_season(old_season):
         else:
             print(f"WARNING: League {new_league.name} has only {len(league_teams)} teams, skipping fixture generation")
 
+    # Ensure all matches have correct dates using unified logic
+    try:
+        from season_calendar import set_all_match_dates_unified
+        set_all_match_dates_unified(new_season.id)
+        print(f"Set unified match dates for all matches in new season {new_season.id}")
+    except Exception as e:
+        print(f"Error setting unified match dates for new season: {e}")
+
+    # Create season calendar after fixtures are generated
+    from season_calendar import create_season_calendar
+    try:
+        create_season_calendar(new_season.id)
+        print(f"Created season calendar for {new_season.name}")
+    except Exception as e:
+        print(f"Error creating season calendar: {str(e)}")
+
     print(f"Total fixtures generated: {total_fixtures_generated}")
 
     print("Generated fixtures for all leagues in the new season")
@@ -4111,3 +3284,120 @@ def create_new_season(old_season):
     new_season.is_current = True
     db.session.commit()
     print(f"Set {new_season.name} as the current season")
+
+    print(f"Created new season: {new_season.name} (ID: {new_season.id})")
+    return new_season
+
+
+def get_league_matches_for_date(season_id, match_date):
+    """
+    Holt alle Ligaspiele für ein bestimmtes Datum.
+    Verwendet die gleiche Logik wie optimized_match_queries, aber filtert nach Datum.
+    """
+    from sqlalchemy import func
+    from sqlalchemy.orm import aliased
+
+    # Konvertiere match_date zu einem Datum falls es ein datetime ist
+    if hasattr(match_date, 'date'):
+        target_date = match_date.date()
+    else:
+        target_date = match_date
+
+    # Erstelle Alias für away_team
+    away_team = aliased(Team)
+
+    # Query für Ligaspiele an diesem Datum
+    matches_query = db.session.query(
+        Match.id.label('match_id'),
+        Match.home_team_id,
+        Match.away_team_id,
+        Match.match_day,
+        Match.league_id,
+        Team.name.label('home_team_name'),
+        Team.club_id.label('home_club_id'),
+        away_team.name.label('away_team_name'),
+        away_team.club_id.label('away_club_id'),
+        League.name.label('league_name')
+    ).join(
+        Team, Match.home_team_id == Team.id
+    ).join(
+        away_team, Match.away_team_id == away_team.id
+    ).join(
+        League, Match.league_id == League.id
+    ).filter(
+        Match.season_id == season_id,
+        Match.is_played == False,
+        func.date(Match.match_date) == target_date
+    )
+
+    matches_data = matches_query.all()
+    print(f"Found {len(matches_data)} league matches for date {target_date}")
+
+    return matches_data
+
+
+def get_cup_matches_for_date(season_id, match_date):
+    """
+    Holt alle Pokalspiele für ein bestimmtes Datum.
+    Verwendet die gleiche Logik wie get_cup_matches_for_match_day, aber filtert nach Datum.
+    """
+    from sqlalchemy.orm import aliased
+    from models import CupMatch, Cup
+
+    # Konvertiere match_date zu einem Datum falls es ein datetime ist
+    if hasattr(match_date, 'date'):
+        target_date = match_date.date()
+    else:
+        target_date = match_date
+
+    # Erstelle Alias für away_team
+    away_team = aliased(Team)
+
+    # Query für Pokalspiele an diesem Datum
+    cup_matches_query = db.session.query(
+        CupMatch.id.label('cup_match_id'),
+        CupMatch.home_team_id,
+        CupMatch.away_team_id,
+        CupMatch.cup_match_day,
+        CupMatch.round_name,
+        CupMatch.round_number,
+        Team.name.label('home_team_name'),
+        Team.club_id.label('home_club_id'),
+        away_team.name.label('away_team_name'),
+        away_team.club_id.label('away_club_id'),
+        Cup.name.label('cup_name')
+    ).join(
+        Team, CupMatch.home_team_id == Team.id
+    ).outerjoin(
+        away_team, CupMatch.away_team_id == away_team.id
+    ).join(
+        Cup, CupMatch.cup_id == Cup.id
+    ).filter(
+        Cup.season_id == season_id,
+        CupMatch.is_played == False,
+        CupMatch.match_date == target_date
+    )
+
+    cup_matches_data = []
+    for cup_match_row in cup_matches_query.all():
+        # Erstelle ein Dictionary das kompatibel mit der bestehenden Simulation ist
+        cup_match_data = {
+            'match_id': cup_match_row.cup_match_id,  # Verwende match_id für Kompatibilität
+            'cup_match_id': cup_match_row.cup_match_id,
+            'home_team_id': cup_match_row.home_team_id,
+            'away_team_id': cup_match_row.away_team_id,
+            'cup_match_day': cup_match_row.cup_match_day,
+            'round_name': cup_match_row.round_name,
+            'round_number': cup_match_row.round_number,
+            'home_team_name': cup_match_row.home_team_name,
+            'home_club_id': cup_match_row.home_club_id,
+            'away_team_name': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
+            'away_club_id': cup_match_row.away_club_id,
+            'cup_name': cup_match_row.cup_name,
+            'is_cup_match': True  # Wichtig: Markiere als Cup-Match für korrekte Verarbeitung
+        }
+        cup_matches_data.append(cup_match_data)
+
+    print(f"Found {len(cup_matches_data)} cup matches for date {target_date}")
+
+    return cup_matches_data

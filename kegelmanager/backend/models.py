@@ -568,8 +568,11 @@ class Team(db.Model):
             match_data = {
                 'id': match.id,
                 'date': match.match_date.isoformat() if match.match_date else None,
+                'match_date': match.match_date.isoformat() if match.match_date else None,
                 'homeTeam': self.name,
                 'awayTeam': match.away_team.name,
+                'opponent_name': match.away_team.name,
+                'is_home': True,
                 'league': match.league.name,
                 'status': 'upcoming',
                 'match_type': 'league',
@@ -583,8 +586,11 @@ class Team(db.Model):
             match_data = {
                 'id': match.id,
                 'date': match.match_date.isoformat() if match.match_date else None,
+                'match_date': match.match_date.isoformat() if match.match_date else None,
                 'homeTeam': match.home_team.name,
                 'awayTeam': self.name,
+                'opponent_name': match.home_team.name,
+                'is_home': False,
                 'league': match.league.name,
                 'status': 'upcoming',
                 'match_type': 'league',
@@ -627,8 +633,11 @@ class Team(db.Model):
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
                     'date': match_datetime.isoformat() if match_datetime else None,
+                    'match_date': match_datetime.isoformat() if match_datetime else None,
                     'homeTeam': self.name,
                     'awayTeam': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
+                    'opponent_name': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
+                    'is_home': True,
                     'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
                     'status': 'upcoming',
                     'match_type': 'cup',
@@ -669,8 +678,11 @@ class Team(db.Model):
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
                     'date': match_datetime.isoformat() if match_datetime else None,
+                    'match_date': match_datetime.isoformat() if match_datetime else None,
                     'homeTeam': cup_match_row.home_team_name,
                     'awayTeam': self.name,
+                    'opponent_name': cup_match_row.home_team_name,
+                    'is_home': False,
                     'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
                     'status': 'upcoming',
                     'match_type': 'cup',
@@ -1340,6 +1352,7 @@ class Season(db.Model):
     # Relationships
     leagues = db.relationship('League', back_populates='season')
     matches = db.relationship('Match', back_populates='season')
+    calendar_days = db.relationship('SeasonCalendar', back_populates='season')
 
     def to_dict(self):
         return {
@@ -1348,6 +1361,39 @@ class Season(db.Model):
             'start_date': self.start_date.isoformat(),
             'end_date': self.end_date.isoformat(),
             'is_current': self.is_current
+        }
+
+
+class SeasonCalendar(db.Model):
+    """
+    Kalender für eine Saison mit 104 Spielmöglichkeiten (52 Samstage + 52 Mittwoche).
+    Verwaltet die Verteilung von Liga-, Pokal- und spielfreien Tagen.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False, index=True)
+    week_number = db.Column(db.Integer, nullable=False)  # 1-52
+    calendar_date = db.Column(db.Date, nullable=False)  # Datum des Spieltags (Samstag oder Mittwoch)
+    weekday = db.Column(db.String(10), nullable=False)  # 'Saturday' oder 'Wednesday'
+    day_type = db.Column(db.String(20), nullable=False)  # 'FREE_DAY', 'LEAGUE_DAY', 'CUP_DAY'
+    match_day_number = db.Column(db.Integer, nullable=True)  # Spieltag-Nummer (Liga oder Pokal)
+    is_simulated = db.Column(db.Boolean, default=False, index=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    season = db.relationship('Season', back_populates='calendar_days')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'season_id': self.season_id,
+            'week_number': self.week_number,
+            'calendar_date': self.calendar_date.isoformat(),
+            'weekday': self.weekday,
+            'day_type': self.day_type,
+            'match_day_number': self.match_day_number,
+            'is_simulated': self.is_simulated
         }
 
 class Cup(db.Model):
@@ -1516,49 +1562,54 @@ class Cup(db.Model):
         db.session.commit()
 
     def calculate_cup_match_day(self, round_number, total_rounds):
-        """Berechnet den Pokalspieltag basierend auf der Rundennummer und der tatsächlichen Saisonlänge."""
+        """Berechnet den Pokalspieltag basierend auf der Rundennummer und verfügbaren CUP_DAYs."""
         from sqlalchemy import func
 
-        # Ermittle die maximale Anzahl der Ligaspieltage in dieser Saison
-        max_league_match_day = db.session.query(func.max(Match.match_day)).join(League).filter(
-            League.season_id == self.season_id,
-            Match.match_day.isnot(None)
-        ).scalar()
+        # Hole alle verfügbaren CUP_DAYs aus dem Saisonkalender
+        cup_days = db.session.query(SeasonCalendar.match_day_number).filter_by(
+            season_id=self.season_id,
+            day_type='CUP_DAY'
+        ).order_by(SeasonCalendar.id).all()
 
-        print(f"POKAL: Cup {self.name} - max_league_match_day from DB: {max_league_match_day}")
+        if not cup_days:
+            print(f"POKAL: Cup {self.name} - No CUP_DAYs found in calendar, using fallback")
+            # Fallback: Verwende einfache Berechnung
+            return round_number
 
-        if not max_league_match_day or max_league_match_day < 10:
-            # Fallback: Annahme von 34 Ligaspieltagen
-            max_league_match_day = 34
-            print(f"POKAL: Cup {self.name} - Using fallback max_league_match_day: {max_league_match_day}")
+        available_cup_days = [day[0] for day in cup_days if day[0] is not None]
+        print(f"POKAL: Cup {self.name} - Available cup days: {available_cup_days}")
 
-        # Einfache Verteilung: Pokale zwischen Spieltag 5 und 30
-        start_match_day = 5
-        end_match_day = min(30, max_league_match_day - 2)
+        if not available_cup_days:
+            print(f"POKAL: Cup {self.name} - No valid cup days found, using fallback")
+            return round_number
 
-        # Sicherstellen, dass wir mindestens einen gültigen Bereich haben
-        if end_match_day <= start_match_day:
-            end_match_day = start_match_day + 10
+        # Berechne einen Offset basierend auf dem Pokal-Typ und der ID
+        # um verschiedene Pokale auf verschiedene CUP_DAYs zu verteilen
+        cup_offset = 0
+        if self.cup_type == "DKBC":
+            cup_offset = 0  # DKBC-Pokal startet bei den ersten CUP_DAYs
+        elif self.cup_type == "Landespokal":
+            cup_offset = 1  # Landespokal startet einen CUP_DAY später
+        elif self.cup_type == "Kreispokal":
+            cup_offset = 2  # Kreispokal startet zwei CUP_DAYs später
 
-        print(f"POKAL: Cup {self.name} - Match day range: {start_match_day} to {end_match_day}")
+        # Zusätzlicher Offset basierend auf der Cup-ID für mehrere Pokale desselben Typs
+        additional_offset = (self.id % 3) * 3  # Verteile mehrere Pokale desselben Typs
 
+        total_offset = cup_offset + additional_offset
+
+        # Verwende die verfügbaren CUP_DAYs für die Verteilung
         if total_rounds == 1:
-            cup_match_day = (start_match_day + end_match_day) // 2
-            print(f"POKAL: Cup {self.name} - Single round, match day: {cup_match_day}")
+            # Bei nur einer Runde, verwende den entsprechenden CUP_DAY basierend auf dem Offset
+            day_index = total_offset % len(available_cup_days)
+            cup_match_day = available_cup_days[day_index]
+            print(f"POKAL: Cup {self.name} - Single round, using cup day {cup_match_day} (offset: {total_offset})")
             return cup_match_day
 
-        # Einfache gleichmäßige Verteilung
-        if total_rounds > 1:
-            interval = (end_match_day - start_match_day) / total_rounds
-            cup_match_day = start_match_day + int(round_number * interval)
-            print(f"POKAL: Cup {self.name} - Round {round_number}/{total_rounds}, interval: {interval:.2f}, calculated match day: {cup_match_day}")
-        else:
-            cup_match_day = start_match_day
-            print(f"POKAL: Cup {self.name} - Default to start match day: {cup_match_day}")
-
-        # Sicherstellen, dass der Pokalspieltag im gültigen Bereich liegt
-        cup_match_day = max(start_match_day, min(cup_match_day, end_match_day))
-        print(f"POKAL: Cup {self.name} - Final match day after range check: {cup_match_day}")
+        # Bei mehreren Runden, verteile gleichmäßig über die verfügbaren CUP_DAYs
+        day_index = (round_number - 1 + total_offset) % len(available_cup_days)
+        cup_match_day = available_cup_days[day_index]
+        print(f"POKAL: Cup {self.name} - Round {round_number}/{total_rounds}, using cup day {cup_match_day} (offset: {total_offset})")
 
         return cup_match_day
 
@@ -1655,6 +1706,48 @@ class Cup(db.Model):
         print(f"DEBUG: Cup {self.name} - Advanced to round {next_round_number}, created {matches_created} matches")
 
         db.session.commit()
+
+        # Setze Datumszuweisung nur für die neu erstellten Spiele dieser Runde
+        try:
+            # Hole alle neu erstellten Spiele dieser Runde (ohne Datum)
+            new_cup_matches = CupMatch.query.filter_by(
+                cup_id=self.id,
+                round_number=next_round_number,
+                match_date=None
+            ).all()
+
+            if new_cup_matches:
+                print(f"DEBUG: Setting dates for {len(new_cup_matches)} new cup matches in round {next_round_number}")
+
+                # Hole die verfügbaren CUP_DAYs aus dem Saisonkalender
+                cup_calendar_days = SeasonCalendar.query.filter_by(
+                    season_id=self.season_id,
+                    day_type='CUP_DAY'
+                ).filter(
+                    SeasonCalendar.match_day_number.isnot(None)
+                ).order_by(SeasonCalendar.id).all()
+
+                # Erstelle Mapping von cup_match_day zu Datum
+                cup_match_day_to_date = {}
+                for calendar_day in cup_calendar_days:
+                    if calendar_day.match_day_number:
+                        cup_match_day_to_date[calendar_day.match_day_number] = calendar_day.calendar_date
+
+                # Setze Daten nur für die neuen Spiele
+                for cup_match in new_cup_matches:
+                    if cup_match.cup_match_day and cup_match.cup_match_day in cup_match_day_to_date:
+                        cup_match.match_date = cup_match_day_to_date[cup_match.cup_match_day]
+                        print(f"DEBUG: Set date for new cup match {cup_match.id}: {cup_match.match_date}")
+
+                db.session.commit()
+                print(f"DEBUG: Successfully set dates for {len(new_cup_matches)} new cup matches")
+            else:
+                print(f"DEBUG: No new cup matches without dates found for round {next_round_number}")
+
+        except Exception as e:
+            print(f"ERROR: Failed to set dates for new cup matches: {e}")
+            # Don't raise the exception - cup advancement should still work
+
         return True
 
     def to_dict(self):

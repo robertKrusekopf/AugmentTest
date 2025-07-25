@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getClub, getTeam, getMatch, getLeagues } from '../services/api';
+import { getClub, getTeam, getMatch, getLeagues, getClubRecentMatches } from '../services/api';
 import LineupSelector from '../components/LineupSelector';
 import './Dashboard.css';
 
@@ -16,10 +16,10 @@ const Dashboard = () => {
   const [showLineupSelector, setShowLineupSelector] = useState(false);
   const [nextMatchId, setNextMatchId] = useState(null);
   const [managedClubId, setManagedClubId] = useState(null);
+  const [clubRecentMatches, setClubRecentMatches] = useState([]);
 
-  // Lade Daten des gemanagten Vereins
-  useEffect(() => {
-    const loadDashboardData = async () => {
+  // Funktion zum Laden der Dashboard-Daten (wiederverwendbar)
+  const loadDashboardData = async () => {
       try {
         console.log('Lade Dashboard-Daten...');
         setLoading(true);
@@ -91,6 +91,17 @@ const Dashboard = () => {
           }
         }
 
+        // Lade alle letzten Spiele aller Teams des Vereins
+        if (managerClubId) {
+          try {
+            const clubMatchesData = await getClubRecentMatches(managerClubId);
+            setClubRecentMatches(clubMatchesData.recent_matches || []);
+          } catch (error) {
+            console.error('Fehler beim Laden der Vereinsspiele:', error);
+            setClubRecentMatches([]);
+          }
+        }
+
         setLoading(false);
       } catch (error) {
         console.error('Fehler beim Laden der Dashboard-Daten:', error);
@@ -98,7 +109,27 @@ const Dashboard = () => {
       }
     };
 
+  // Lade Daten des gemanagten Vereins beim ersten Laden
+  useEffect(() => {
     loadDashboardData();
+  }, []);
+
+  // Event-Listener für Simulation-Events
+  useEffect(() => {
+    const handleSimulationComplete = () => {
+      console.log('Simulation completed, reloading dashboard data...');
+      // Setze Loading-State, aber nicht für die gesamte Seite
+      setLoading(false); // Behalte die Seite sichtbar
+      loadDashboardData();
+    };
+
+    // Füge Event-Listener hinzu
+    window.addEventListener('simulationComplete', handleSimulationComplete);
+
+    // Cleanup beim Unmount
+    return () => {
+      window.removeEventListener('simulationComplete', handleSimulationComplete);
+    };
   }, []);
 
   // Handler für das Öffnen des Aufstellungs-Selektors
@@ -316,30 +347,39 @@ const Dashboard = () => {
       <div className="dashboard-row">
         <div className="card recent-matches">
           <div className="card-header">
-            <h2>Letzte Spiele</h2>
-            {firstTeam && <Link to={`/teams/${firstTeam.id}`} className="btn btn-secondary">Alle anzeigen</Link>}
+            <h2>Letzte Spiele aller Teams</h2>
+            {managerClub && <Link to={`/clubs/${managerClub.id}`} className="btn btn-secondary">Alle anzeigen</Link>}
           </div>
           <div className="match-list">
-            {recentMatches && recentMatches.length > 0 ? recentMatches.slice(0, 4).map((match, index) => {
+            {clubRecentMatches && clubRecentMatches.length > 0 ? clubRecentMatches.slice(0, 6).map((match, index) => {
               const matchDate = match.match_date ? new Date(match.match_date).toLocaleDateString() : 'TBD';
               const isHome = match.is_home;
-              const result = match.result || '';
-              const isWin = result.includes('W');
-              const isDraw = result.includes('D');
-              const isLoss = result.includes('L');
+              const homeScore = match.home_score || 0;
+              const awayScore = match.away_score || 0;
 
               return (
-                <div className="match-item" key={match.id || index}>
+                <Link
+                  to={`/matches/${match.id}`}
+                  className="match-item clickable"
+                  key={match.id || index}
+                >
                   <div className="match-date">{matchDate}</div>
                   <div className="match-teams">
-                    <span className={`team ${isHome ? 'home' : ''}`}>{isHome ? firstTeam.name : match.opponent_name}</span>
-                    <span className={`result ${isWin ? 'win' : isDraw ? 'draw' : isLoss ? 'loss' : ''}`}>
-                      {match.score || '0:0'}
+                    <span className={`team ${isHome ? 'home' : ''}`}>
+                      {isHome ? match.team_name : match.opponent_name}
                     </span>
-                    <span className={`team ${!isHome ? 'home' : ''}`}>{!isHome ? firstTeam.name : match.opponent_name}</span>
+                    <span className="result">
+                      {isHome ? `${homeScore}:${awayScore}` : `${awayScore}:${homeScore}`}
+                    </span>
+                    <span className={`team ${!isHome ? 'home' : ''}`}>
+                      {!isHome ? match.team_name : match.opponent_name}
+                    </span>
                   </div>
-                  <div className="match-league">{match.league_name || 'Unbekannte Liga'}</div>
-                </div>
+                  <div className="match-info">
+                    <span className="team-name">{match.team_name}</span>
+                    <span className="league-name">{match.league_name}</span>
+                  </div>
+                </Link>
               );
             }) : (
               <div className="match-item">

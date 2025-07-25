@@ -10,8 +10,7 @@ from sqlalchemy import func
 def calculate_player_rating(player):
     """
     Calculate a weighted rating for a player based on their attributes.
-    Uses the same formula as in club_player_assignment.py for consistency,
-    but adds a youth bonus for players under 25 years old.
+    Uses the centralized function with youth bonus for redistribution.
 
     Args:
         player: Player object
@@ -19,20 +18,8 @@ def calculate_player_rating(player):
     Returns:
         float: Weighted rating of the player including youth bonus
     """
-    base_rating = (
-        player.strength * 0.5 +      # 50% weight on strength
-        player.konstanz * 0.1 +      # 10% weight on consistency
-        player.drucksicherheit * 0.1 + # 10% weight on pressure resistance
-        player.volle * 0.15 +        # 15% weight on full pins
-        player.raeumer * 0.15        # 15% weight on clearing pins
-    )
-
-    # Youth bonus: +1 point for each year under 25
-    youth_bonus = 0
-    if player.age < 25:
-        youth_bonus = 25 - player.age
-
-    return base_rating + youth_bonus
+    from simulation import calculate_player_rating as base_rating_func
+    return base_rating_func(player, include_youth_bonus=True)
 
 
 def redistribute_players_by_strength():

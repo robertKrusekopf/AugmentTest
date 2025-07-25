@@ -208,6 +208,129 @@ def update_team(team_id):
         "team": team.to_dict()
     })
 
+@app.route('/api/clubs/<int:club_id>/recent-matches', methods=['GET'])
+def get_club_recent_matches(club_id):
+    """Get recent matches for all teams of a club."""
+    try:
+        print(f"DEBUG: Getting recent matches for club {club_id}")
+        club = Club.query.get_or_404(club_id)
+        print(f"DEBUG: Found club: {club.name}")
+
+        # Get all teams of the club
+        teams = Team.query.filter_by(club_id=club_id).all()
+        print(f"DEBUG: Found {len(teams)} teams for club {club.name}")
+
+        all_recent_matches = []
+
+        for team in teams:
+            # Get recent league matches for this team (played matches only)
+            home_matches = Match.query.filter_by(home_team_id=team.id, is_played=True).all()
+            away_matches = Match.query.filter_by(away_team_id=team.id, is_played=True).all()
+
+            # Process home league matches
+            for match in home_matches:
+                match_data = {
+                    'id': match.id,
+                    'date': match.match_date.isoformat() if match.match_date else None,
+                    'match_date': match.match_date.isoformat() if match.match_date else None,
+                    'team_id': team.id,
+                    'team_name': team.name,
+                    'is_home': True,
+                    'opponent_name': match.away_team.name,
+                    'home_score': match.home_score,
+                    'away_score': match.away_score,
+                    'league_id': match.league_id,
+                    'league_name': match.league.name if match.league else 'Unbekannte Liga',
+                    'match_day': match.match_day or 0,
+                    'match_type': 'league'
+                }
+                all_recent_matches.append(match_data)
+
+            # Process away league matches
+            for match in away_matches:
+                match_data = {
+                    'id': match.id,
+                    'date': match.match_date.isoformat() if match.match_date else None,
+                    'match_date': match.match_date.isoformat() if match.match_date else None,
+                    'team_id': team.id,
+                    'team_name': team.name,
+                    'is_home': False,
+                    'opponent_name': match.home_team.name,
+                    'home_score': match.home_score,
+                    'away_score': match.away_score,
+                    'league_id': match.league_id,
+                    'league_name': match.league.name if match.league else 'Unbekannte Liga',
+                    'match_day': match.match_day or 0,
+                    'match_type': 'league'
+                }
+                all_recent_matches.append(match_data)
+
+            # Get recent cup matches for this team (played matches only)
+            from models import CupMatch
+            home_cup_matches = CupMatch.query.filter_by(home_team_id=team.id, is_played=True).all()
+            away_cup_matches = CupMatch.query.filter_by(away_team_id=team.id, is_played=True).all()
+
+            # Process home cup matches
+            for cup_match in home_cup_matches:
+                # Use cup match ID with offset for frontend compatibility
+                frontend_id = cup_match.id + 1000000
+                match_data = {
+                    'id': frontend_id,
+                    'date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+                    'match_date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+                    'team_id': team.id,
+                    'team_name': team.name,
+                    'is_home': True,
+                    'opponent_name': cup_match.away_team.name if cup_match.away_team else 'Freilos',
+                    'home_score': cup_match.home_score,
+                    'away_score': cup_match.away_score,
+                    'league_id': None,  # Cup matches don't have league_id
+                    'league_name': f"{cup_match.cup.name} - {cup_match.round_name}" if cup_match.cup else 'Pokalspiel',
+                    'match_day': cup_match.cup_match_day or 0,
+                    'match_type': 'cup'
+                }
+                all_recent_matches.append(match_data)
+
+            # Process away cup matches
+            for cup_match in away_cup_matches:
+                # Use cup match ID with offset for frontend compatibility
+                frontend_id = cup_match.id + 1000000
+                match_data = {
+                    'id': frontend_id,
+                    'date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+                    'match_date': cup_match.match_date.isoformat() if cup_match.match_date else None,
+                    'team_id': team.id,
+                    'team_name': team.name,
+                    'is_home': False,
+                    'opponent_name': cup_match.home_team.name,
+                    'home_score': cup_match.home_score,
+                    'away_score': cup_match.away_score,
+                    'league_id': None,  # Cup matches don't have league_id
+                    'league_name': f"{cup_match.cup.name} - {cup_match.round_name}" if cup_match.cup else 'Pokalspiel',
+                    'match_day': cup_match.cup_match_day or 0,
+                    'match_type': 'cup'
+                }
+                all_recent_matches.append(match_data)
+
+        # Sort by match_day (newest first) and limit to most recent matches
+        all_recent_matches.sort(key=lambda x: x['match_day'], reverse=True)
+        print(f"DEBUG: Found {len(all_recent_matches)} total recent matches")
+
+        # Limit to 10 most recent matches across all teams
+        recent_matches = all_recent_matches[:10]
+        print(f"DEBUG: Returning {len(recent_matches)} recent matches")
+
+        return jsonify({
+            'club_name': club.name,
+            'recent_matches': recent_matches
+        })
+
+    except Exception as e:
+        print(f"Error getting club recent matches: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden der Vereinsspiele"}), 500
+
 @app.route('/api/clubs/<int:club_id>/teams', methods=['POST'])
 def add_team_to_club(club_id):
     """Add a new team to a club for the next season (Cheat function)."""
@@ -446,12 +569,33 @@ def get_player_matches(player_id):
         if not current_season:
             return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
 
-        # Get all teams the player belongs to (for matches where he didn't play)
-        player_team_ids = [team.id for team in player.teams]
+        # Get all teams from the player's club (for matches where he didn't play)
+        # Only consider teams from the same club as the player
+        player_club_team_ids = []
+        if player.club_id:
+            from models import Team
+            player_club_teams = Team.query.filter_by(club_id=player.club_id).all()
+            player_club_team_ids = [team.id for team in player_club_teams]
+            print(f"DEBUG: Player's club teams: {[(team.id, team.name) for team in player_club_teams]}")
 
-        # STEP 1: Get all league matches where the player actually played (including as substitute for other teams)
+        # STEP 1: Get all league matches where the player actually played for teams from their own club
         league_performances = PlayerMatchPerformance.query.join(
             Match, PlayerMatchPerformance.match_id == Match.id
+        ).join(
+            Team, PlayerMatchPerformance.team_id == Team.id
+        ).filter(
+            and_(
+                PlayerMatchPerformance.player_id == player_id,
+                Match.season_id == current_season.id,
+                Team.club_id == player.club_id  # Only include matches for teams from player's club
+            )
+        ).all()
+
+        # Debug: Check if there are any performances for teams outside the player's club
+        all_league_performances = PlayerMatchPerformance.query.join(
+            Match, PlayerMatchPerformance.match_id == Match.id
+        ).join(
+            Team, PlayerMatchPerformance.team_id == Team.id
         ).filter(
             and_(
                 PlayerMatchPerformance.player_id == player_id,
@@ -459,15 +603,26 @@ def get_player_matches(player_id):
             )
         ).all()
 
-        # STEP 2: Get all cup matches where the player actually played (including as substitute for other teams)
+        outside_club_performances = [p for p in all_league_performances if p.team.club_id != player.club_id]
+        if outside_club_performances:
+            print(f"DEBUG: ❌ Player has {len(outside_club_performances)} league performances for teams outside their club:")
+            for perf in outside_club_performances[:3]:
+                print(f"  - Match {perf.match_id}: {perf.team.name} (club {perf.team.club_id}) vs player's club {player.club_id}")
+        else:
+            print("DEBUG: ✅ Player has no league performances for teams outside their club")
+
+        # STEP 2: Get all cup matches where the player actually played for teams from their own club
         cup_performances = PlayerCupMatchPerformance.query.join(
             CupMatch, PlayerCupMatchPerformance.cup_match_id == CupMatch.id
         ).join(
             Cup, CupMatch.cup_id == Cup.id
+        ).join(
+            Team, PlayerCupMatchPerformance.team_id == Team.id
         ).filter(
             and_(
                 PlayerCupMatchPerformance.player_id == player_id,
-                Cup.season_id == current_season.id
+                Cup.season_id == current_season.id,
+                Team.club_id == player.club_id  # Only include matches for teams from player's club
             )
         ).all()
 
@@ -475,33 +630,81 @@ def get_player_matches(player_id):
         played_league_match_ids = {p.match_id for p in league_performances}
         played_cup_match_ids = {p.cup_match_id for p in cup_performances}
 
-        # STEP 4: Get additional league matches from player's regular teams (where he didn't play)
+        print(f"DEBUG: Player {player_id} played in {len(league_performances)} league matches and {len(cup_performances)} cup matches")
+        print(f"DEBUG: Player's club has {len(player_club_team_ids)} teams")
+        print(f"DEBUG: Player club team IDs: {player_club_team_ids}")
+
+        # STEP 4: Get additional league matches from player's club teams (where he didn't play)
         additional_league_matches = []
-        if player_team_ids:
+        if player_club_team_ids:
             additional_league_matches = Match.query.filter(
                 and_(
                     Match.season_id == current_season.id,
                     or_(
-                        Match.home_team_id.in_(player_team_ids),
-                        Match.away_team_id.in_(player_team_ids)
+                        Match.home_team_id.in_(player_club_team_ids),
+                        Match.away_team_id.in_(player_club_team_ids)
                     ),
                     ~Match.id.in_(played_league_match_ids)  # Exclude matches where he already played
                 )
             ).all()
 
-        # STEP 5: Get additional cup matches from player's regular teams (where he didn't play)
+        # STEP 5: Get additional cup matches from player's club teams (where he didn't play)
         additional_cup_matches = []
-        if player_team_ids:
+        if player_club_team_ids:
             additional_cup_matches = CupMatch.query.join(Cup).filter(
                 and_(
                     Cup.season_id == current_season.id,
                     or_(
-                        CupMatch.home_team_id.in_(player_team_ids),
-                        CupMatch.away_team_id.in_(player_team_ids)
+                        CupMatch.home_team_id.in_(player_club_team_ids),
+                        CupMatch.away_team_id.in_(player_club_team_ids)
                     ),
                     ~CupMatch.id.in_(played_cup_match_ids)  # Exclude matches where he already played
                 )
             ).all()
+
+        print(f"DEBUG: Found {len(additional_league_matches)} additional league matches and {len(additional_cup_matches)} additional cup matches")
+
+        # Debug: Show first few additional matches
+        if additional_league_matches:
+            print("DEBUG: First few additional league matches:")
+            for match in additional_league_matches[:3]:
+                print(f"  - {match.home_team.name} (team {match.home_team_id}, club {match.home_team.club_id}) vs {match.away_team.name} (team {match.away_team_id}, club {match.away_team.club_id}) - Match ID: {match.id}")
+
+        # Debug: Check if any additional matches have wrong team IDs
+        wrong_matches = []
+        for match in additional_league_matches:
+            if match.home_team_id not in player_club_team_ids and match.away_team_id not in player_club_team_ids:
+                wrong_matches.append(match)
+
+        if wrong_matches:
+            print(f"DEBUG: ❌ Found {len(wrong_matches)} additional matches with wrong team IDs:")
+            for match in wrong_matches[:3]:
+                print(f"  - {match.home_team.name} (team {match.home_team_id}) vs {match.away_team.name} (team {match.away_team_id}) - Match ID: {match.id}")
+        else:
+            print("DEBUG: ✅ All additional matches have correct team IDs")
+
+        # Debug: Check cup matches too
+        if additional_cup_matches:
+            print("DEBUG: First few additional cup matches:")
+            for match in additional_cup_matches[:3]:
+                print(f"  - {match.home_team.name} (team {match.home_team_id}, club {match.home_team.club_id}) vs {match.away_team.name if match.away_team else 'Freilos'} (team {match.away_team_id if match.away_team else 'N/A'}, club {match.away_team.club_id if match.away_team else 'N/A'}) - Match ID: {match.id}")
+
+        wrong_cup_matches = []
+        for match in additional_cup_matches:
+            home_team_ok = match.home_team_id in player_club_team_ids
+            away_team_ok = match.away_team_id is None or match.away_team_id in player_club_team_ids
+            if not (home_team_ok or away_team_ok):
+                wrong_cup_matches.append(match)
+
+        if wrong_cup_matches:
+            print(f"DEBUG: ❌ Found {len(wrong_cup_matches)} additional cup matches with wrong team IDs:")
+            for match in wrong_cup_matches[:3]:
+                print(f"  - {match.home_team.name} (team {match.home_team_id}) vs {match.away_team.name if match.away_team else 'Freilos'} (team {match.away_team_id if match.away_team else 'N/A'}) - Match ID: {match.id}")
+        else:
+            print("DEBUG: ✅ All additional cup matches have correct team IDs")
+
+        total_matches = len(league_performances) + len(cup_performances) + len(additional_league_matches) + len(additional_cup_matches)
+        print(f"DEBUG: Total matches to return: {total_matches}")
 
         # STEP 6: Create performance dictionaries for easy lookup
         league_performances_dict = {p.match_id: p for p in league_performances}
@@ -511,8 +714,25 @@ def get_player_matches(player_id):
         all_matches = []
 
         # STEP 7: Process league matches where player actually played
+        print(f"DEBUG: Processing {len(league_performances)} league performances...")
         for performance in league_performances:
             match = performance.match
+
+            # Validate that the team the player played for was actually participating in the match
+            team_was_participating = (performance.team_id == match.home_team_id or
+                                    performance.team_id == match.away_team_id)
+
+            if not team_was_participating:
+                print(f"DEBUG: ❌ SKIPPING invalid performance: Player played for {performance.team.name} (ID: {performance.team_id}) in match {match.home_team.name} vs {match.away_team.name} (home: {match.home_team_id}, away: {match.away_team_id})")
+                print(f"DEBUG: ❌ This indicates data corruption - performance record should be cleaned up")
+                continue
+
+            if match.id in [402, 385]:  # Debug specific problematic matches
+                print(f"DEBUG: ❌ Adding problematic played match: {match.home_team.name} vs {match.away_team.name} (ID: {match.id})")
+                print(f"  Player played for team: {performance.team.name} (club {performance.team.club_id})")
+                print(f"  Player's club: {player.club_id}")
+            else:
+                print(f"DEBUG: Adding played match: {match.home_team.name} vs {match.away_team.name} (ID: {match.id})")
             match_data = {
                 'id': match.id,
                 'type': 'league',
@@ -531,7 +751,12 @@ def get_player_matches(player_id):
             all_matches.append(match_data)
 
         # STEP 8: Process additional league matches from regular teams (where player didn't play)
+        print(f"DEBUG: Processing {len(additional_league_matches)} additional league matches...")
         for match in additional_league_matches:
+            if match.id in [402, 385]:  # Debug specific problematic matches
+                print(f"DEBUG: ❌ Adding problematic match: {match.home_team.name} vs {match.away_team.name} (ID: {match.id})")
+                print(f"  Home team ID: {match.home_team_id}, Away team ID: {match.away_team_id}")
+                print(f"  Player club team IDs: {player_club_team_ids}")
             match_data = {
                 'id': match.id,
                 'type': 'league',
@@ -1146,6 +1371,12 @@ def auto_initialize_cups(season_id):
     """Automatically initialize cups and generate fixtures for a season."""
     from models import Cup, League
 
+    # Prüfe ob bereits Pokale für diese Saison existieren
+    existing_cups = Cup.query.filter_by(season_id=season_id).count()
+    if existing_cups > 0:
+        print(f"Cups already exist for season {season_id} ({existing_cups} cups found), skipping initialization")
+        return
+
     created_cups = []
 
     # Create DKBC-Pokal (for leagues without bundesland and landkreis)
@@ -1213,7 +1444,28 @@ def auto_initialize_cups(season_id):
             except Exception as e:
                 print(f"Error generating fixtures for {cup.name}: {e}")
 
+    # Note: Match dates will be set later after season calendar is created
+    # This is handled in init_db.py after create_season_calendar()
     print(f"Auto-initialized {len(created_cups)} cups for season {season_id}")
+    print("Note: Match dates will be set after season calendar creation")
+
+
+@app.route('/api/fix-cup-dates', methods=['POST'])
+def fix_cup_dates():
+    """Fix match dates for all existing cup matches."""
+    try:
+        from season_calendar import fix_existing_cup_match_dates
+        fixed_count = fix_existing_cup_match_dates()
+        return jsonify({
+            'success': True,
+            'message': f'Successfully fixed {fixed_count} cup match dates',
+            'fixed_count': fixed_count
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 # Cup endpoints
 @app.route('/api/cups', methods=['GET'])
@@ -1456,6 +1708,12 @@ def get_season(season_id):
 # Simulation endpoints
 @app.route('/api/simulate/match', methods=['POST'])
 def simulate_match():
+    """
+    Simulate a single match.
+
+    This endpoint uses the same logic as match day simulation to ensure
+    consistent data and proper handling of Stroh players.
+    """
     data = request.json
     home_team_id = data.get('home_team_id')
     away_team_id = data.get('away_team_id')
@@ -1463,7 +1721,67 @@ def simulate_match():
     home_team = Team.query.get_or_404(home_team_id)
     away_team = Team.query.get_or_404(away_team_id)
 
-    result = simulation.simulate_match(home_team, away_team)
+    # Use the simulation path for consistency
+    from performance_optimizations import CacheManager
+    from club_player_assignment import batch_assign_players_to_teams
+
+    # Get current season
+    current_season = Season.query.filter_by(is_current=True).first()
+    if not current_season:
+        return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+    # Find the current match day
+    from simulation import find_next_match_day
+    current_match_day = find_next_match_day(current_season.id)
+    if not current_match_day:
+        current_match_day = 1  # Default to match day 1 for individual simulations
+
+    # Create cache manager
+    cache = CacheManager()
+
+    # Try to assign players using the batch assignment method
+    # For individual match simulation, include played matches to ensure consistent behavior
+    clubs_with_matches = {home_team.club_id, away_team.club_id}
+    club_team_players = batch_assign_players_to_teams(
+        clubs_with_matches,
+        current_match_day,
+        current_season.id,
+        cache,
+        include_played_matches=True
+    )
+
+    # Get assigned players
+    home_players = club_team_players.get(home_team.club_id, {}).get(home_team.id, [])
+    away_players = club_team_players.get(away_team.club_id, {}).get(away_team.id, [])
+
+    # Convert to SimplePlayer objects for compatibility
+    from simulation import SimplePlayer
+    home_player_objects = []
+    away_player_objects = []
+
+    for player_data in home_players:
+        if isinstance(player_data, dict):
+            player_obj = SimplePlayer(player_data)
+            home_player_objects.append(player_obj)
+        else:
+            home_player_objects.append(player_data)
+
+    for player_data in away_players:
+        if isinstance(player_data, dict):
+            player_obj = SimplePlayer(player_data)
+            away_player_objects.append(player_obj)
+        else:
+            away_player_objects.append(player_data)
+
+    # Use the simulation function
+    result = simulation.simulate_match(
+        home_team,
+        away_team,
+        home_player_objects,
+        away_player_objects,
+        cache
+    )
+
     return jsonify(result)
 
 @app.route('/api/simulate/season', methods=['POST'])
@@ -2098,23 +2416,14 @@ def get_available_players_for_match(match_id):
     # Get all players from the club
     club_players = Player.query.filter_by(club_id=managed_club_id).all()
 
-    # Reset player availability flags for this club
-    for player in club_players:
-        player.is_available_current_matchday = True
+    # Use centralized player availability determination
+    from performance_optimizations import determine_player_availability
+    determine_player_availability(team.club_id, 1)  # 1 team playing
 
-    # Determine player availability (16.7% chance of being unavailable)
-    import random
-    unavailable_players = []
-    for player in club_players:
-        # 16.7% chance of being unavailable
-        if random.random() < 0.167:
-            player.is_available_current_matchday = False
-            unavailable_players.append(player.id)
-
-    # Make sure we have at least 6 available players
+    # Get available players after availability determination
     available_players = [p for p in club_players if p.is_available_current_matchday]
     if len(available_players) < 6:
-        # Instead of making unavailable players available, we'll note that Stroh players will be used
+        # Note that Stroh players will be used
         stroh_players_needed = 6 - len(available_players)
         print(f"Lineup setup: Only {len(available_players)} players available for team {team.id}, will need {stroh_players_needed} Stroh player(s) during simulation")
 

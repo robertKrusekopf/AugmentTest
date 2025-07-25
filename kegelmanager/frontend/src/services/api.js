@@ -50,6 +50,16 @@ export const addTeamToClub = async (clubId, teamData) => {
   }
 };
 
+export const getClubRecentMatches = async (clubId) => {
+  try {
+    const response = await api.get(`/clubs/${clubId}/recent-matches`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching recent matches for club ${clubId}:`, error);
+    throw error;
+  }
+};
+
 // Team endpoints
 export const getTeams = async () => {
   try {

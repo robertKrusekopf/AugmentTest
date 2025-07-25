@@ -142,6 +142,9 @@ const Settings = () => {
       invalidateAfterSimulation();
       invalidateAfterSeasonTransition();
 
+      // Sende Event für Dashboard-Aktualisierung
+      window.dispatchEvent(new CustomEvent('simulationComplete'));
+
       setMessage({
         show: true,
         type: 'success',

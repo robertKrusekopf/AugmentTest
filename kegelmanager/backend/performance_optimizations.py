@@ -9,6 +9,19 @@ from sqlalchemy import text
 import time
 
 
+def determine_player_availability(club_id, teams_playing):
+    """
+    Wrapper function for single club availability determination.
+    Uses the optimized batch function for consistency.
+
+    Args:
+        club_id: The ID of the club
+        teams_playing: Number of teams from this club playing on this match day
+    """
+    # Use the batch function for consistency
+    batch_set_player_availability({club_id}, {club_id: teams_playing})
+
+
 def create_performance_indexes():
     """Create database indexes to improve query performance."""
     try:
@@ -76,85 +89,12 @@ def bulk_reset_player_flags(current_match_day=None):
         raise
 
 
-def optimized_player_availability(club_id, teams_playing):
-    """
-    Optimized player availability determination using raw SQL.
-
-    Args:
-        club_id: The ID of the club
-        teams_playing: Number of teams from this club playing on this match day
-    """
-    import random
-
-    try:
-        start_time = time.time()
-
-        # Get player count and IDs in one query
-        result = db.session.execute(
-            text("SELECT COUNT(*), GROUP_CONCAT(id) FROM player WHERE club_id = :club_id"),
-            {"club_id": club_id}
-        ).fetchone()
-
-        total_players = result[0]
-        player_ids_str = result[1]
-
-        if total_players == 0:
-            print(f"No players found for club ID {club_id}")
-            return
-
-        min_players_needed = teams_playing * 6
-
-        # If not enough players, make all available
-        if total_players <= min_players_needed:
-            db.session.execute(
-                text("UPDATE player SET is_available_current_matchday = 1 WHERE club_id = :club_id"),
-                {"club_id": club_id}
-            )
-            print(f"Club ID {club_id}: All {total_players} players available (need {min_players_needed})")
-            return
-
-        # Parse player IDs
-        player_ids = [int(pid) for pid in player_ids_str.split(',')]
-
-        # Determine unavailable players (16.7% chance)
-        # But ensure we don't make too many unavailable that we'd need Stroh players
-        max_unavailable = total_players - min_players_needed
-        unavailable_count = min(int(total_players * 0.167), max_unavailable)
-
-        if unavailable_count > 0:
-            unavailable_ids = random.sample(player_ids, unavailable_count)
-
-            # Set all as available first, then mark some as unavailable
-            db.session.execute(
-                text("UPDATE player SET is_available_current_matchday = 1 WHERE club_id = :club_id"),
-                {"club_id": club_id}
-            )
-
-            if unavailable_ids:
-                placeholders = ','.join([':id' + str(i) for i in range(len(unavailable_ids))])
-                params = {f'id{i}': player_id for i, player_id in enumerate(unavailable_ids)}
-                db.session.execute(
-                    text(f"UPDATE player SET is_available_current_matchday = 0 WHERE id IN ({placeholders})"),
-                    params
-                )
-        else:
-            # All players available
-            db.session.execute(
-                text("UPDATE player SET is_available_current_matchday = 1 WHERE club_id = :club_id"),
-                {"club_id": club_id}
-            )
-
-        end_time = time.time()
-        print(f"Player availability for club {club_id} set in {end_time - start_time:.3f}s")
-
-    except Exception as e:
-        print(f"Error in optimized player availability: {str(e)}")
-        raise
+# Removed duplicate function - use determine_player_availability() instead
 
 
 def batch_create_performances(performances_data):
     """
-    Batch create player performances using bulk insert.
+    Batch create player performances for league matches using bulk insert.
 
     Args:
         performances_data: List of dictionaries with performance data
@@ -169,10 +109,35 @@ def batch_create_performances(performances_data):
         db.session.bulk_insert_mappings(PlayerMatchPerformance, performances_data)
 
         end_time = time.time()
-        print(f"Batch created {len(performances_data)} performances in {end_time - start_time:.3f}s")
+        print(f"Batch created {len(performances_data)} league performances in {end_time - start_time:.3f}s")
 
     except Exception as e:
-        print(f"Error in batch create performances: {str(e)}")
+        print(f"Error in batch create league performances: {str(e)}")
+        raise
+
+
+def batch_create_cup_performances(performances_data):
+    """
+    Batch create player performances for cup matches using bulk insert.
+
+    Args:
+        performances_data: List of dictionaries with cup performance data
+    """
+    if not performances_data:
+        return
+
+    try:
+        from models import PlayerCupMatchPerformance
+        start_time = time.time()
+
+        # Use bulk insert for better performance
+        db.session.bulk_insert_mappings(PlayerCupMatchPerformance, performances_data)
+
+        end_time = time.time()
+        print(f"Batch created {len(performances_data)} cup performances in {end_time - start_time:.3f}s")
+
+    except Exception as e:
+        print(f"Error in batch create cup performances: {str(e)}")
         raise
 
 
@@ -241,13 +206,14 @@ def get_club_player_stats(club_id):
         start_time = time.time()
 
         # Single query to get all needed player data
-        query = text("""
+        from simulation import PLAYER_RATING_SQL
+        query = text(f"""
             SELECT
                 id, strength, konstanz, drucksicherheit, volle, raeumer,
                 is_available_current_matchday, has_played_current_matchday
             FROM player
             WHERE club_id = :club_id
-            ORDER BY (strength * 0.5 + konstanz * 0.1 + drucksicherheit * 0.1 + volle * 0.15 + raeumer * 0.15) DESC
+            ORDER BY {PLAYER_RATING_SQL} DESC
         """)
 
         result = db.session.execute(query, {"club_id": club_id}).fetchall()
@@ -264,7 +230,7 @@ def get_club_player_stats(club_id):
                 'raeumer': row[5],
                 'is_available': row[6],
                 'has_played': row[7],
-                'rating': row[1] * 0.5 + row[2] * 0.1 + row[3] * 0.1 + row[4] * 0.15 + row[5] * 0.15
+                'rating': row[1] * 0.5 + row[2] * 0.1 + row[3] * 0.1 + row[4] * 0.15 + row[5] * 0.15  # Keep calculation for performance
             }
 
         end_time = time.time()
@@ -306,6 +272,7 @@ class CacheManager:
             if player:
                 self.player_cache[player_id] = {
                     'id': player.id,
+                    'name': player.name,
                     'strength': player.strength,
                     'konstanz': player.konstanz,
                     'drucksicherheit': player.drucksicherheit,
@@ -320,6 +287,9 @@ class CacheManager:
                     'form_short_term': player.form_short_term,
                     'form_medium_term': player.form_medium_term,
                     'form_long_term': player.form_long_term,
+                    'form_short_remaining_days': player.form_short_remaining_days,
+                    'form_medium_remaining_days': player.form_medium_remaining_days,
+                    'form_long_remaining_days': player.form_long_remaining_days,
                     'club_id': player.club_id
                 }
         return self.player_cache.get(player_id)
@@ -373,6 +343,9 @@ class CacheManager:
 def batch_set_player_availability(clubs_with_matches, teams_playing):
     """
     Optimized batch setting of player availability for multiple clubs.
+    Uses 0% to 30% unavailability rate per club (randomly determined), then randomly
+    selects which players are unavailable. Allows Stroh players to be used when
+    not enough players are available.
 
     Args:
         clubs_with_matches: Set of club IDs that have matches
@@ -380,6 +353,10 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
     """
     try:
         start_time = time.time()
+        import random
+
+        # Debug: Check if random is properly seeded and working
+        print(f"DEBUG: Random module state check - sample values: {[random.random() for _ in range(5)]}")
 
         # Get all player counts for all clubs in one query
         from sqlalchemy import text
@@ -410,7 +387,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
                 row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
                 club_player_counts[row_dict['club_id']] = row_dict['player_count']
 
-        # Process each club with deterministic availability based on match day
+        # Process each club with random availability
         all_availability_updates = []
 
         for club_id in clubs_with_matches:
@@ -421,54 +398,68 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
             if total_players == 0:
                 continue
 
-            if total_players <= min_players_needed:
-                # All players available
-                all_availability_updates.append((club_id, True, []))
-                continue
-
             # Get player IDs for this club
             player_ids = [row[0] for row in db.session.query(Player.id).filter_by(club_id=club_id).all()]
 
-            # Determine unavailable players deterministically based on player_id and match_day
-            # This ensures consistent availability for the same match day
-            unavailable_player_ids = []
-            for player_id in player_ids:
-                # Use a deterministic hash based on player_id to determine availability
-                # This ensures the same player has the same availability pattern
-                import hashlib
-                hash_input = f"{player_id}_{club_id}".encode()
-                hash_value = int(hashlib.md5(hash_input).hexdigest()[:8], 16)
-                # Use modulo to get a value between 0 and 999, then check if < 167 (16.7%)
-                if (hash_value % 1000) < 167:
-                    unavailable_player_ids.append(player_id)
+            # Determine unavailable players - new logic: 0% to 30% of players unavailable
+            # First determine what percentage of players will be unavailable (0% to 30%)
+            unavailability_percentage = random.uniform(0.0, 0.30)  # 0% to 30%
 
-            # Ensure we have enough available players
-            available_players = len(player_ids) - len(unavailable_player_ids)
+            # Calculate how many players should be unavailable
+            num_unavailable = int(total_players * unavailability_percentage)
+
+            # Add debugging information to track availability patterns
+            print(f"DEBUG: Club {club_id} - Total players: {total_players}, Teams playing: {teams_count}")
+            print(f"DEBUG: Club {club_id} - Unavailability percentage: {unavailability_percentage:.1%}, Players to make unavailable: {num_unavailable}")
+
+            # Randomly select which players will be unavailable
+            unavailable_player_ids = []
+            if num_unavailable > 0:
+                unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
+
+            # Log detailed availability information for analysis
+            available_count = total_players - len(unavailable_player_ids)
+            unavailable_count = len(unavailable_player_ids)
+
+            print(f"DEBUG: Club {club_id} - Available: {available_count}, Unavailable: {unavailable_count}")
+
+            # Log unavailable player IDs if any
+            if unavailable_count > 0:
+                print(f"DEBUG: Club {club_id} unavailable player IDs: {unavailable_player_ids}")
+
+            # Check for high unavailability situations (>25% of players)
+            if total_players >= 8 and unavailable_count >= int(total_players * 0.25):
+                unavailability_rate = unavailable_count / total_players
+                print(f"INFO: High unavailability rate for Club {club_id}: {unavailability_rate:.1%} ({unavailable_count}/{total_players} players)")
+
+            # Log if Stroh players will be needed
+            available_players = total_players - len(unavailable_player_ids)
             if available_players < min_players_needed:
-                players_needed = min_players_needed - available_players
-                if players_needed > 0 and unavailable_player_ids:
-                    # Remove the last N unavailable players to ensure we have enough
-                    unavailable_player_ids = unavailable_player_ids[:-players_needed]
+                stroh_needed = min_players_needed - available_players
+                print(f"Club ID {club_id}: Will need {stroh_needed} Stroh player(s) (have {available_players} available, need {min_players_needed})")
 
             all_availability_updates.append((club_id, False, unavailable_player_ids))
 
-        # Execute all updates in batch
-        for club_id, all_available, unavailable_ids in all_availability_updates:
-            if all_available or not unavailable_ids:
-                # Set all players as available
-                db.session.execute(
-                    db.update(Player)
-                    .where(Player.club_id == club_id)
-                    .values(is_available_current_matchday=True)
-                )
-            else:
-                # First set all as available, then mark some as unavailable
-                db.session.execute(
-                    db.update(Player)
-                    .where(Player.club_id == club_id)
-                    .values(is_available_current_matchday=True)
-                )
+        # Debug: Check for duplicate club processing
+        processed_clubs = set()
+        for club_id, _, _ in all_availability_updates:
+            if club_id in processed_clubs:
+                print(f"WARNING: Club {club_id} processed multiple times in same batch!")
+            processed_clubs.add(club_id)
 
+        print(f"DEBUG: Processing availability for {len(processed_clubs)} unique clubs")
+
+        # Execute all updates in batch
+        for club_id, _, unavailable_ids in all_availability_updates:
+            # First set all players as available
+            db.session.execute(
+                db.update(Player)
+                .where(Player.club_id == club_id)
+                .values(is_available_current_matchday=True)
+            )
+
+            # Then mark some as unavailable if any
+            if unavailable_ids:
                 db.session.execute(
                     db.update(Player)
                     .where(Player.id.in_(unavailable_ids))

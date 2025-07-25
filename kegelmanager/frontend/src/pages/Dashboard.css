@@ -157,6 +157,17 @@
   border-bottom: 1px solid var(--border-color);
 }
 
+.match-item.clickable {
+  text-decoration: none;
+  color: inherit;
+  transition: background-color 0.2s ease;
+}
+
+.match-item.clickable:hover {
+  background-color: var(--hover-color, #f5f5f5);
+  cursor: pointer;
+}
+
 .match-item:last-child {
   border-bottom: none;
 }
@@ -204,6 +215,24 @@
 
 .match-league {
   font-size: 14px;
+  color: var(--primary-color);
+}
+
+.match-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 5px;
+}
+
+.team-name {
+  font-size: 12px;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.league-name {
+  font-size: 12px;
   color: var(--primary-color);
 }
 

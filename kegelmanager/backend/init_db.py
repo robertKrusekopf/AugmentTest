@@ -118,7 +118,7 @@ def calculate_player_attribute_by_league_level(league_level, is_youth_team=False
     std_dev = 5 + (league_level - 1) * 0.5
 
     # Generate attribute values using normal distribution
-    player_strength = max(30, min(99, int(np.random.normal(base_strength, std_dev))))
+    player_strength = max(1, min(99, int(np.random.normal(base_strength, std_dev))))
 
     attributes = {
         'strength': player_strength,
@@ -132,7 +132,7 @@ def calculate_player_attribute_by_league_level(league_level, is_youth_team=False
     # Generate all other attributes
     for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
                 'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
-        attributes[attr] = min(99, int(np.random.normal(base_attr_value, attr_std_dev)))
+        attributes[attr] = max(1, min(99, int(np.random.normal(base_attr_value, attr_std_dev))))
 
     return attributes
 
@@ -473,14 +473,6 @@ def create_sample_data(custom_app=None):
                 db.session.commit()
                 print(f"  ✓ {teams_created_for_league} Teams für Liga {league.name} erstellt.")
 
-                # Special attention for Landesliga 2
-                if "Landesliga 2" in league.name:
-                    print(f"  🎯 LANDESLIGA 2 RESULT: {teams_created_for_league} teams created")
-                    if teams_created_for_league <= 1:
-                        print(f"     ❌ PROBLEM: Only {teams_created_for_league} teams created for Landesliga 2!")
-                    else:
-                        print(f"     ✓ Landesliga 2 team creation successful")
-
             except Exception as e:
                 print(f"ERROR: Fehler beim Verarbeiten der Liga {league.name}: {e}")
                 continue
@@ -652,9 +644,50 @@ def create_sample_data(custom_app=None):
         except Exception as e:
             print(f"Error generating cup competitions: {str(e)}")
 
+        # Create season calendar after fixtures and cups are generated
+        print("Creating season calendar...")
+        try:
+            from season_calendar import create_season_calendar
+            create_season_calendar(season.id)
+            print("Season calendar created successfully!")
+        except Exception as e:
+            print(f"Error creating season calendar: {str(e)}")
+
+        # Set match dates for all matches (league and cup) using unified logic
+        print("Setting match dates for all matches...")
+        try:
+            from season_calendar import set_all_match_dates_unified
+            set_all_match_dates_unified(season.id)
+            print("Match dates set successfully!")
+        except Exception as e:
+            print(f"Error setting match dates: {str(e)}")
+
+        # Recalculate cup match days now that season calendar exists
+        print("Recalculating cup match days...")
+        try:
+            from models import Cup, CupMatch
+            cups = Cup.query.filter_by(season_id=season.id).all()
+
+            for cup in cups:
+                print(f"Recalculating match days for {cup.name}...")
+                cup_matches = CupMatch.query.filter_by(cup_id=cup.id).all()
+
+                for match in cup_matches:
+                    # Recalculate cup match day using the new logic
+                    new_cup_match_day = cup.calculate_cup_match_day(match.round_number, cup.total_rounds)
+                    if new_cup_match_day != match.cup_match_day:
+                        print(f"  Updated match {match.id}: {match.cup_match_day} -> {new_cup_match_day}")
+                        match.cup_match_day = new_cup_match_day
+
+                db.session.commit()
+
+            print("Cup match days recalculated successfully!")
+        except Exception as e:
+            print(f"Error recalculating cup match days: {str(e)}")
+
         # Final commit
         db.session.commit()
-        print("Match fixtures created successfully!")
+        print("Match fixtures, season calendar, and match dates created successfully!")
 
 
 

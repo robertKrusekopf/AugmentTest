@@ -2,7 +2,7 @@
 Module for assigning players to teams within a club for a match day.
 """
 
-from models import db, Player, Team, Match
+from models import db, Player, Team, Match, CupMatch, Cup
 from sqlalchemy import or_
 
 def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
@@ -38,7 +38,22 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
         Team.club_id == club_id
     ).all()
 
-    # Collect all teams that have matches
+    # Also find cup matches for this club on this match day
+    home_cup_matches = CupMatch.query.filter_by(
+        cup_match_day=match_day,
+        is_played=False
+    ).join(Team, CupMatch.home_team_id == Team.id).filter(
+        Team.club_id == club_id
+    ).join(Cup).filter(Cup.season_id == season_id).all()
+
+    away_cup_matches = CupMatch.query.filter_by(
+        cup_match_day=match_day,
+        is_played=False
+    ).join(Team, CupMatch.away_team_id == Team.id).filter(
+        Team.club_id == club_id
+    ).join(Cup).filter(Cup.season_id == season_id).all()
+
+    # Collect all teams that have matches (both league and cup)
     for match in home_matches:
         teams_with_matches.append(match.home_team)
         team_to_match[match.home_team.id] = match
@@ -46,6 +61,16 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     for match in away_matches:
         teams_with_matches.append(match.away_team)
         team_to_match[match.away_team.id] = match
+
+    for cup_match in home_cup_matches:
+        if cup_match.home_team not in teams_with_matches:
+            teams_with_matches.append(cup_match.home_team)
+            team_to_match[cup_match.home_team.id] = cup_match
+
+    for cup_match in away_cup_matches:
+        if cup_match.away_team not in teams_with_matches:
+            teams_with_matches.append(cup_match.away_team)
+            team_to_match[cup_match.away_team.id] = cup_match
 
     # If no teams have matches, return empty dictionary
     if not teams_with_matches:
@@ -59,27 +84,15 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     # Filter out players who have already played on this match day
     available_players = Player.query.filter_by(
         club_id=club_id,
-        is_available_current_matchday=True
-    ).filter(
-        or_(
-            Player.last_played_matchday.is_(None),
-            Player.last_played_matchday != match_day
-        )
+        is_available_current_matchday=True,
+        has_played_current_matchday=False
     ).options(
         db.load_only(Player.id, Player.strength, Player.konstanz, Player.drucksicherheit, Player.volle, Player.raeumer)
     ).all()
 
     # Sort players by a weighted rating of their attributes
-    def player_rating(player):
-        return (
-            player.strength * 0.5 +  # 50% weight on strength
-            player.konstanz * 0.1 +   # 10% weight on consistency
-            player.drucksicherheit * 0.1 +  # 10% weight on pressure resistance
-            player.volle * 0.15 +     # 15% weight on full pins
-            player.raeumer * 0.15     # 15% weight on clearing pins
-        )
-
-    available_players.sort(key=player_rating, reverse=True)
+    from simulation import calculate_player_rating
+    available_players.sort(key=calculate_player_rating, reverse=True)
 
     # Assign players to teams
     team_players = {}
@@ -87,22 +100,33 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
 
     # For each team (starting with the highest league), assign 6 players
     for team in teams_with_matches:
-        team_players[team.id] = []
-
-        # Get up to 6 best available players who haven't been assigned yet
-        needed_players = 6
+        # Select the best 6 available players (same logic as before)
+        selected_players = []
         assigned_count = 0
 
         for player in available_players:
-            if player.id not in used_players:
-                team_players[team.id].append(player)
+            if player.id not in used_players and assigned_count < 6:
+                selected_players.append(player)
                 used_players.add(player.id)
                 assigned_count += 1
 
-                # We'll mark players as having played in a bulk operation later
-
-                if assigned_count >= needed_players:
+                if assigned_count >= 6:
                     break
+
+        # Now randomize the positions of these 6 selected players
+        if selected_players:
+            from auto_lineup import randomize_player_positions
+            random_positions = randomize_player_positions(selected_players)
+
+            # Convert to list in random order
+            randomized_players = []
+            for i in range(1, 7):
+                if random_positions[i] is not None:
+                    randomized_players.append(random_positions[i])
+
+            team_players[team.id] = randomized_players
+        else:
+            team_players[team.id] = []
 
 
     # Note: Player flags (has_played_current_matchday, last_played_matchday)
@@ -112,7 +136,7 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     return team_players
 
 
-def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cache_manager):
+def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cache_manager, include_played_matches=False):
     """
     Optimized batch assignment of players to teams for multiple clubs.
 
@@ -121,6 +145,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         match_day: The match day number
         season_id: The ID of the season
         cache_manager: CacheManager instance for caching
+        include_played_matches: Whether to include already played matches (default: False)
 
     Returns:
         dict: A dictionary mapping club_id -> team_id -> list of players
@@ -162,7 +187,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         WHERE t.club_id IN ({placeholders})
             AND m.season_id = :season_id
             AND m.match_day = :match_day
-            AND m.is_played = 0
+            {'' if include_played_matches else 'AND m.is_played = 0'}
 
         UNION
 
@@ -182,7 +207,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         WHERE t.club_id IN ({placeholders})
             AND c.season_id = :season_id
             AND cm.cup_match_day = :match_day
-            AND cm.is_played = 0
+            {'' if include_played_matches else 'AND cm.is_played = 0'}
         ORDER BY club_id, league_level, team_id
     """)
 
@@ -211,21 +236,22 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
 
     # Get all available players for all clubs in one query
     # Use the same placeholders as above
+    from simulation import PLAYER_RATING_SQL
     players_query = text(f"""
         SELECT
-            id, club_id, strength, konstanz, drucksicherheit, volle, raeumer,
+            id, name, club_id, strength, konstanz, drucksicherheit, volle, raeumer,
             ausdauer, sicherheit, auswaerts, start, mitte, schluss,
-            form_short_term, form_medium_term, form_long_term
+            form_short_term, form_medium_term, form_long_term,
+            form_short_remaining_days, form_medium_remaining_days, form_long_remaining_days
         FROM player
         WHERE club_id IN ({placeholders})
             AND is_available_current_matchday = 1
-            AND (last_played_matchday IS NULL OR last_played_matchday != :match_day)
-        ORDER BY club_id, (strength * 0.5 + konstanz * 0.1 + drucksicherheit * 0.1 + volle * 0.15 + raeumer * 0.15) DESC
+            {'' if include_played_matches else 'AND has_played_current_matchday = 0'}
+        ORDER BY club_id, {PLAYER_RATING_SQL} DESC
     """)
 
-    # Use only the club parameters for the players query, plus match_day
+    # Use only the club parameters for the players query
     players_params = {f'param{i}': club_id for i, club_id in enumerate(club_ids_list)}
-    players_params['match_day'] = match_day
     players_data = db.session.execute(players_query, players_params).fetchall()
 
     # Group players by club
@@ -241,6 +267,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         # Create player object-like structure for compatibility
         player_data = {
             'id': row_dict['id'],
+            'name': row_dict['name'],
             'strength': row_dict['strength'],
             'konstanz': row_dict['konstanz'],
             'drucksicherheit': row_dict['drucksicherheit'],
@@ -254,7 +281,10 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             'schluss': row_dict['schluss'],
             'form_short_term': row_dict['form_short_term'],
             'form_medium_term': row_dict['form_medium_term'],
-            'form_long_term': row_dict['form_long_term']
+            'form_long_term': row_dict['form_long_term'],
+            'form_short_remaining_days': row_dict['form_short_remaining_days'],
+            'form_medium_remaining_days': row_dict['form_medium_remaining_days'],
+            'form_long_remaining_days': row_dict['form_long_remaining_days']
         }
         club_players[club_id].append(player_data)
 
@@ -280,15 +310,60 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             team_id = team['id']
             result[club_id][team_id] = []
 
+            # Select the best 6 available players (same logic as before)
             assigned_count = 0
+            selected_players = []
             for player_data in available_players:
                 if player_data['id'] not in used_players and assigned_count < 6:
-                    result[club_id][team_id].append(player_data)
+                    selected_players.append(player_data)
                     used_players.add(player_data['id'])
                     assigned_count += 1
 
                 if assigned_count >= 6:
                     break
+
+            # Now randomize the positions of these 6 selected players
+            if selected_players:
+                # Convert to objects for position randomization
+                player_objects = []
+                for player_data in selected_players:
+                    player_obj = type('Player', (), player_data)()
+                    player_objects.append(player_obj)
+
+                # Apply position randomization
+                from auto_lineup import randomize_player_positions
+                random_positions = randomize_player_positions(player_objects)
+
+                # Convert back to list in random order
+                randomized_players = []
+                for i in range(1, 7):
+                    if random_positions[i] is not None:
+                        # Convert back to dictionary format
+                        player_obj = random_positions[i]
+                        player_data = {
+                            'id': player_obj.id,
+                            'name': player_obj.name,
+                            'strength': player_obj.strength,
+                            'konstanz': player_obj.konstanz,
+                            'drucksicherheit': player_obj.drucksicherheit,
+                            'volle': player_obj.volle,
+                            'raeumer': player_obj.raeumer,
+                            'ausdauer': player_obj.ausdauer,
+                            'sicherheit': player_obj.sicherheit,
+                            'auswaerts': player_obj.auswaerts,
+                            'start': player_obj.start,
+                            'mitte': player_obj.mitte,
+                            'schluss': player_obj.schluss,
+                            'form_short_term': player_obj.form_short_term,
+                            'form_medium_term': player_obj.form_medium_term,
+                            'form_long_term': player_obj.form_long_term,
+                            'form_short_remaining_days': player_obj.form_short_remaining_days,
+                            'form_medium_remaining_days': player_obj.form_medium_remaining_days,
+                            'form_long_remaining_days': player_obj.form_long_remaining_days
+                        }
+                        randomized_players.append(player_data)
+
+                result[club_id][team_id] = randomized_players
 
     end_time = time.time()
     print(f"Batch assigned players for {len(clubs_with_matches)} clubs in {end_time - start_time:.3f}s")

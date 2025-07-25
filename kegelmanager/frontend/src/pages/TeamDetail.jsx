@@ -546,7 +546,7 @@ const TeamDetail = () => {
                     <h3>Spielerkader</h3>
                     <div className="player-roster">
                       {team.players
-                        .sort((a, b) => b.strength - a.strength)
+                        .sort((a, b) => a.name.localeCompare(b.name))
                         .map((player, index) => (
                           <Link to={`/players/${player.id}`} key={player.id} className="roster-player">
                             <div className="player-rank">{index + 1}</div>
@@ -655,7 +655,9 @@ const TeamDetail = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {team.players.map(player => (
+                  {team.players
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(player => (
                     <tr key={player.id}>
                       <td>
                         <Link to={`/players/${player.id}`} className="player-name-link">

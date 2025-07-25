@@ -26,16 +26,16 @@ def generate_form_modifier(form_type):
         tuple: (modifier_value, duration_days)
     """
     if form_type == 'short':
-        # Short-term form: -20 to +20, duration 1-3 days
-        modifier = random.uniform(-20, 20)
+        # Short-term form: -10 to +10, duration 1-3 days
+        modifier = random.uniform(-10, 10)
         duration = random.randint(1, 3)
     elif form_type == 'medium':
-        # Medium-term form: -15 to +15, duration 4-8 days
-        modifier = random.uniform(-15, 15)
+        # Medium-term form: -7 to +7, duration 4-8 days
+        modifier = random.uniform(-7, 7)
         duration = random.randint(4, 8)
     elif form_type == 'long':
-        # Long-term form: -10 to +10, duration 10-20 days
-        modifier = random.uniform(-10, 10)
+        # Long-term form: -5 to +5, duration 10-20 days
+        modifier = random.uniform(-5, 5)
         duration = random.randint(10, 20)
     else:
         raise ValueError(f"Invalid form type: {form_type}")

@@ -144,6 +144,9 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
       invalidateAfterSimulation();
       invalidateAllCache();
 
+      // Sende Event für Dashboard-Aktualisierung
+      window.dispatchEvent(new CustomEvent('simulationComplete'));
+
       // Aktualisiere die Match-Daten ohne Seitenreload
       try {
         const matches = await getMatches();
@@ -213,6 +216,9 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
       invalidateAfterSimulation();
       invalidateAllCache();
 
+      // Sende Event für Dashboard-Aktualisierung
+      window.dispatchEvent(new CustomEvent('simulationComplete'));
+
       // Informiere den Benutzer, dass die Saison simuliert wurde
       alert('Die Saison wurde vollständig simuliert. Der Button sollte jetzt "Saisonwechsel" anzeigen.');
     } catch (error) {
@@ -244,6 +250,9 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
 
       // Invalidate all cache after season transition
       invalidateAfterSeasonTransition();
+
+      // Sende Event für Dashboard-Aktualisierung
+      window.dispatchEvent(new CustomEvent('simulationComplete'));
 
       // Informiere den Benutzer über den erfolgreichen Saisonwechsel
       alert(`Saisonwechsel erfolgreich! Neue Saison "${result.new_season}" wurde erstellt. Die Seite wird neu geladen.`);

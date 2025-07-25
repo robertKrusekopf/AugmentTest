@@ -68,7 +68,7 @@ Die `simulate_match` Funktion wurde angepasst, um:
 
 ## Funktionsweise
 
-1. **Spielerverfügbarkeit**: 16,7% der Spieler sind zufällig nicht verfügbar
+1. **Spielerverfügbarkeit**: 0-30% der Spieler sind zufällig nicht verfügbar
 2. **Aufstellungserstellung**: Teams werden mit verfügbaren Spielern aufgestellt (auch wenn < 6)
 3. **Spielsimulation**: Fehlende Spieler werden durch Stroh-Spieler ersetzt
 4. **Stroh-Spieler-Erstellung**: Basierend auf dem schwächsten realen Spieler im Team
