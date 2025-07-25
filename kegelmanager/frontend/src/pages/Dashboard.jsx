@@ -209,12 +209,30 @@ const Dashboard = () => {
           </div>
 
           <div className="stat-card">
-            <h3>Tabellenplatz</h3>
+            <h3>Letztes Spiel</h3>
             <div className="value">
-              {teamLeague?.standings?.find(team => team.team_id === firstTeam.id)?.position || '-'}
+              {lastMatch ? (
+                <Link to={`/matches/${lastMatch.id}`}>
+                  {lastMatch.home_score} : {lastMatch.away_score}
+                  <div style={{ fontSize: '16px', fontWeight: '500', marginTop: '4px' }}>
+                    ({lastMatch.home_match_points} : {lastMatch.away_match_points} MP)
+                  </div>
+                </Link>
+              ) : '-'}
             </div>
             <div className="change">
-              <span>von {teamLeague?.standings?.length || '-'} Teams</span>
+              <span>
+                {lastMatch ? (
+                  <>
+                    {firstTeam && lastMatch.home_team_id === firstTeam.id ?
+                      `vs ${lastMatch.away_team_name}` :
+                      `@ ${lastMatch.home_team_name}`}
+                    {lastMatch.match_date && (
+                      <> • {new Date(lastMatch.match_date).toLocaleDateString()}</>
+                    )}
+                  </>
+                ) : 'Kein Spiel verfügbar'}
+              </span>
             </div>
           </div>
 
