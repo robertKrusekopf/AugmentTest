@@ -497,9 +497,26 @@ def advance_completed_cup_rounds(season_id, match_day):
                 {"cup_id": cup.id, "match_day": match_day}
             ).scalar()
 
-            # Only try to advance if matches were played today for this cup
-            if played_matches_today > 0:
-                print(f"POKAL: Cup {cup.name}: {played_matches_today} matches played on match day {match_day}")
+            # Try to advance if matches were played today OR if all matches in current round are completed
+            # This handles cases where matches were played on previous days but advancement was missed
+            should_check_advancement = played_matches_today > 0
+
+            if not should_check_advancement:
+                # Check if all matches in current round are completed (fallback for missed advancements)
+                current_round_matches = CupMatch.query.filter_by(
+                    cup_id=cup.id,
+                    round_number=cup.current_round_number
+                ).all()
+
+                if current_round_matches:
+                    all_played = all(match.is_played for match in current_round_matches)
+                    if all_played:
+                        should_check_advancement = True
+                        print(f"POKAL: Cup {cup.name}: All matches in round {cup.current_round_number} completed, checking advancement")
+
+            if should_check_advancement:
+                if played_matches_today > 0:
+                    print(f"POKAL: Cup {cup.name}: {played_matches_today} matches played on match day {match_day}")
 
                 # Check if this cup can advance to the next round
                 # This will check ALL matches in the current round, not just today's
