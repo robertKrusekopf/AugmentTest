@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { getTeam, getTeamHistory, getTeamCupHistory, getTeamAchievements, updateTeam } from '../services/api';
 import './TeamDetail.css';
 
 const TeamDetail = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -79,6 +80,14 @@ const TeamDetail = () => {
         setLoading(false);
       });
   }, [id]);
+
+  // Setze den aktiven Tab basierend auf URL-Parameter
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['overview', 'players', 'matches', 'stats', 'current-season-stats', 'history'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   // Lade Team-Historie wenn der Historie-Tab aktiv ist
   useEffect(() => {
