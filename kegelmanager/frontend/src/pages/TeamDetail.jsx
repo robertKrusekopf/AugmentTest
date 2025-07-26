@@ -614,7 +614,10 @@ const TeamDetail = () => {
                               <div className="match-date">
                                 {new Date(match.date).toLocaleDateString('de-DE', {
                                   day: '2-digit',
-                                  month: '2-digit'
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
                                 })}
                               </div>
                               <div className="match-teams">
@@ -720,6 +723,36 @@ const TeamDetail = () => {
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Alle Spiele chronologisch sortiert - vergangene Spiele zuerst (älteste oben), dann kommende Spiele */}
+                  {[...team.recentMatches].reverse().map(match => (
+                    <tr key={`recent-${match.id}`} className="recent-match">
+                      <td>
+                        {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        }) : 'Kein Datum'}
+                      </td>
+                      <td className={match.homeTeam === team.name ? 'home-team' : ''}>
+                        {match.homeTeam}
+                      </td>
+                      <td>
+                        <strong>{match.homeScore} - {match.awayScore}</strong>
+                      </td>
+                      <td className={match.awayTeam === team.name ? 'home-team' : ''}>
+                        {match.awayTeam}
+                      </td>
+                      <td>{match.league}</td>
+                      <td>
+                        <Link to={`/matches/${match.id}`} className="btn btn-small">
+                          Details
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+
                   {/* Kommende Spiele (bereits chronologisch sortiert vom Backend) */}
                   {team.upcomingMatches.map(match => (
                     <tr key={`upcoming-${match.id}`} className="upcoming-match">
@@ -750,33 +783,7 @@ const TeamDetail = () => {
                     </tr>
                   ))}
 
-                  {/* Vergangene Spiele (bereits chronologisch sortiert vom Backend) */}
-                  {team.recentMatches.map(match => (
-                    <tr key={`recent-${match.id}`} className="recent-match">
-                      <td>
-                        {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric'
-                        }) : 'Kein Datum'}
-                      </td>
-                      <td className={match.homeTeam === team.name ? 'home-team' : ''}>
-                        {match.homeTeam}
-                      </td>
-                      <td>
-                        <strong>{match.homeScore} - {match.awayScore}</strong>
-                      </td>
-                      <td className={match.awayTeam === team.name ? 'home-team' : ''}>
-                        {match.awayTeam}
-                      </td>
-                      <td>{match.league}</td>
-                      <td>
-                        <Link to={`/matches/${match.id}`} className="btn btn-small">
-                          Details
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+
                 </tbody>
               </table>
             </div>
