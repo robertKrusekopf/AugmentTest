@@ -136,7 +136,7 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     return team_players
 
 
-def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cache_manager, include_played_matches=False):
+def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cache_manager, include_played_matches=False, target_date=None):
     """
     Optimized batch assignment of players to teams for multiple clubs.
 
@@ -146,11 +146,12 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         season_id: The ID of the season
         cache_manager: CacheManager instance for caching
         include_played_matches: Whether to include already played matches (default: False)
+        target_date: Optional target date for cup matches (if provided, uses date-based filtering for cups)
 
     Returns:
         dict: A dictionary mapping club_id -> team_id -> list of players
     """
-    from sqlalchemy import text
+    from sqlalchemy import text, func
     import time
 
     start_time = time.time()
@@ -170,6 +171,41 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
     params = {f'param{i}': club_id for i, club_id in enumerate(club_ids_list)}
     params['season_id'] = season_id
     params['match_day'] = match_day
+
+    # Build the cup match filter based on whether we have a target_date
+    if target_date:
+        # Use date-based filtering for cup matches
+        cup_filter = "AND DATE(cm.match_date) = :target_date"
+        params['target_date'] = target_date
+        print(f"DEBUG: Using date-based cup filtering for {target_date}")
+
+        # Debug: Check how many cup matches exist for this date
+        debug_cup_query = text(f"""
+            SELECT COUNT(*) as count
+            FROM cup_match cm
+            JOIN cup c ON cm.cup_id = c.id
+            WHERE c.season_id = :season_id
+                AND DATE(cm.match_date) = :target_date
+                {'' if include_played_matches else 'AND cm.is_played = 0'}
+        """)
+        debug_result = db.session.execute(debug_cup_query, {'season_id': season_id, 'target_date': target_date}).fetchone()
+        print(f"DEBUG: Found {debug_result[0]} cup matches for date {target_date}")
+
+        # Debug: Also check cup_match_day filtering
+        debug_cup_day_query = text(f"""
+            SELECT COUNT(*) as count
+            FROM cup_match cm
+            JOIN cup c ON cm.cup_id = c.id
+            WHERE c.season_id = :season_id
+                AND cm.cup_match_day = :match_day
+                {'' if include_played_matches else 'AND cm.is_played = 0'}
+        """)
+        debug_day_result = db.session.execute(debug_cup_day_query, {'season_id': season_id, 'match_day': match_day}).fetchone()
+        print(f"DEBUG: Found {debug_day_result[0]} cup matches for cup_match_day {match_day}")
+    else:
+        # Use cup_match_day filtering for cup matches
+        cup_filter = "AND cm.cup_match_day = :match_day"
+        print(f"DEBUG: Using cup_match_day filtering for match day {match_day}")
 
     teams_query = text(f"""
         SELECT DISTINCT
@@ -206,7 +242,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         JOIN cup c ON cm.cup_id = c.id
         WHERE t.club_id IN ({placeholders})
             AND c.season_id = :season_id
-            AND cm.cup_match_day = :match_day
+            {cup_filter}
             {'' if include_played_matches else 'AND cm.is_played = 0'}
         ORDER BY club_id, league_level, team_id
     """)
@@ -237,6 +273,21 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
     # Get all available players for all clubs in one query
     # Use the same placeholders as above
     from simulation import PLAYER_RATING_SQL
+
+    # For cup matches, we need to be more lenient with player availability
+    # since cup and league matches use the same match_day numbers but are on different dates
+    is_cup_day = target_date is not None
+
+    if is_cup_day:
+        # For cup matches, only check availability, not if they've played
+        # since has_played_current_matchday refers to league matches
+        player_filter = "AND is_available_current_matchday = 1"
+        print(f"DEBUG: Cup day detected - ignoring has_played_current_matchday flag")
+    else:
+        # For league matches, use the normal filtering
+        player_filter = f"AND is_available_current_matchday = 1 {'' if include_played_matches else 'AND has_played_current_matchday = 0'}"
+        print(f"DEBUG: League day detected - using normal player filtering")
+
     players_query = text(f"""
         SELECT
             id, name, club_id, strength, konstanz, drucksicherheit, volle, raeumer,
@@ -245,8 +296,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             form_short_remaining_days, form_medium_remaining_days, form_long_remaining_days
         FROM player
         WHERE club_id IN ({placeholders})
-            AND is_available_current_matchday = 1
-            {'' if include_played_matches else 'AND has_played_current_matchday = 0'}
+            {player_filter}
         ORDER BY club_id, {PLAYER_RATING_SQL} DESC
     """)
 

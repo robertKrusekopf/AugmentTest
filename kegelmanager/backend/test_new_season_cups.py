@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""
+Create a new season and test cup player availability.
+"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from app import app, db
+from models import Season, Cup, CupMatch, Team, Player, SeasonCalendar
+from simulation import simulate_match_day
+from season_calendar import validate_no_date_conflicts
+from sqlalchemy import func
+from datetime import datetime, date
+
+def create_test_season_and_test_cups():
+    """Create a new season and test cup player availability."""
+    with app.app_context():
+        print("=== CREATING NEW SEASON FOR CUP TESTING ===\n")
+        
+        # Get current season for reference
+        current_season = Season.query.filter_by(is_current=True).first()
+        if not current_season:
+            print("No current season found")
+            return
+        
+        print(f"Current season: {current_season.name}")
+        
+        # Create new season
+        from datetime import date, timedelta
+        new_season_name = "Test Season 2026"
+        start_date = date(2025, 8, 1)
+        end_date = date(2026, 7, 31)
+        
+        # Check if test season already exists
+        existing_test_season = Season.query.filter_by(name=new_season_name).first()
+        if existing_test_season:
+            print(f"Test season {new_season_name} already exists, using it")
+            test_season = existing_test_season
+        else:
+            print(f"Creating new test season: {new_season_name}")
+            test_season = Season(
+                name=new_season_name,
+                start_date=start_date,
+                end_date=end_date,
+                is_current=False
+            )
+            db.session.add(test_season)
+            db.session.commit()
+        
+        # Set as current season temporarily
+        current_season.is_current = False
+        test_season.is_current = True
+        db.session.commit()
+        
+        try:
+            # Create leagues and teams for test season (copy from current season)
+            print("Creating leagues and teams for test season...")
+            from models import League
+            
+            # Copy leagues
+            original_leagues = League.query.filter_by(season_id=current_season.id).all()
+            league_mapping = {}
+            
+            for orig_league in original_leagues:
+                # Check if league already exists
+                existing_league = League.query.filter_by(
+                    season_id=test_season.id,
+                    name=orig_league.name
+                ).first()
+                
+                if not existing_league:
+                    new_league = League(
+                        name=orig_league.name,
+                        level=orig_league.level,
+                        season_id=test_season.id,
+                        bundesland=orig_league.bundesland,
+                        landkreis=orig_league.landkreis
+                    )
+                    db.session.add(new_league)
+                    db.session.flush()
+                    league_mapping[orig_league.id] = new_league.id
+                else:
+                    league_mapping[orig_league.id] = existing_league.id
+            
+            # Copy teams
+            original_teams = Team.query.join(League).filter(League.season_id == current_season.id).all()
+            team_mapping = {}
+            
+            for orig_team in original_teams:
+                new_league_id = league_mapping.get(orig_team.league_id)
+                if not new_league_id:
+                    continue
+                
+                # Check if team already exists
+                existing_team = Team.query.filter_by(
+                    name=orig_team.name,
+                    league_id=new_league_id
+                ).first()
+                
+                if not existing_team:
+                    new_team = Team(
+                        name=orig_team.name,
+                        club_id=orig_team.club_id,
+                        league_id=new_league_id
+                    )
+                    db.session.add(new_team)
+                    db.session.flush()
+                    team_mapping[orig_team.id] = new_team.id
+                else:
+                    team_mapping[orig_team.id] = existing_team.id
+            
+            db.session.commit()
+            print(f"Created {len(league_mapping)} leagues and {len(team_mapping)} teams")
+            
+            # Create cups first
+            print("Creating cups...")
+            from app import auto_initialize_cups
+            auto_initialize_cups(test_season.id)
+
+            # Get created cups
+            created_cups = Cup.query.filter_by(season_id=test_season.id).all()
+            print(f"Created {len(created_cups)} cups")
+
+            # Generate cup fixtures (already done by auto_initialize_cups)
+            print("Cup fixtures already generated by auto_initialize_cups")
+
+            # Now create season calendar (after cups exist)
+            print("Creating season calendar with cup days...")
+            from season_calendar import create_season_calendar
+            create_season_calendar(test_season.id)
+
+            # Set match dates
+            print("Setting match dates...")
+            from season_calendar import set_all_match_dates_unified
+            set_all_match_dates_unified(test_season.id)
+            
+            # Now test the first cup day
+            print("\n=== TESTING CUP PLAYER AVAILABILITY ===")
+            
+            # Find first cup day
+            first_cup_day = SeasonCalendar.query.filter_by(
+                season_id=test_season.id,
+                day_type='CUP_DAY',
+                is_simulated=False
+            ).order_by(SeasonCalendar.calendar_date).first()
+            
+            if not first_cup_day:
+                print("No cup days found")
+                return
+            
+            print(f"First cup day: {first_cup_day.calendar_date} (Match day {first_cup_day.match_day_number})")
+            
+            # Check cup matches for this day
+            cup_matches = db.session.query(CupMatch).join(Cup).filter(
+                Cup.season_id == test_season.id,
+                CupMatch.is_played == False,
+                func.date(CupMatch.match_date) == first_cup_day.calendar_date
+            ).all()
+            
+            print(f"Found {len(cup_matches)} cup matches for this day")
+            
+            if cup_matches:
+                # Analyze first few matches
+                print("\nAnalyzing player availability for first few matches:")
+                for i, cup_match in enumerate(cup_matches[:3]):
+                    if not cup_match.away_team:  # Skip bye matches
+                        continue
+                    
+                    print(f"\nMatch {i+1}: {cup_match.home_team.name} vs {cup_match.away_team.name}")
+                    
+                    for team in [cup_match.home_team, cup_match.away_team]:
+                        # Get all players from this club
+                        all_players = Player.query.filter_by(club_id=team.club_id).all()
+                        available_players = [p for p in all_players if p.is_available_current_matchday]
+                        
+                        print(f"  {team.name} (Club {team.club_id}): {len(available_players)}/{len(all_players)} players available")
+                        
+                        if len(available_players) < 6:
+                            stroh_needed = 6 - len(available_players)
+                            print(f"    ⚠️  Will need {stroh_needed} Stroh player(s)")
+                
+                # Test simulation
+                print(f"\nSimulating cup day...")
+                result = simulate_match_day(test_season)
+                print(f"✅ Simulation completed!")
+                print(f"   Matches simulated: {result.get('matches_simulated', 0)}")
+                print(f"   Day type: {result.get('day_type', 'Unknown')}")
+                
+                if result.get('matches_simulated', 0) > 0:
+                    print("   ✅ Cup matches were successfully simulated with fixed logic")
+                else:
+                    print("   ⚠️  No matches were simulated")
+            
+        finally:
+            # Restore original current season
+            test_season.is_current = False
+            current_season.is_current = True
+            db.session.commit()
+            print(f"\nRestored {current_season.name} as current season")
+        
+        print("\n=== TEST COMPLETED ===")
+
+if __name__ == "__main__":
+    create_test_season_and_test_cups()

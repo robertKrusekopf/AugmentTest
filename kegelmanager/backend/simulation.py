@@ -320,31 +320,43 @@ def simulate_match_day(season):
     print(f"Simulating date {next_calendar_day.calendar_date} ({next_calendar_day.day_type}) for season {season.name}")
 
     # Step 2: Reset player flags efficiently
-    # Pass the current match day to prevent players from playing for multiple teams
-    bulk_reset_player_flags(current_match_day=next_calendar_day.match_day_number)
+    # Pass the current match day and day type to handle Liga vs Pokal correctly
+    bulk_reset_player_flags(
+        current_match_day=next_calendar_day.match_day_number,
+        day_type=next_calendar_day.day_type
+    )
 
     # Step 3: Get matches for this calendar day using date-based logic
     matches_data = []
     cup_matches_data = []
 
-    # Get matches by date
+    # Get matches by date - but only for the correct day type
     match_date = next_calendar_day.calendar_date
+    day_type = next_calendar_day.day_type
 
-    # Get league matches for this date
-    matches_data = get_league_matches_for_date(season.id, match_date)
+    # Get matches based on the day type to prevent conflicts
+    matches_data = []
+    cup_matches_data = []
 
-    # Get cup matches for this date
-    cup_matches_data = get_cup_matches_for_date(season.id, match_date)
+    if day_type == 'LEAGUE_DAY':
+        # Only get league matches on league days
+        matches_data = get_league_matches_for_date(season.id, match_date)
+        print(f"LEAGUE_DAY: Found {len(matches_data)} league matches for date {match_date}")
+    elif day_type == 'CUP_DAY':
+        # Only get cup matches on cup days
+        cup_matches_data = get_cup_matches_for_date(season.id, match_date)
+        print(f"CUP_DAY: Found {len(cup_matches_data)} cup matches for date {match_date}")
+    else:
+        # FREE_DAY - no matches should be scheduled
+        print(f"FREE_DAY: No matches scheduled for date {match_date}")
 
     if not matches_data and not cup_matches_data:
         return {
             'season': season.name,
             'matches_simulated': 0,
             'results': [],
-            'message': f'Keine Spiele für Datum {match_date} gefunden.'
+            'message': f'Keine Spiele für {day_type} am Datum {match_date} gefunden.'
         }
-
-    print(f"Found {len(matches_data)} league matches and {len(cup_matches_data)} cup matches for date {match_date}")
 
     # Step 4: Determine clubs and teams playing (from both league and cup matches)
     clubs_with_matches = set()
@@ -390,11 +402,16 @@ def simulate_match_day(season):
     assignment_start = time.time()
     from club_player_assignment import batch_assign_players_to_teams
     cache = CacheManager()
+
+    # Convert match_date to date if it's a datetime
+    target_date = match_date.date() if hasattr(match_date, 'date') else match_date
+
     club_team_players = batch_assign_players_to_teams(
         clubs_with_matches,
         next_calendar_day.match_day_number,
         season.id,
-        cache
+        cache,
+        target_date=target_date
     )
     print(f"Assigned players to teams in {time.time() - assignment_start:.3f}s")
 

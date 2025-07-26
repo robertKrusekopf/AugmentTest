@@ -49,12 +49,13 @@ def create_performance_indexes():
         print(f"Error creating indexes: {str(e)}")
 
 
-def bulk_reset_player_flags(current_match_day=None):
+def bulk_reset_player_flags(current_match_day=None, day_type=None):
     """
     Optimized bulk reset of player flags using raw SQL.
 
     Args:
         current_match_day: If provided, only reset flags for players who played on a different match day
+        day_type: The type of day ('LEAGUE_DAY' or 'CUP_DAY') - affects reset logic
     """
     try:
         start_time = time.time()
@@ -64,19 +65,29 @@ def bulk_reset_player_flags(current_match_day=None):
             text("UPDATE player SET is_available_current_matchday = 1")
         )
 
-        # Reset match day flags - behavior depends on current_match_day parameter
+        # Reset match day flags - behavior depends on current_match_day parameter and day_type
         if current_match_day is not None:
-            # Only reset flags for players who played on a different match day
-            # This prevents players from playing for multiple teams in the same season
-            result2 = db.session.execute(
-                text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1 AND (last_played_matchday IS NULL OR last_played_matchday != :match_day)"),
-                {"match_day": current_match_day}
-            )
+            if day_type == 'CUP_DAY':
+                # For cup days, reset has_played_current_matchday for ALL players
+                # since cup and league matches are independent
+                result2 = db.session.execute(
+                    text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1")
+                )
+                print(f"CUP_DAY: Reset has_played_current_matchday for all players who had played")
+            else:
+                # For league days, only reset flags for players who played on a different match day
+                # This prevents players from playing for multiple teams in the same season
+                result2 = db.session.execute(
+                    text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1 AND (last_played_matchday IS NULL OR last_played_matchday != :match_day)"),
+                    {"match_day": current_match_day}
+                )
+                print(f"LEAGUE_DAY: Reset has_played_current_matchday for players who played on different match day")
         else:
             # Reset all match day flags (used for season simulation)
             result2 = db.session.execute(
                 text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1")
             )
+            print(f"SEASON_SIMULATION: Reset has_played_current_matchday for all players")
 
         db.session.commit()
 
