@@ -84,7 +84,7 @@ def debug_third_matchday():
         cup_matches = db.session.query(CupMatch).join(Cup).filter(
             Cup.season_id == season.id,
             CupMatch.is_played == False,
-            CupMatch.match_date == target_date
+            func.date(CupMatch.match_date) == target_date
         ).all()
 
         print(f'\nCup matches scheduled for {target_date}: {len(cup_matches)}')

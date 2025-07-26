@@ -99,6 +99,7 @@ def debug_calendar():
         print()
         
         # Check cup matches on this date
+        from sqlalchemy import func
         matches_on_date = db.session.query(
             CupMatch.id,
             CupMatch.cup_match_day,
@@ -107,7 +108,7 @@ def debug_calendar():
             Cup.cup_type
         ).join(Cup).filter(
             Cup.season_id == current_season.id,
-            CupMatch.match_date == target_date
+            func.date(CupMatch.match_date) == target_date
         ).order_by(CupMatch.cup_match_day).all()
         
         print(f"Cup matches on {target_date}:")

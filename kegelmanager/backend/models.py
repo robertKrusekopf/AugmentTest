@@ -470,19 +470,8 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in home_cup_matches_raw:
-                # Convert match_date to datetime for consistency
-                match_datetime = None
-                if cup_match_row.match_date:
-                    try:
-                        if isinstance(cup_match_row.match_date, str):
-                            # Parse string date
-                            from datetime import datetime as dt
-                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
-                        else:
-                            # Assume it's a date object
-                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
-                    except (ValueError, TypeError):
-                        match_datetime = None
+                # match_date is now already a datetime, no conversion needed
+                match_datetime = cup_match_row.match_date
 
                 # Import the helper function
                 from app import get_cup_match_frontend_id
@@ -515,19 +504,8 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in away_cup_matches_raw:
-                # Convert match_date to datetime for consistency
-                match_datetime = None
-                if cup_match_row.match_date:
-                    try:
-                        if isinstance(cup_match_row.match_date, str):
-                            # Parse string date
-                            from datetime import datetime as dt
-                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
-                        else:
-                            # Assume it's a date object
-                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
-                    except (ValueError, TypeError):
-                        match_datetime = None
+                # match_date is now already a datetime, no conversion needed
+                match_datetime = cup_match_row.match_date
 
                 # Import the helper function
                 from app import get_cup_match_frontend_id
@@ -613,19 +591,8 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in home_cup_matches_raw:
-                # Convert match_date to datetime for consistency
-                match_datetime = None
-                if cup_match_row.match_date:
-                    try:
-                        if isinstance(cup_match_row.match_date, str):
-                            # Parse string date
-                            from datetime import datetime as dt
-                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
-                        else:
-                            # Assume it's a date object
-                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
-                    except (ValueError, TypeError):
-                        match_datetime = None
+                # match_date is now already a datetime, no conversion needed
+                match_datetime = cup_match_row.match_date
 
                 # Import the helper function
                 from app import get_cup_match_frontend_id
@@ -658,19 +625,8 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in away_cup_matches_raw:
-                # Convert match_date to datetime for consistency
-                match_datetime = None
-                if cup_match_row.match_date:
-                    try:
-                        if isinstance(cup_match_row.match_date, str):
-                            # Parse string date
-                            from datetime import datetime as dt
-                            match_datetime = dt.fromisoformat(cup_match_row.match_date)
-                        else:
-                            # Assume it's a date object
-                            match_datetime = datetime.combine(cup_match_row.match_date, datetime.min.time())
-                    except (ValueError, TypeError):
-                        match_datetime = None
+                # match_date is now already a datetime, no conversion needed
+                match_datetime = cup_match_row.match_date
 
                 # Import the helper function
                 from app import get_cup_match_frontend_id
@@ -1778,7 +1734,7 @@ class CupMatch(db.Model):
     round_name = db.Column(db.String(50), nullable=False)  # "1. Runde", "Achtelfinale", etc.
     round_number = db.Column(db.Integer, nullable=False)  # 1, 2, 3, etc.
     cup_match_day = db.Column(db.Integer)  # Pokalspieltag (zwischen normalen Ligaspieltagen verteilt)
-    match_date = db.Column(db.Date)
+    match_date = db.Column(db.DateTime)  # Vereinheitlicht mit Liga-Spielen
     is_played = db.Column(db.Boolean, default=False)
 
     # Ergebnisse

@@ -627,6 +627,20 @@
   border-bottom: 1px solid var(--border-color);
 }
 
+/* Styling für kommende und vergangene Spiele */
+.upcoming-match {
+  background-color: rgba(76, 175, 80, 0.05);
+}
+
+.recent-match {
+  background-color: rgba(158, 158, 158, 0.05);
+}
+
+.upcoming-indicator {
+  color: #4caf50;
+  font-weight: 500;
+}
+
 .players-table th, .matches-table th {
   background-color: #f1f3f4;
   font-weight: 500;

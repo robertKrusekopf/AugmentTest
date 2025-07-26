@@ -3127,6 +3127,7 @@ def get_cup_matches_for_date(season_id, match_date):
     Verwendet die gleiche Logik wie get_cup_matches_for_match_day, aber filtert nach Datum.
     """
     from sqlalchemy.orm import aliased
+    from sqlalchemy import func
     from models import CupMatch, Cup
 
     # Konvertiere match_date zu einem Datum falls es ein datetime ist
@@ -3160,7 +3161,7 @@ def get_cup_matches_for_date(season_id, match_date):
     ).filter(
         Cup.season_id == season_id,
         CupMatch.is_played == False,
-        CupMatch.match_date == target_date
+        func.date(CupMatch.match_date) == target_date
     )
 
     cup_matches_data = []

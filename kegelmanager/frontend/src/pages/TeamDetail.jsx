@@ -11,6 +11,7 @@ const TeamDetail = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [upcomingMatchesExpanded, setUpcomingMatchesExpanded] = useState(false);
   const [recentMatchesExpanded, setRecentMatchesExpanded] = useState(false);
+
   const [isEditingStaerke, setIsEditingStaerke] = useState(false);
   const [staerkeValue, setStaerkeValue] = useState(0);
   const [savingStaerke, setSavingStaerke] = useState(false);
@@ -155,7 +156,7 @@ const TeamDetail = () => {
     return <div className="error">Team nicht gefunden</div>;
   }
 
-  // Toggle functions for expanding/collapsing match lists
+  // Toggle functions for expanding/collapsing match lists (used in overview tab)
   const toggleUpcomingMatches = () => {
     setUpcomingMatchesExpanded(!upcomingMatchesExpanded);
   };
@@ -705,67 +706,7 @@ const TeamDetail = () => {
           {activeTab === 'matches' && (
             <div className="matches-tab">
               <div className="section-header">
-                <h3>Nächste Spiele</h3>
-                {team.upcomingMatches.length > 5 && (
-                  <button
-                    className="expand-button"
-                    onClick={toggleUpcomingMatches}
-                  >
-                    {upcomingMatchesExpanded ? 'Einklappen' : 'Ausklappen'}
-                  </button>
-                )}
-              </div>
-              <table className="table matches-table">
-                <thead>
-                  <tr>
-                    <th>Datum</th>
-                    <th>Heimteam</th>
-                    <th>Auswärtsteam</th>
-                    <th>Liga</th>
-                    <th>Aktionen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {team.upcomingMatches
-                    .filter(match => match.visible || upcomingMatchesExpanded)
-                    .map(match => (
-                      <tr key={match.id}>
-                        <td>
-                          {new Date(match.date).toLocaleDateString('de-DE', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </td>
-                        <td className={match.homeTeam === team.name ? 'home-team' : ''}>
-                          {match.homeTeam}
-                        </td>
-                        <td className={match.awayTeam === team.name ? 'home-team' : ''}>
-                          {match.awayTeam}
-                        </td>
-                        <td>{match.league}</td>
-                        <td>
-                          <Link to={`/matches/${match.id}`} className="btn btn-small">
-                            Details
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-
-              <div className="section-header">
-                <h3>Letzte Ergebnisse</h3>
-                {team.recentMatches.length > 5 && (
-                  <button
-                    className="expand-button"
-                    onClick={toggleRecentMatches}
-                  >
-                    {recentMatchesExpanded ? 'Einklappen' : 'Ausklappen'}
-                  </button>
-                )}
+                <h3>Alle Spiele</h3>
               </div>
               <table className="table matches-table">
                 <thead>
@@ -779,33 +720,63 @@ const TeamDetail = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {team.recentMatches
-                    .filter(match => match.visible || recentMatchesExpanded)
-                    .map(match => (
-                      <tr key={match.id}>
-                        <td>
-                          {new Date(match.date).toLocaleDateString('de-DE', {
-                            day: '2-digit',
-                            month: '2-digit'
-                          })}
-                        </td>
-                        <td className={match.homeTeam === team.name ? 'home-team' : ''}>
-                          {match.homeTeam}
-                        </td>
-                        <td>
-                          <strong>{match.homeScore} - {match.awayScore}</strong>
-                        </td>
-                        <td className={match.awayTeam === team.name ? 'home-team' : ''}>
-                          {match.awayTeam}
-                        </td>
-                        <td>{match.league}</td>
-                        <td>
-                          <Link to={`/matches/${match.id}`} className="btn btn-small">
-                            Details
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
+                  {/* Kommende Spiele (bereits chronologisch sortiert vom Backend) */}
+                  {team.upcomingMatches.map(match => (
+                    <tr key={`upcoming-${match.id}`} className="upcoming-match">
+                      <td>
+                        {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        }) : 'Kein Datum'}
+                      </td>
+                      <td className={match.homeTeam === team.name ? 'home-team' : ''}>
+                        {match.homeTeam}
+                      </td>
+                      <td>
+                        <span className="upcoming-indicator">-:-</span>
+                      </td>
+                      <td className={match.awayTeam === team.name ? 'home-team' : ''}>
+                        {match.awayTeam}
+                      </td>
+                      <td>{match.league}</td>
+                      <td>
+                        <Link to={`/matches/${match.id}`} className="btn btn-small">
+                          Details
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Vergangene Spiele (bereits chronologisch sortiert vom Backend) */}
+                  {team.recentMatches.map(match => (
+                    <tr key={`recent-${match.id}`} className="recent-match">
+                      <td>
+                        {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        }) : 'Kein Datum'}
+                      </td>
+                      <td className={match.homeTeam === team.name ? 'home-team' : ''}>
+                        {match.homeTeam}
+                      </td>
+                      <td>
+                        <strong>{match.homeScore} - {match.awayScore}</strong>
+                      </td>
+                      <td className={match.awayTeam === team.name ? 'home-team' : ''}>
+                        {match.awayTeam}
+                      </td>
+                      <td>{match.league}</td>
+                      <td>
+                        <Link to={`/matches/${match.id}`} className="btn btn-small">
+                          Details
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

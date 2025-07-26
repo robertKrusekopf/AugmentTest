@@ -294,20 +294,22 @@ const Dashboard = () => {
                   <tr key={team.team_id} className={isOwnTeam ? 'own-team' : ''}>
                     <td>{team.position}</td>
                     <td>
-                      <div className="club-row-info">
-                        {team.emblem_url ? (
-                          <img
-                            src={team.emblem_url}
-                            alt={`${team.team_name_base || team.team} Wappen`}
-                            className="club-emblem-small"
-                            onError={(e) => {
-                              console.log(`Fehler beim Laden des Emblems für ${team.team}:`, e);
-                              e.target.style.display = 'none';
-                            }}
-                          />
-                        ) : null}
-                        <span>{team.team}</span>
-                      </div>
+                      <Link to={`/teams/${team.team_id}`} className="team-link">
+                        <div className="club-row-info">
+                          {team.emblem_url ? (
+                            <img
+                              src={team.emblem_url}
+                              alt={`${team.team_name_base || team.team} Wappen`}
+                              className="club-emblem-small"
+                              onError={(e) => {
+                                console.log(`Fehler beim Laden des Emblems für ${team.team}:`, e);
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          ) : null}
+                          <span>{team.team}</span>
+                        </div>
+                      </Link>
                     </td>
                     <td>{team.played}</td>
                     <td>{team.won}</td>

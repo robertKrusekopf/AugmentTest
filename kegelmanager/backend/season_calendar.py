@@ -296,14 +296,14 @@ def get_next_match_date(season_id):
     # Bestimme das früheste Datum
     next_date = None
     if next_league_date and next_cup_date:
-        # Konvertiere beide zu Datum für Vergleich (CupMatch.match_date ist Date, Match.match_date ist DateTime)
+        # Beide sind jetzt DateTime - konvertiere zu Date für Vergleich
         league_date = next_league_date.date() if hasattr(next_league_date, 'date') else next_league_date
-        cup_date = next_cup_date
+        cup_date = next_cup_date.date() if hasattr(next_cup_date, 'date') else next_cup_date
         next_date = min(league_date, cup_date)
     elif next_league_date:
         next_date = next_league_date.date() if hasattr(next_league_date, 'date') else next_league_date
     elif next_cup_date:
-        next_date = next_cup_date
+        next_date = next_cup_date.date() if hasattr(next_cup_date, 'date') else next_cup_date
 
     if not next_date:
         return None
@@ -466,11 +466,17 @@ def set_cup_match_dates(season_id):
         print("No cup days found in calendar")
         return
 
-    # Erstelle ein Mapping von cup_match_day zu calendar_date
+    # Erstelle ein Mapping von cup_match_day zu calendar_date (als DateTime)
     cup_day_to_date = {}
     for calendar_day in cup_days:
         if calendar_day.match_day_number:
-            cup_day_to_date[calendar_day.match_day_number] = calendar_day.calendar_date
+            # Konvertiere das Datum zu einem datetime um 15:00 Uhr
+            match_datetime = datetime.combine(
+                calendar_day.calendar_date,
+                datetime.min.time().replace(hour=15),
+                tzinfo=timezone.utc
+            )
+            cup_day_to_date[calendar_day.match_day_number] = match_datetime
 
     print(f"Found {len(cup_day_to_date)} cup match days in calendar")
 
@@ -483,7 +489,7 @@ def set_cup_match_dates(season_id):
 
         for cup_match in cup_matches:
             if cup_match.cup_match_day and cup_match.cup_match_day in cup_day_to_date:
-                # Setze das Datum basierend auf dem Kalender
+                # Setze das DateTime basierend auf dem Kalender
                 cup_match.match_date = cup_day_to_date[cup_match.cup_match_day]
                 updated_matches += 1
                 print(f"Set date for cup match {cup_match.id}: {cup_match.match_date}")
@@ -524,10 +530,17 @@ def set_cup_match_dates_simple(season_id):
                 weeks_offset = cup_match.cup_match_day * 2
                 match_date = season.start_date + timedelta(weeks=weeks_offset)
 
-                # Setze das Datum
-                cup_match.match_date = match_date
+                # Konvertiere zu DateTime um 15:00 Uhr
+                match_datetime = datetime.combine(
+                    match_date,
+                    datetime.min.time().replace(hour=15),
+                    tzinfo=timezone.utc
+                )
+
+                # Setze das DateTime
+                cup_match.match_date = match_datetime
                 updated_matches += 1
-                print(f"Set date for cup match {cup_match.id} (day {cup_match.cup_match_day}): {match_date}")
+                print(f"Set date for cup match {cup_match.id} (day {cup_match.cup_match_day}): {match_datetime}")
 
     db.session.commit()
     print(f"Updated {updated_matches} cup matches with dates (simple method)")
@@ -618,9 +631,9 @@ def set_all_match_dates_unified(season_id):
         for cup_match in cup_matches:
             if cup_match.cup_match_day and cup_match.cup_match_day in cup_match_day_to_date:
                 old_date = cup_match.match_date
-                # Für Pokalspiele verwenden wir nur das Datum (ohne Zeit)
-                calendar_date = cup_match_day_to_date[cup_match.cup_match_day].date()
-                cup_match.match_date = calendar_date
+                # Für Pokalspiele verwenden wir jetzt auch DateTime (wie Liga-Spiele)
+                calendar_datetime = cup_match_day_to_date[cup_match.cup_match_day]
+                cup_match.match_date = calendar_datetime
                 updated_cup_matches += 1
                 # Debug: Zeige die ersten 3 Updates
                 if updated_cup_matches <= 3:
