@@ -86,39 +86,15 @@ def calculate_lane_quality_for_club(club):
 
 def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False, team_staerke=None):
     """
-    Calculate player attributes based on league level and team strength.
+    Calculate player attributes based on team strength.
 
-    Args:
-        league_level: The level of the league (1 is top level, 10 is lowest)
-        is_youth_team: Whether the team is a youth team
-        is_second_team: Whether the team is a second team (e.g. "Club Name II")
-        team_staerke: The strength value of the team, used as a small modifier
-
-    Returns:
-        A dictionary with base values for player attributes
     """
-    # Linear interpolation between level 1 (avg 80) and level 10 (avg 30)
-    # Base formula: 80 - (league_level - 1) * 5.5
-    base_strength = 80 - (league_level - 1) * 5.5
-
-    # Add small team strength modifier (max ±5 points)
-    if team_staerke is not None:
-        team_modifier = (team_staerke - 50) * 0.1  # Convert 30-99 range to -2 to +4.9
-        base_strength += team_modifier
-
-    # Youth team penalty
-    if is_youth_team:
-        base_strength -= 10
-
-    # Second team penalty
-    if is_second_team:
-        base_strength -= 5
 
     # Calculate standard deviation (higher leagues have more consistent players)
     std_dev = 5 + (league_level - 1) * 0.5
 
     # Generate attribute values using normal distribution
-    player_strength = max(1, min(99, int(np.random.normal(base_strength, std_dev))))
+    player_strength = max(1, min(99, int(np.random.normal(team_staerke, std_dev))))
 
     attributes = {
         'strength': player_strength,
@@ -428,30 +404,19 @@ def create_sample_data(custom_app=None):
                     # For new seasons, generate realistic team strength based on league level and position
                     try:
                         # Try to get points and goal difference from table data
-                        points = float(zeile_arr[9]) if len(zeile_arr) > 9 and zeile_arr[9] else 0
-                        goal_diff = float(zeile_arr[8]) if len(zeile_arr) > 8 and zeile_arr[8] else 0
+                        points = float(zeile_arr[8])
+                        goal_diff = float(zeile_arr[7])
+
+
+                        # Base strength by league level (higher level = stronger teams)
+                        league_base = max(30, 70 - (league.level - 1) * 4)  # Level 1: ~70, Level 10: ~34
 
                         if points > 0:
                             # Use actual table data if available
                             staerke = int(points / 10 + goal_diff / 20)
                         else:
-                            # Generate realistic team strength for new season based on league level and position
-                            # Higher leagues have stronger teams, position in table affects strength
-                            table_position = row_idx + 1  # 1-based position
-
-                            # Base strength by league level (higher level = stronger teams)
-                            league_base = max(30, 70 - (league.level - 1) * 4)  # Level 1: ~70, Level 10: ~34
-
-                            # Position modifier (top teams stronger, bottom teams weaker)
-                            # Assume 16 teams per league for calculation
-                            position_modifier = (17 - table_position) * 1.5  # Top team: +24, bottom team: -9
-
-                            # Random variation
-                            random_modifier = random.randint(-5, 5)
-
-                            staerke = int(league_base + position_modifier + random_modifier)
-
-                        staerke = max(30, min(99, staerke))  # Clamp between 30 and 99
+                            staerke = 0
+                        staerke = int(league_base + staerke)
                     except (ValueError, IndexError):
                         # Fallback: random strength based on league level
                         league_base = max(30, 70 - (league.level - 1) * 4)
