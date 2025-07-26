@@ -80,7 +80,7 @@ def calculate_lane_quality_for_club(club):
     # Auf den gewünschten Bereich begrenzen
     lane_quality = max(adjusted_min, min(adjusted_max, lane_quality))
 
-    print(f"INFO: Club {club.name} - Beste Liga: {best_league_level}, Bahnqualität: {lane_quality:.3f} (Bereich: {adjusted_min:.2f}-{adjusted_max:.2f})")
+
 
     return lane_quality
 
@@ -126,10 +126,7 @@ def create_sample_data(custom_app=None):
     url_arr = [[sheet.cell_value(r, c) for c in range(sheet.ncols)] for r in range(sheet.nrows)]
 
 
-    print("=== DEBUG: USING CUSTOM INIT_DB.PY WITH MODIFIED CLUB NAMES ===")
-    print(f"DEBUG: custom_app wurde übergeben: {custom_app is not None}")
-    if custom_app:
-        print(f"DEBUG: SQLALCHEMY_DATABASE_URI der übergebenen App: {custom_app.config['SQLALCHEMY_DATABASE_URI']}")
+
 
     # Verwende die übergebene App oder die Standard-App
     current_app = custom_app if custom_app else app
@@ -182,7 +179,6 @@ def create_sample_data(custom_app=None):
         db.session.commit()
 
         # Zweite Phase: Setze Liga-Referenzen basierend auf Excel-Zeilen-Referenzen
-        print("Setting up league promotion/relegation references...")
         for i in range(1, len(url_arr)):
             league = leagues[i-1]  # Current league (i-1 because we start from index 1)
 
@@ -203,13 +199,12 @@ def create_sample_data(custom_app=None):
                                 target_league_ids.append(str(target_league.id))
                                 target_league_names.append(target_league.name)
                         except (ValueError, TypeError):
-                            print(f"  WARNING: Could not parse promotion row '{aufstieg_row_str}' for {league.name}")
+                            pass
 
                     if target_league_ids:
                         league.aufstieg_liga_id = ';'.join(target_league_ids)
-                        print(f"  {league.name} -> Promotion to: {', '.join(target_league_names)} (IDs: {', '.join(target_league_ids)})")
             except (ValueError, TypeError, IndexError) as e:
-                print(f"  WARNING: Could not set promotion target for {league.name}: {e}")
+                pass
 
             # Abstiegsliga setzen (url_arr[i][1] ist Excel-Zeilen-Referenz oder mehrere getrennt durch Semikolon)
             try:
@@ -228,16 +223,14 @@ def create_sample_data(custom_app=None):
                                 target_league_ids.append(str(target_league.id))
                                 target_league_names.append(target_league.name)
                         except (ValueError, TypeError):
-                            print(f"  WARNING: Could not parse relegation row '{abstieg_row_str}' for {league.name}")
+                            pass
 
                     if target_league_ids:
                         league.abstieg_liga_id = ';'.join(target_league_ids)
-                        print(f"  {league.name} -> Relegation to: {', '.join(target_league_names)} (IDs: {', '.join(target_league_ids)})")
             except (ValueError, TypeError, IndexError) as e:
-                print(f"  WARNING: Could not set relegation target for {league.name}: {e}")
+                pass
 
         db.session.commit()
-        print("League references set up successfully!")
 
         # Balance promotion and relegation spots after creating all leagues and setting references
         from simulation import balance_promotion_relegation_spots
@@ -260,25 +253,19 @@ def create_sample_data(custom_app=None):
         for i in range(1,len(url_arr)):
             # Prüfen, ob die URL vorhanden ist
             if i >= len(url_arr) or len(url_arr[i]) < 8 or not url_arr[i][7]:
-                print(f"WARNING: Keine gültige URL für Liga {i} gefunden. Überspringe...")
                 continue
 
             # Prüfen, ob die Liga existiert
             if i-1 >= len(leagues):
-                print(f"WARNING: Keine Liga mit Index {i-1} gefunden. Überspringe...")
                 continue
 
             league = leagues[i-1]  # Die aktuelle Liga
-            print(f"INFO: Verarbeite Liga: {league.name} (ID: {league.id})")
 
             try:
                 # Daten von der Website abrufen
-                print(f"  Lade Daten von: {url_arr[i][7]}")
                 reqs = requests.get(url_arr[i][7], timeout=15)
-                print(f"  HTTP Status: {reqs.status_code}")
 
                 if reqs.status_code != 200:
-                    print(f"WARNING: HTTP Error {reqs.status_code} für {url_arr[i][7]}. Überspringe...")
                     continue
 
                 soup = BeautifulSoup(reqs.text, 'html.parser')
@@ -286,23 +273,15 @@ def create_sample_data(custom_app=None):
                 # Tabelle rausfiltern da sonst Namen aus News mit enthalten
                 soup = soup.find("table", attrs={'class':'table table-striped table-full-width'})
                 if not soup:
-                    print(f"WARNING: Keine Tabelle in der URL {url_arr[i][7]} gefunden. Überspringe...")
-                    # Debug: Show what tables are available
-                    all_tables = BeautifulSoup(reqs.text, 'html.parser').find_all("table")
-                    print(f"  Gefundene Tabellen auf der Seite: {len(all_tables)}")
-                    for idx, table in enumerate(all_tables[:3]):  # Show first 3 tables
-                        table_class = table.get('class', [])
-                        print(f"    Tabelle {idx+1}: class={table_class}")
                     continue
 
                 # Über alle Zeilen, außer erste (Tabellenheader)
                 table_rows = soup.find_all("tr")[1:]
-                print(f"  Gefundene Team-Zeilen: {len(table_rows)}")
 
                 if len(table_rows) == 0:
-                    print(f"  WARNING: Keine Team-Daten in Tabelle für {league.name}")
+                    continue
                 elif len(table_rows) == 1:
-                    print(f"  WARNING: Nur 1 Team in Tabelle für {league.name}")
+                    continue
 
                 teams_created_for_league = 0
 
@@ -323,31 +302,26 @@ def create_sample_data(custom_app=None):
                                     lnk = ''.join(lnk)
                                     verein_id = lnk.split("/")[-3]
                             except Exception as e:
-                                print(f"WARNING: Fehler beim Verarbeiten des Vereins-Links: {e}")
+                                pass
 
                     # Überprüfen, ob wir genügend Daten haben
                     if not zeile_arr or len(zeile_arr) < 2 or not verein_id:
-                        print(f"    WARNING: Unvollständige Daten für Zeile {row_idx+1}: {zeile_arr}, verein_id: {verein_id}")
                         continue
 
                     # Prüfen, ob der Verein bereits existiert
                     club = None
                     if verein_id in clubs_by_verein_id:
                         club = clubs_by_verein_id[verein_id]
-                        print(f"DEBUG: Bestehender Verein gefunden: {club.name} (ID: {club.id}, verein_id: {verein_id})")
                     else:
                         # Prüfen, ob das Wappen bereits existiert
                         wappen_path = 'wappen/' + str(verein_id) + ".png"
                         if not os.path.exists(wappen_path):
                             # Wappen nur downloaden, wenn es noch nicht existiert
-                            print(f"INFO: Lade Wappen für Verein {verein_id} herunter...")
                             url = "https://www.fussball.de/export.media/-/action/getLogo/format/2/id/" + str(verein_id)
                             img_data = requests.get(url).content
                             os.makedirs('wappen', exist_ok=True)
                             with open(wappen_path, 'wb') as handler:
                                 handler.write(img_data)
-                        else:
-                            print(f"INFO: Wappen für Verein {verein_id} bereits vorhanden, überspringe Download.")
                         # Bahnqualität wird später nach der Team-Erstellung berechnet
                         # Hier setzen wir erstmal einen Standardwert
                         lane_quality = 1.0
@@ -384,7 +358,7 @@ def create_sample_data(custom_app=None):
                             description="Initial balance"
                         )
                         db.session.add(finance)
-                        print(f"DEBUG: Neuer Verein erstellt: {club.name} (ID: {club.id}, verein_id: {verein_id})")
+
 
                     # Zähler für Teams dieses Vereins erhöhen
                     team_count = team_count_by_club_id.get(club.id, 0) + 1
@@ -432,11 +406,8 @@ def create_sample_data(custom_app=None):
                     )
                     db.session.add(team)
                     teams_created_for_league += 1
-                    print(f"    Team {teams_created_for_league}: {team_name} (Club: {club.name})")
-
                 # Nach jeder Tabelle committen
                 db.session.commit()
-                print(f"  ✓ {teams_created_for_league} Teams für Liga {league.name} erstellt.")
 
             except Exception as e:
                 print(f"ERROR: Fehler beim Verarbeiten der Liga {league.name}: {e}")
@@ -444,7 +415,6 @@ def create_sample_data(custom_app=None):
 
         # Abschließendes Commit
         db.session.commit()
-        print(f"DEBUG: Insgesamt {len(clubs)} Vereine und {sum(team_count_by_club_id.values())} Teams erstellt.")
 
         # Bahnqualität für alle Vereine basierend auf ihrer besten Ligaebene berechnen
         print("INFO: Berechne Bahnqualität für alle Vereine basierend auf ihrer besten Ligaebene...")
@@ -467,7 +437,7 @@ def create_sample_data(custom_app=None):
 
         # Alle Teams abrufen
         all_teams = Team.query.all()
-        print(f"DEBUG: Generiere Spieler für {len(all_teams)} Teams")
+
 
         for team in all_teams:
             # Generate players per team based on league level
@@ -641,18 +611,16 @@ def create_sample_data(custom_app=None):
                     # Recalculate cup match day using the new logic
                     new_cup_match_day = cup.calculate_cup_match_day(match.round_number, cup.total_rounds)
                     if new_cup_match_day != match.cup_match_day:
-                        print(f"  Updated match {match.id}: {match.cup_match_day} -> {new_cup_match_day}")
+
                         match.cup_match_day = new_cup_match_day
 
                 db.session.commit()
 
-            print("Cup match days recalculated successfully!")
         except Exception as e:
             print(f"Error recalculating cup match days: {str(e)}")
 
         # Final commit
         db.session.commit()
-        print("Match fixtures, season calendar, and match dates created successfully!")
 
 
 

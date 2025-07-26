@@ -42,7 +42,6 @@ def create_performance_indexes():
             db.session.execute(text(index_sql))
 
         db.session.commit()
-        print("Performance indexes created successfully")
 
     except Exception as e:
         db.session.rollback()
@@ -73,7 +72,6 @@ def bulk_reset_player_flags(current_match_day=None, day_type=None):
                 result2 = db.session.execute(
                     text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1")
                 )
-                print(f"CUP_DAY: Reset has_played_current_matchday for all players who had played")
             else:
                 # For league days, only reset flags for players who played on a different match day
                 # This prevents players from playing for multiple teams in the same season
@@ -81,18 +79,13 @@ def bulk_reset_player_flags(current_match_day=None, day_type=None):
                     text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1 AND (last_played_matchday IS NULL OR last_played_matchday != :match_day)"),
                     {"match_day": current_match_day}
                 )
-                print(f"LEAGUE_DAY: Reset has_played_current_matchday for players who played on different match day")
         else:
             # Reset all match day flags (used for season simulation)
             result2 = db.session.execute(
                 text("UPDATE player SET has_played_current_matchday = 0 WHERE has_played_current_matchday = 1")
             )
-            print(f"SEASON_SIMULATION: Reset has_played_current_matchday for all players")
 
         db.session.commit()
-
-        end_time = time.time()
-        print(f"Bulk reset completed in {end_time - start_time:.3f}s - Availability: {result1.rowcount}, Match day: {result2.rowcount}")
 
     except Exception as e:
         db.session.rollback()
@@ -119,9 +112,6 @@ def batch_create_performances(performances_data):
         # Use bulk insert for better performance
         db.session.bulk_insert_mappings(PlayerMatchPerformance, performances_data)
 
-        end_time = time.time()
-        print(f"Batch created {len(performances_data)} league performances in {end_time - start_time:.3f}s")
-
     except Exception as e:
         print(f"Error in batch create league performances: {str(e)}")
         raise
@@ -143,9 +133,6 @@ def batch_create_cup_performances(performances_data):
 
         # Use bulk insert for better performance
         db.session.bulk_insert_mappings(PlayerCupMatchPerformance, performances_data)
-
-        end_time = time.time()
-        print(f"Batch created {len(performances_data)} cup performances in {end_time - start_time:.3f}s")
 
     except Exception as e:
         print(f"Error in batch create cup performances: {str(e)}")
@@ -192,9 +179,6 @@ def optimized_match_queries(season_id, match_day):
             "season_id": season_id,
             "match_day": match_day
         }).fetchall()
-
-        end_time = time.time()
-        print(f"Loaded {len(result)} matches in {end_time - start_time:.3f}s")
 
         return result
 
@@ -244,9 +228,6 @@ def get_club_player_stats(club_id):
                 'rating': row[1] * 0.5 + row[2] * 0.1 + row[3] * 0.1 + row[4] * 0.15 + row[5] * 0.15  # Keep calculation for performance
             }
 
-        end_time = time.time()
-        print(f"Loaded stats for {len(player_stats)} players in {end_time - start_time:.3f}s")
-
         return player_stats
 
     except Exception as e:
@@ -259,8 +240,6 @@ def performance_monitor(func):
     def wrapper(*args, **kwargs):
         start_time = time.time()
         result = func(*args, **kwargs)
-        end_time = time.time()
-        print(f"{func.__name__} completed in {end_time - start_time:.3f}s")
         return result
     return wrapper
 
@@ -366,8 +345,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
         start_time = time.time()
         import random
 
-        # Debug: Check if random is properly seeded and working
-        print(f"DEBUG: Random module state check - sample values: {[random.random() for _ in range(5)]}")
+
 
         # Get all player counts for all clubs in one query
         from sqlalchemy import text
@@ -420,28 +398,10 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
             num_unavailable = int(total_players * unavailability_percentage)
 
             # Add debugging information to track availability patterns
-            print(f"DEBUG: Club {club_id} - Total players: {total_players}, Teams playing: {teams_count}")
-            print(f"DEBUG: Club {club_id} - Unavailability percentage: {unavailability_percentage:.1%}, Players to make unavailable: {num_unavailable}")
-
             # Randomly select which players will be unavailable
             unavailable_player_ids = []
             if num_unavailable > 0:
                 unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
-
-            # Log detailed availability information for analysis
-            available_count = total_players - len(unavailable_player_ids)
-            unavailable_count = len(unavailable_player_ids)
-
-            print(f"DEBUG: Club {club_id} - Available: {available_count}, Unavailable: {unavailable_count}")
-
-            # Log unavailable player IDs if any
-            if unavailable_count > 0:
-                print(f"DEBUG: Club {club_id} unavailable player IDs: {unavailable_player_ids}")
-
-            # Check for high unavailability situations (>25% of players)
-            if total_players >= 8 and unavailable_count >= int(total_players * 0.25):
-                unavailability_rate = unavailable_count / total_players
-                print(f"INFO: High unavailability rate for Club {club_id}: {unavailability_rate:.1%} ({unavailable_count}/{total_players} players)")
 
             # Log if Stroh players will be needed
             available_players = total_players - len(unavailable_player_ids)
@@ -451,14 +411,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
 
             all_availability_updates.append((club_id, False, unavailable_player_ids))
 
-        # Debug: Check for duplicate club processing
-        processed_clubs = set()
-        for club_id, _, _ in all_availability_updates:
-            if club_id in processed_clubs:
-                print(f"WARNING: Club {club_id} processed multiple times in same batch!")
-            processed_clubs.add(club_id)
 
-        print(f"DEBUG: Processing availability for {len(processed_clubs)} unique clubs")
 
         # Execute all updates in batch
         for club_id, _, unavailable_ids in all_availability_updates:
@@ -479,9 +432,6 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
 
         # Single commit for all changes
         db.session.commit()
-
-        end_time = time.time()
-        print(f"Batch set player availability for {len(clubs_with_matches)} clubs in {end_time - start_time:.3f}s")
 
     except Exception as e:
         db.session.rollback()

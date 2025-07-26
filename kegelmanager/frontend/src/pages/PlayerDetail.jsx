@@ -15,8 +15,7 @@ const PlayerDetail = () => {
   const [cheatForm, setCheatForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState({ show: false, type: '', text: '' });
-  const [upcomingMatchesExpanded, setUpcomingMatchesExpanded] = useState(false);
-  const [recentMatchesExpanded, setRecentMatchesExpanded] = useState(false);
+
 
   // Lade Spielerdaten aus der API
   useEffect(() => {
@@ -230,13 +229,7 @@ const PlayerDetail = () => {
     }
   };
 
-  const toggleUpcomingMatches = () => {
-    setUpcomingMatchesExpanded(!upcomingMatchesExpanded);
-  };
 
-  const toggleRecentMatches = () => {
-    setRecentMatchesExpanded(!recentMatchesExpanded);
-  };
 
   if (loading) {
     return <div className="loading">Lade Spielerdaten...</div>;
@@ -554,86 +547,7 @@ const PlayerDetail = () => {
               ) : playerMatches ? (
                 <>
                   <div className="section-header">
-                    <h3>Nächste Spiele</h3>
-                    {playerMatches.upcoming_matches && playerMatches.upcoming_matches.length > 5 && (
-                      <button
-                        className="expand-button"
-                        onClick={toggleUpcomingMatches}
-                      >
-                        {upcomingMatchesExpanded ? 'Einklappen' : 'Ausklappen'}
-                      </button>
-                    )}
-                  </div>
-                  <table className="table matches-table">
-                    <thead>
-                      <tr>
-                        <th>Datum</th>
-                        <th>Heimteam</th>
-                        <th>Auswärtsteam</th>
-                        <th>Liga/Pokal</th>
-                        <th>Teilnahme</th>
-                        <th>Gespielt für</th>
-                        <th>Aktionen</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {playerMatches.upcoming_matches && playerMatches.upcoming_matches
-                        .filter(match => match.visible || upcomingMatchesExpanded)
-                        .map(match => (
-                          <tr key={match.id} className={!match.player_participated ? 'not-participated' : ''}>
-                            <td>
-                              {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              }) : 'TBD'}
-                            </td>
-                            <td>{match.homeTeam}</td>
-                            <td>{match.awayTeam}</td>
-                            <td>
-                              <span className={`match-type ${match.type}`}>
-                                {match.league}
-                              </span>
-                            </td>
-                            <td>
-                              <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
-                                {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
-                              </span>
-                            </td>
-                            <td>
-                              {match.played_for_team ? (
-                                <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
-                                  {match.played_for_team}
-                                  {match.played_for_team !== player.team && (
-                                    <span className="substitute-indicator"> (Aushilfe)</span>
-                                  )}
-                                </span>
-                              ) : (
-                                '-'
-                              )}
-                            </td>
-                            <td>
-                              <Link to={`/matches/${match.id}`} className="btn btn-small">
-                                Details
-                              </Link>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-
-                  <div className="section-header">
-                    <h3>Letzte Spiele</h3>
-                    {playerMatches.recent_matches && playerMatches.recent_matches.length > 5 && (
-                      <button
-                        className="expand-button"
-                        onClick={toggleRecentMatches}
-                      >
-                        {recentMatchesExpanded ? 'Einklappen' : 'Ausklappen'}
-                      </button>
-                    )}
+                    <h3>Alle Spiele</h3>
                   </div>
                   <table className="table matches-table">
                     <thead>
@@ -650,63 +564,125 @@ const PlayerDetail = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {playerMatches.recent_matches && playerMatches.recent_matches
-                        .filter(match => match.visible || recentMatchesExpanded)
-                        .map(match => (
-                          <tr key={match.id} className={!match.player_participated ? 'not-participated' : ''}>
-                            <td>
-                              {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
-                                day: '2-digit',
-                                month: '2-digit'
-                              }) : 'TBD'}
-                            </td>
-                            <td>{match.homeTeam}</td>
-                            <td>
-                              {match.is_played ? (
-                                <strong>{match.homeScore} - {match.awayScore}</strong>
-                              ) : (
-                                'Nicht gespielt'
-                              )}
-                            </td>
-                            <td>{match.awayTeam}</td>
-                            <td>
-                              <span className={`match-type ${match.type}`}>
-                                {match.league}
+                      {/* Alle Spiele chronologisch sortiert - vergangene Spiele zuerst (älteste oben), dann kommende Spiele */}
+                      {playerMatches.recent_matches && [...playerMatches.recent_matches].reverse().map(match => (
+                        <tr key={`recent-${match.id}`} className={`recent-match ${!match.player_participated ? 'not-participated' : ''}`}>
+                          <td>
+                            {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }) : 'Kein Datum'}
+                          </td>
+                          <td>{match.homeTeam}</td>
+                          <td>
+                            {match.is_played ? (
+                              <strong>{match.homeScore} - {match.awayScore}</strong>
+                            ) : (
+                              'Nicht gespielt'
+                            )}
+                          </td>
+                          <td>{match.awayTeam}</td>
+                          <td>
+                            <span className={`match-type ${match.type}`}>
+                              {match.league}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
+                              {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
+                            </span>
+                          </td>
+                          <td>
+                            {match.played_for_team ? (
+                              <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
+                                {match.played_for_team}
+                                {match.played_for_team !== player.team && (
+                                  <span className="substitute-indicator"> (Aushilfe)</span>
+                                )}
                               </span>
-                            </td>
-                            <td>
-                              <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
-                                {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td>
+                            {match.player_participated && match.player_performance ? (
+                              <span className="player-score">
+                                {match.player_performance.total_score} Holz
                               </span>
-                            </td>
-                            <td>
-                              {match.played_for_team ? (
-                                <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
-                                  {match.played_for_team}
-                                  {match.played_for_team !== player.team && (
-                                    <span className="substitute-indicator"> (Aushilfe)</span>
-                                  )}
-                                </span>
-                              ) : (
-                                '-'
-                              )}
-                            </td>
-                            <td>
-                              {match.player_participated && match.player_performance ? (
-                                <span className="player-score">
-                                  {match.player_performance.total_score} Holz
-                                </span>
-                              ) : (
-                                '-'
-                              )}
-                            </td>
-                            <td>
-                              <Link to={`/matches/${match.id}`} className="btn btn-small">
-                                Details
-                              </Link>
-                            </td>
-                          </tr>
-                        ))}
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td>
+                            <Link to={`/matches/${match.id}`} className="btn btn-small">
+                              Details
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {/* Kommende Spiele (bereits chronologisch sortiert vom Backend) */}
+                      {playerMatches.upcoming_matches && playerMatches.upcoming_matches.map(match => (
+                        <tr key={`upcoming-${match.id}`} className={`upcoming-match ${!match.player_participated ? 'not-participated' : ''}`}>
+                          <td>
+                            {match.date ? new Date(match.date).toLocaleDateString('de-DE', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }) : 'TBD'}
+                          </td>
+                          <td>{match.homeTeam}</td>
+                          <td>
+                            {match.is_played ? (
+                              <strong>{match.homeScore} - {match.awayScore}</strong>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td>{match.awayTeam}</td>
+                          <td>
+                            <span className={`match-type ${match.type}`}>
+                              {match.league}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`participation-status ${match.player_participated ? 'participated' : 'not-participated'}`}>
+                              {match.player_participated ? '✓ Gespielt' : '✗ Nicht gespielt'}
+                            </span>
+                          </td>
+                          <td>
+                            {match.played_for_team ? (
+                              <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
+                                {match.played_for_team}
+                                {match.played_for_team !== player.team && (
+                                  <span className="substitute-indicator"> (Aushilfe)</span>
+                                )}
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td>
+                            {match.player_participated && match.player_performance ? (
+                              <span className="player-score">
+                                {match.player_performance.total_score} Holz
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td>
+                            <Link to={`/matches/${match.id}`} className="btn btn-small">
+                              Details
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </>

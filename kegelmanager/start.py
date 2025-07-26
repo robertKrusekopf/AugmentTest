@@ -24,14 +24,13 @@ def start_backend():
             os.makedirs(instance_dir)
 
         # Check if the default database exists, if not initialize it
-        default_db_path = os.path.join(instance_dir, "kegelmanager_default.db")
+        default_db_path = os.path.join(instance_dir, "kegelmanager_de4fault.db")
 
         if not os.path.exists(default_db_path):
-            print("Creating default database...")
             # We'll let app.py handle the creation of the default database
+            pass
 
         # Start the Flask server
-        print("Starting backend server...")
         subprocess.run([sys.executable, "app.py"], check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error starting backend: {e}")
@@ -45,11 +44,9 @@ def start_frontend(npm_path="npm"):
 
         # Install dependencies if node_modules doesn't exist
         if not os.path.exists("node_modules"):
-            print("Installing frontend dependencies...")
             subprocess.run([npm_path, "install"], check=True)
 
         # Start the development server
-        print("Starting frontend development server...")
         subprocess.run([npm_path, "run", "dev"], check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error starting frontend: {e}")
@@ -73,24 +70,20 @@ def main():
     current_dir = os.getcwd()
 
     # Start the backend in a separate thread
-    print("Starting backend server in a separate thread...")
     backend_thread = Thread(target=start_backend)
     backend_thread.daemon = True
     backend_thread.start()
 
     # Give the backend some time to start
-    print("Waiting for backend to start...")
     time.sleep(3)
 
     # Change back to the original directory
     os.chdir(current_dir)
 
     # Open the browser to the main menu
-    print("Opening browser to the main menu...")
     webbrowser.open("http://localhost:5173/main-menu")
 
     # Start the frontend
-    print(f"Using npm from: {npm_path}")
     start_frontend(npm_path)
 
 if __name__ == "__main__":

@@ -140,19 +140,16 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     ).first()
     
     if existing_lineup:
-        print(f"Lineup already exists for team {team_id} in match {match_id}")
         return existing_lineup
     
     # Get the team
     team = Team.query.get(team_id)
     if not team:
-        print(f"Team with ID {team_id} not found")
         return None
     
     # Get all players from the club
     club_players = Player.query.filter_by(club_id=team.club_id).all()
     if not club_players or len(club_players) < 6:
-        print(f"Not enough players found for club ID {team.club_id}")
         return None
     
     # Use centralized player availability determination
@@ -168,7 +165,6 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
 
         # If we have no players at all, we can't create a lineup
         if len(available_players) == 0:
-            print(f"No players available for team {team_id}, cannot create lineup")
             return None
 
     # Randomly assign positions to the selected players
@@ -195,8 +191,7 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     
     # Save changes to database
     db.session.commit()
-    
-    print(f"Auto lineup created for team {team.name} (ID: {team_id}) in match {match_id}")
+
     return lineup
 
 def ensure_home_team_lineup_exists(match_id):
@@ -213,7 +208,6 @@ def ensure_home_team_lineup_exists(match_id):
     # Get the match
     match = Match.query.get(match_id)
     if not match:
-        print(f"Match with ID {match_id} not found")
         return False
     
     # Check if the home team already has a lineup
@@ -224,7 +218,6 @@ def ensure_home_team_lineup_exists(match_id):
     ).first()
     
     if home_lineup:
-        print(f"Home team already has a lineup for match {match_id}")
         return True
     
     # Create an automatic lineup for the home team

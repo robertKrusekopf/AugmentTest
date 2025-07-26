@@ -853,10 +853,6 @@ class Club(db.Model):
 
             if os.path.exists(emblem_path):
                 emblem_url = f"/api/club-emblem/{self.verein_id}"
-            else:
-                print(f"DEBUG: Club {self.name} (ID: {self.id}) has verein_id: {self.verein_id}, but no emblem file found at {emblem_path}")
-        else:
-            print(f"DEBUG: Club {self.name} (ID: {self.id}) has no verein_id")
 
         # Create detailed team information
         teams_info = []

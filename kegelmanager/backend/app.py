@@ -88,7 +88,6 @@ except Exception as e:
         f.write(default_db_path)
 
     selected_db_path = default_db_path
-    print(f"DEBUG: Standard-Datenbank erstellt: {selected_db_path}")
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{selected_db_path}'
@@ -1914,30 +1913,7 @@ def get_season_status():
 
         is_completed = total_matches > 0 and total_matches == played_matches
 
-        # Debug logging
-        print(f"DEBUG: Season status check for {current_season.name} (ID: {current_season.id})")
-        print(f"DEBUG: League matches: {played_league_matches}/{total_league_matches} played")
-        print(f"DEBUG: Cup matches: {played_cup_matches}/{total_cup_matches} played")
-        print(f"DEBUG: Total matches: {played_matches}/{total_matches} played")
-        print(f"DEBUG: Unplayed league matches: {unplayed_league_matches}")
-        print(f"DEBUG: Unplayed cup matches: {unplayed_cup_matches}")
-        print(f"DEBUG: Matches without match_day: {matches_without_match_day}")
-        print(f"DEBUG: Season completed: {is_completed}")
 
-        # Get some sample unplayed matches for debugging
-        sample_unplayed_league = Match.query.filter_by(season_id=current_season.id, is_played=False).limit(3).all()
-        sample_unplayed_cup = db.session.query(CupMatch).join(Cup).filter(
-            Cup.season_id == current_season.id,
-            CupMatch.is_played == False
-        ).limit(3).all()
-
-        print(f"DEBUG: Sample unplayed league matches:")
-        for match in sample_unplayed_league:
-            print(f"  Match {match.id}: {match.home_team.name} vs {match.away_team.name}, match_day: {match.match_day}, league: {match.league.name}")
-
-        print(f"DEBUG: Sample unplayed cup matches:")
-        for match in sample_unplayed_cup:
-            print(f"  Cup Match {match.id}: {match.home_team.name} vs {match.away_team.name}, cup_match_day: {match.cup_match_day}, round: {match.round_name}")
 
         return jsonify({
             "season_id": current_season.id,
@@ -2919,15 +2895,8 @@ def delete_transfer_offer(offer_id):
     })
 
 if __name__ == '__main__':
-    print("=== DEBUG: Starte Anwendung ===")
-    print(f"DEBUG: Verwende Datenbank: {selected_db_path}")
-    print(f"DEBUG: SQLALCHEMY_DATABASE_URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
-
     # Überprüfe, ob die Datenbank existiert
     if not os.path.exists(selected_db_path):
-        print(f"DEBUG: Datenbank existiert nicht: {selected_db_path}")
-        print(f"DEBUG: Erstelle neue Datenbank: {selected_db_path}")
-
         # Stelle sicher, dass das Verzeichnis existiert
         os.makedirs(os.path.dirname(selected_db_path), exist_ok=True)
 
@@ -2962,6 +2931,5 @@ if __name__ == '__main__':
             clubs = Club.query.all()
             print(f"DEBUG: Vorhandene Clubs: {[club.name for club in clubs]}")
 
-    print("DEBUG: Starte Flask-Server...")
     # Für Netzwerkzugriff: host='0.0.0.0' ermöglicht Zugriff von anderen Geräten im Netzwerk
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -22,7 +22,7 @@ def create_season_calendar(season_id):
     if not season:
         raise ValueError(f"Season with ID {season_id} not found")
 
-    print(f"Creating calendar for season {season.name} (ID: {season_id})")
+
 
     # Lösche existierende Kalendereinträge für diese Saison
     SeasonCalendar.query.filter_by(season_id=season_id).delete()
@@ -34,7 +34,7 @@ def create_season_calendar(season_id):
     league_match_days_needed = calculate_league_match_days_needed(season_id)
     cup_match_days_needed = calculate_cup_match_days_needed(season_id)
 
-    print(f"Calendar needs: {league_match_days_needed} league days, {cup_match_days_needed} cup days")
+
 
     # Erstelle Kalenderverteilung mit 104 Slots
     calendar_distribution = create_calendar_distribution(
@@ -72,7 +72,6 @@ def create_season_calendar(season_id):
         db.session.add(calendar_entry)
 
     db.session.commit()
-    print(f"Created calendar with {len(match_slots)} match slots for season {season.name}")
 
     return calendar_distribution
 
@@ -133,7 +132,6 @@ def calculate_league_match_days_needed(season_id):
     ).scalar()
     
     if max_match_day:
-        print(f"Found existing league matches with max match day: {max_match_day}")
         return max_match_day
     
     # Fallback: Berechne basierend auf Teamanzahl
@@ -148,7 +146,6 @@ def calculate_league_match_days_needed(season_id):
             needed_match_days = (teams_count - 1) * 2
             max_needed = max(max_needed, needed_match_days)
     
-    print(f"Calculated league match days needed: {max_needed}")
     return max_needed or 34  # Fallback auf 34 Spieltage
 
 
@@ -163,7 +160,6 @@ def calculate_cup_match_days_needed(season_id):
         # Jeder Pokal benötigt so viele Spieltage wie er Runden hat
         total_cup_days += cup.total_rounds
     
-    print(f"Calculated cup match days needed: {total_cup_days}")
     return total_cup_days
 
 
@@ -180,7 +176,7 @@ def create_calendar_distribution(total_slots, league_days, cup_days):
     # Berechne spielfreie Slots
     free_slots = total_slots - league_days - cup_days
 
-    print(f"Final distribution: {league_days} league, {cup_days} cup, {free_slots} free slots")
+
 
     # Verwende die bestehende gleichmäßige Verteilung
     # Liga- und Pokalspieltage werden separat nummeriert
@@ -376,7 +372,6 @@ def mark_calendar_day_simulated(calendar_day_id):
     """
     if calendar_day_id == -1:
         # Temporärer Kalendereintrag - nichts zu markieren
-        print("Temporary calendar day - no marking needed")
         return
 
     calendar_day = SeasonCalendar.query.get(calendar_day_id)
@@ -389,9 +384,6 @@ def mark_calendar_day_simulated(calendar_day_id):
         ).update({'is_simulated': True})
 
         db.session.commit()
-        print(f"Marked match day {calendar_day.match_day_number} (Week {calendar_day.week_number}, {calendar_day.day_type}) as simulated")
-    else:
-        print(f"Calendar day {calendar_day_id} not found or has no match_day_number")
 
 
 def get_season_calendar(season_id):
@@ -422,7 +414,7 @@ def update_match_days_from_calendar(season_id):
         day_type='CUP_DAY'
     ).order_by(SeasonCalendar.week_number).all()
 
-    print(f"Updating match days: {len(league_days)} league days, {len(cup_days)} cup days")
+
 
     # Aktualisiere Ligaspiele - match_day_number entspricht der Liga-internen Nummerierung
     for calendar_day in league_days:
@@ -431,7 +423,7 @@ def update_match_days_from_calendar(season_id):
             Match.match_day == calendar_day.match_day_number
         ).all()
 
-        print(f"League day {calendar_day.match_day_number} (week {calendar_day.week_number}): {len(matches)} matches")
+
 
     # Aktualisiere Pokalspiele - match_day_number entspricht der Pokal-internen Nummerierung
     for calendar_day in cup_days:
@@ -440,10 +432,7 @@ def update_match_days_from_calendar(season_id):
             CupMatch.cup_match_day == calendar_day.match_day_number
         ).all()
 
-        print(f"Cup day {calendar_day.match_day_number} (week {calendar_day.week_number}): {len(cup_matches)} matches")
-
     db.session.commit()
-    print("Match day numbers are already correctly set from calendar")
 
 
 def set_cup_match_dates(season_id):
@@ -454,7 +443,7 @@ def set_cup_match_dates(season_id):
     if not season:
         raise ValueError(f"Season with ID {season_id} not found")
 
-    print(f"Setting cup match dates for season {season.name}")
+
 
     # Hole alle Pokalspieltage aus dem Kalender
     cup_days = SeasonCalendar.query.filter_by(
@@ -463,7 +452,6 @@ def set_cup_match_dates(season_id):
     ).all()
 
     if not cup_days:
-        print("No cup days found in calendar")
         return
 
     # Erstelle ein Mapping von cup_match_day zu calendar_date (als DateTime)
