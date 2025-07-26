@@ -3021,15 +3021,15 @@ def create_new_season(old_season):
         else:
             print(f"WARNING: League {new_league.name} has only {len(league_teams)} teams, skipping fixture generation")
 
-    # Ensure all matches have correct dates using unified logic
+    # Create cups for the new season (before calendar creation)
+    from app import auto_initialize_cups
     try:
-        from season_calendar import set_all_match_dates_unified
-        set_all_match_dates_unified(new_season.id)
-        print(f"Set unified match dates for all matches in new season {new_season.id}")
+        auto_initialize_cups(new_season.id)
+        print("Auto-initialized cups for the new season")
     except Exception as e:
-        print(f"Error setting unified match dates for new season: {e}")
+        print(f"Error initializing cups: {str(e)}")
 
-    # Create season calendar after fixtures are generated
+    # Create season calendar after fixtures and cups are generated
     from season_calendar import create_season_calendar
     try:
         create_season_calendar(new_season.id)
@@ -3037,17 +3037,40 @@ def create_new_season(old_season):
     except Exception as e:
         print(f"Error creating season calendar: {str(e)}")
 
+    # Recalculate cup match days now that season calendar exists
+    print("Recalculating cup match days...")
+    try:
+        from models import Cup, CupMatch
+        cups = Cup.query.filter_by(season_id=new_season.id).all()
+
+        for cup in cups:
+            print(f"Recalculating match days for {cup.name}...")
+            cup_matches = CupMatch.query.filter_by(cup_id=cup.id).all()
+
+            for match in cup_matches:
+                # Recalculate cup match day using the new logic
+                new_cup_match_day = cup.calculate_cup_match_day(match.round_number, cup.total_rounds)
+                if new_cup_match_day != match.cup_match_day:
+                    print(f"  Updated match {match.id}: {match.cup_match_day} -> {new_cup_match_day}")
+                    match.cup_match_day = new_cup_match_day
+
+            db.session.commit()
+            print(f"Recalculated match days for {cup.name}")
+
+    except Exception as e:
+        print(f"Error recalculating cup match days: {e}")
+
+    # Ensure all matches have correct dates using unified logic (after calendar is created)
+    try:
+        from season_calendar import set_all_match_dates_unified
+        set_all_match_dates_unified(new_season.id)
+        print(f"Set unified match dates for all matches in new season {new_season.id}")
+    except Exception as e:
+        print(f"Error setting unified match dates for new season: {e}")
+
     print(f"Total fixtures generated: {total_fixtures_generated}")
 
-    print("Generated fixtures for all leagues in the new season")
-
-    # Create cups for the new season
-    from app import auto_initialize_cups
-    try:
-        auto_initialize_cups(new_season.id)
-        print("Auto-initialized cups for the new season")
-    except Exception as e:
-        print(f"Error initializing cups: {str(e)}")
+    print("Generated fixtures for all leagues and cups in the new season")
 
     # Age all players by 1 year
     players = Player.query.all()

@@ -427,8 +427,12 @@ class Team(db.Model):
         recent_matches = []
         all_played_matches = []
 
-        # Get home league matches
-        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True).all()
+        # Get current season for filtering
+        current_season = Season.query.filter_by(is_current=True).first()
+        current_season_id = current_season.id if current_season else None
+
+        # Get home league matches (only from current season)
+        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True, season_id=current_season_id).all()
         for match in home_matches:
             match_data = {
                 'id': match.id,
@@ -444,8 +448,8 @@ class Team(db.Model):
             }
             all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
-        # Get away league matches
-        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True).all()
+        # Get away league matches (only from current season)
+        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True, season_id=current_season_id).all()
         for match in away_matches:
             match_data = {
                 'id': match.id,
@@ -464,7 +468,7 @@ class Team(db.Model):
         # Get home cup matches - use raw SQL to avoid circular dependency
         try:
             from sqlalchemy import text
-            # Query cup matches using raw SQL to avoid circular import
+            # Query cup matches using raw SQL to avoid circular import (only current season)
             home_cup_matches_raw = db.session.execute(
                 text("""
                     SELECT cm.id, cm.match_date, cm.home_score, cm.away_score,
@@ -472,9 +476,9 @@ class Team(db.Model):
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     LEFT JOIN team t ON cm.away_team_id = t.id
-                    WHERE cm.home_team_id = :team_id AND cm.is_played = 1
+                    WHERE cm.home_team_id = :team_id AND cm.is_played = 1 AND c.season_id = :season_id
                 """),
-                {"team_id": self.id}
+                {"team_id": self.id, "season_id": current_season_id}
             ).fetchall()
 
             for cup_match_row in home_cup_matches_raw:
@@ -502,7 +506,7 @@ class Team(db.Model):
                 }
                 all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
-            # Get away cup matches
+            # Get away cup matches (only current season)
             away_cup_matches_raw = db.session.execute(
                 text("""
                     SELECT cm.id, cm.match_date, cm.home_score, cm.away_score,
@@ -510,9 +514,9 @@ class Team(db.Model):
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     JOIN team t ON cm.home_team_id = t.id
-                    WHERE cm.away_team_id = :team_id AND cm.is_played = 1
+                    WHERE cm.away_team_id = :team_id AND cm.is_played = 1 AND c.season_id = :season_id
                 """),
-                {"team_id": self.id}
+                {"team_id": self.id, "season_id": current_season_id}
             ).fetchall()
 
             for cup_match_row in away_cup_matches_raw:
@@ -556,8 +560,8 @@ class Team(db.Model):
         upcoming_matches = []
         all_upcoming_matches = []
 
-        # Get home league matches
-        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=False).all()
+        # Get home league matches (only from current season)
+        home_matches = Match.query.filter_by(home_team_id=self.id, is_played=False, season_id=current_season_id).all()
         for match in home_matches:
             match_data = {
                 'id': match.id,
@@ -574,8 +578,8 @@ class Team(db.Model):
             }
             all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
-        # Get away league matches
-        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=False).all()
+        # Get away league matches (only from current season)
+        away_matches = Match.query.filter_by(away_team_id=self.id, is_played=False, season_id=current_season_id).all()
         for match in away_matches:
             match_data = {
                 'id': match.id,
@@ -594,16 +598,16 @@ class Team(db.Model):
 
         # Get upcoming cup matches - use raw SQL to avoid circular import
         try:
-            # Query upcoming home cup matches
+            # Query upcoming home cup matches (only current season)
             home_cup_matches_raw = db.session.execute(
                 text("""
                     SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as away_team_name
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     LEFT JOIN team t ON cm.away_team_id = t.id
-                    WHERE cm.home_team_id = :team_id AND cm.is_played = 0
+                    WHERE cm.home_team_id = :team_id AND cm.is_played = 0 AND c.season_id = :season_id
                 """),
-                {"team_id": self.id}
+                {"team_id": self.id, "season_id": current_season_id}
             ).fetchall()
 
             for cup_match_row in home_cup_matches_raw:
@@ -632,16 +636,16 @@ class Team(db.Model):
                 }
                 all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
-            # Query upcoming away cup matches
+            # Query upcoming away cup matches (only current season)
             away_cup_matches_raw = db.session.execute(
                 text("""
                     SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as home_team_name
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     JOIN team t ON cm.home_team_id = t.id
-                    WHERE cm.away_team_id = :team_id AND cm.is_played = 0
+                    WHERE cm.away_team_id = :team_id AND cm.is_played = 0 AND c.season_id = :season_id
                 """),
-                {"team_id": self.id}
+                {"team_id": self.id, "season_id": current_season_id}
             ).fetchall()
 
             for cup_match_row in away_cup_matches_raw:
