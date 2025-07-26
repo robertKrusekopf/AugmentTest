@@ -911,22 +911,22 @@ class Club(db.Model):
             }
         }
 
-        # Get team records
+        # Get team records (all historical records, sorted by date descending)
         team_records = LaneRecord.query.filter_by(
             club_id=self.id,
             record_type='team'
-        ).all()
+        ).order_by(LaneRecord.record_date.desc()).all()
 
         for record in team_records:
             lane_records['team'].append(record.to_dict())
 
-        # Get individual records by category
+        # Get individual records by category (all historical records, sorted by date descending)
         for category in ['Herren', 'U19', 'U14']:
             individual_records = LaneRecord.query.filter_by(
                 club_id=self.id,
                 record_type='individual',
                 category=category
-            ).all()
+            ).order_by(LaneRecord.record_date.desc()).all()
 
             for record in individual_records:
                 lane_records['individual'][category].append(record.to_dict())
@@ -2300,8 +2300,8 @@ class LaneRecord(db.Model):
     # Score achieved (total across all 4 lanes)
     score = db.Column(db.Integer, nullable=False)
 
-    # Match where the record was set
-    match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=False)
+    # Match where the record was set (optional for historical records)
+    match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=True)
 
     # Date when the record was set
     record_date = db.Column(db.DateTime, default=datetime.utcnow)
@@ -2314,6 +2314,21 @@ class LaneRecord(db.Model):
 
     def to_dict(self):
         """Convert the record to a dictionary for API responses."""
+        # Determine the display date - prefer match_date over record_date
+        display_date = None
+        if self.match and self.match.match_date:
+            # Regular league match
+            display_date = self.match.match_date.isoformat()
+        elif self.match_id:
+            # Check if it's a cup match
+            cup_match = CupMatch.query.get(self.match_id)
+            if cup_match and cup_match.match_date:
+                display_date = cup_match.match_date.isoformat()
+
+        # Fallback to record_date if no match date is available
+        if not display_date and self.record_date:
+            display_date = self.record_date.isoformat()
+
         result = {
             'id': self.id,
             'record_type': self.record_type,
@@ -2322,7 +2337,7 @@ class LaneRecord(db.Model):
             'club_name': self.club.name,
             'score': self.score,
             'match_id': self.match_id,
-            'record_date': self.record_date.isoformat() if self.record_date else None
+            'record_date': display_date  # This is now the match date when available
         }
 
         # Add player or team information based on record type
@@ -2330,6 +2345,35 @@ class LaneRecord(db.Model):
             result['player_id'] = self.player_id
             result['player_name'] = self.player.name
             result['player_age'] = self.player.age
+
+            # Find which team the player played for in this match
+            played_for_team_id = None
+            played_for_team_name = None
+
+            if self.match_id:
+                # Check league match performance
+                performance = PlayerMatchPerformance.query.filter_by(
+                    player_id=self.player_id,
+                    match_id=self.match_id
+                ).first()
+
+                if performance and performance.team:
+                    played_for_team_id = performance.team_id
+                    played_for_team_name = performance.team.name
+                else:
+                    # Check cup match performance
+                    cup_performance = PlayerCupMatchPerformance.query.filter_by(
+                        player_id=self.player_id,
+                        cup_match_id=self.match_id
+                    ).first()
+
+                    if cup_performance and cup_performance.team:
+                        played_for_team_id = cup_performance.team_id
+                        played_for_team_name = cup_performance.team.name
+
+            result['played_for_team_id'] = played_for_team_id
+            result['played_for_team_name'] = played_for_team_name
+
         elif self.record_type == 'team' and self.team:
             result['team_id'] = self.team_id
             result['team_name'] = self.team.name
@@ -2347,9 +2391,10 @@ class LaneRecord(db.Model):
             return 'Herren'
 
     @staticmethod
-    def check_and_update_record(club_id, score, player=None, team=None, match_id=None):
+    def check_and_update_record(club_id, score, player=None, team=None, match_id=None, commit=True):
         """
-        Check if a new record has been set and update the database if needed.
+        Check if a new record has been set and create a new record entry if needed.
+        All records are preserved for historical tracking.
 
         Args:
             club_id: ID of the club where the lane is located
@@ -2357,6 +2402,7 @@ class LaneRecord(db.Model):
             player: Player object (for individual records)
             team: Team object (for team records)
             match_id: ID of the match where the record was set
+            commit: Whether to commit the changes (default True for backward compatibility)
 
         Returns:
             True if a new record was set, False otherwise
@@ -2366,67 +2412,53 @@ class LaneRecord(db.Model):
             record_type = 'individual'
             category = LaneRecord.get_age_category(player.age)
 
-            # Check if there's an existing record
+            # Check if there's an existing record (get the highest score)
             existing_record = LaneRecord.query.filter_by(
                 record_type=record_type,
                 category=category,
                 club_id=club_id
-            ).first()
+            ).order_by(LaneRecord.score.desc()).first()
 
             if not existing_record or score > existing_record.score:
-                # New record!
-                if existing_record:
-                    # Update existing record
-                    existing_record.score = score
-                    existing_record.player_id = player.id
-                    existing_record.match_id = match_id
-                    existing_record.record_date = datetime.utcnow()
-                else:
-                    # Create new record
-                    new_record = LaneRecord(
-                        record_type=record_type,
-                        category=category,
-                        club_id=club_id,
-                        player_id=player.id,
-                        score=score,
-                        match_id=match_id
-                    )
-                    db.session.add(new_record)
+                # New record! Always create a new entry to preserve history
+                new_record = LaneRecord(
+                    record_type=record_type,
+                    category=category,
+                    club_id=club_id,
+                    player_id=player.id,
+                    score=score,
+                    match_id=match_id
+                )
+                db.session.add(new_record)
 
-                db.session.commit()
+                if commit:
+                    db.session.commit()
                 return True
 
         elif team:
             # Team record
             record_type = 'team'
 
-            # Check if there's an existing record
+            # Check if there's an existing record (get the highest score)
             existing_record = LaneRecord.query.filter_by(
                 record_type=record_type,
                 club_id=club_id
-            ).first()
+            ).order_by(LaneRecord.score.desc()).first()
 
             if not existing_record or score > existing_record.score:
-                # New record!
-                if existing_record:
-                    # Update existing record
-                    existing_record.score = score
-                    existing_record.team_id = team.id
-                    existing_record.match_id = match_id
-                    existing_record.record_date = datetime.utcnow()
-                else:
-                    # Create new record
-                    new_record = LaneRecord(
-                        record_type=record_type,
-                        category='Herren',  # Default category for team records
-                        club_id=club_id,
-                        team_id=team.id,
-                        score=score,
-                        match_id=match_id
-                    )
-                    db.session.add(new_record)
+                # New record! Always create a new entry to preserve history
+                new_record = LaneRecord(
+                    record_type=record_type,
+                    category='Herren',  # Default category for team records
+                    club_id=club_id,
+                    team_id=team.id,
+                    score=score,
+                    match_id=match_id
+                )
+                db.session.add(new_record)
 
-                db.session.commit()
+                if commit:
+                    db.session.commit()
                 return True
 
         return False

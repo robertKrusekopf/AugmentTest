@@ -671,12 +671,12 @@ def _simulate_matches_sequential(matches_data, club_team_players, next_match_day
                 away_team,
                 home_player_objects,
                 away_player_objects,
-                cache_manager
+                cache_manager,
+                match_id=match_dict.get('match_id')
             )
 
             # Prepare match result data
             match_result.update({
-                'match_id': match_dict.get('match_id'),
                 'home_team_id': home_team_id,
                 'away_team_id': away_team_id,
                 'home_team_name': match_dict.get('home_team_name') or home_team.name,
@@ -758,7 +758,7 @@ def _simulate_matches_sequential(matches_data, club_team_players, next_match_day
     return results, all_performances, all_player_updates, all_lane_records
 
 
-def simulate_match(home_team, away_team, home_players, away_players, cache_manager):
+def simulate_match(home_team, away_team, home_players, away_players, cache_manager, match_id=None):
     """
     Simulate a bowling match between two teams and return the result.
 
@@ -779,6 +779,7 @@ def simulate_match(home_team, away_team, home_players, away_players, cache_manag
         home_players: Pre-assigned players for the home team
         away_players: Pre-assigned players for the away team
         cache_manager: CacheManager instance for performance optimization
+        match_id: Optional match ID to include in the result
 
     Returns:
         dict: Match result with scores, match points, performances, and lane records
@@ -919,7 +920,7 @@ def simulate_match(home_team, away_team, home_players, away_players, cache_manag
         {'club_id': home_club_id, 'score': away_score, 'team_id': away_team.id}
     ])
 
-    return {
+    result = {
         'home_team': home_team.name,
         'away_team': away_team.name,
         'home_score': home_score,
@@ -930,6 +931,12 @@ def simulate_match(home_team, away_team, home_players, away_players, cache_manag
         'performances': performances,
         'lane_records': lane_records
     }
+
+    # Add match_id if provided
+    if match_id is not None:
+        result['match_id'] = match_id
+
+    return result
 
 
 def simulate_player_performance(player, position, lane_quality, team_advantage, is_home, cache_manager):
@@ -996,16 +1003,17 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
     form_long_active = get_attr(player, 'form_long_remaining_days', 0) > 0
 
     # Only apply form modifiers if they are active
+    # modify with 0.5 so effects are not too strong
     total_form_modifier = 0.0
     if form_short_active:
-        total_form_modifier += form_short
+        total_form_modifier += form_short*0.5
     if form_medium_active:
-        total_form_modifier += form_medium
+        total_form_modifier += form_medium*0.5
     if form_long_active:
-        total_form_modifier += form_long
+        total_form_modifier += form_long*0.5
 
     # Apply form as percentage modifier: strength * (1 + form_modifier)
-    effective_strength = strength * (1 + total_form_modifier)
+    effective_strength = strength #* (1 + total_form_modifier)
     effective_strength = max(1, min(99, effective_strength))  # Clamp to valid range
 
     # Simulate 4 lanes
@@ -1323,7 +1331,17 @@ def batch_commit_simulation_results(matches_data, cup_matches_data, results, all
 
         # Process lane records (this might need to be done individually due to complex logic)
         if all_lane_records:
-            process_lane_records_batch(all_lane_records)
+            # Add match_id information to lane records from results
+            enhanced_lane_records = []
+            for i, result in enumerate(results):
+                match_id = result.get('match_id')
+                if match_id and 'lane_records' in result:
+                    for record in result['lane_records']:
+                        record['match_id'] = match_id
+                        enhanced_lane_records.append(record)
+
+            if enhanced_lane_records:
+                process_lane_records_batch(enhanced_lane_records)
 
         # Single commit for all changes
         db.session.commit()
@@ -1344,29 +1362,69 @@ def process_lane_records_batch(all_lane_records):
     Args:
         all_lane_records: List of lane record data
     """
-    # Group records by club for efficient processing
-    club_records = {}
-    for record in all_lane_records:
-        club_id = record['club_id']
-        if club_id not in club_records:
-            club_records[club_id] = []
-        club_records[club_id].append(record)
+    from models import LaneRecord, Player, Team
 
-    # Process each club's records
-    for club_id, records in club_records.items():
-        # Find the highest scores for this club
-        team_records = [r for r in records if 'team_id' in r]
-        player_records = [r for r in records if 'player_id' in r]
+    if not all_lane_records:
+        return
 
-        if team_records:
-            max_team_score = max(team_records, key=lambda x: x['score'])
-            # Check if this is a new team record (simplified check)
-            # In a full implementation, you'd check against existing records
+    print(f"Processing {len(all_lane_records)} potential lane records...")
 
-        if player_records:
-            max_player_score = max(player_records, key=lambda x: x['score'])
-            # Check if this is a new player record (simplified check)
-            # In a full implementation, you'd check against existing records
+    # Process each record individually to check for new records
+    records_processed = 0
+    new_records_set = 0
+
+    for record_data in all_lane_records:
+        try:
+            club_id = record_data['club_id']
+            score = record_data['score']
+
+            # Handle player records
+            if 'player_id' in record_data:
+                player_id = record_data['player_id']
+                player = Player.query.get(player_id)
+
+                if player:
+                    # Get match_id if available (might not be set yet during batch processing)
+                    match_id = record_data.get('match_id', None)
+
+                    # Check and update individual record (don't commit, will be committed in batch)
+                    if LaneRecord.check_and_update_record(
+                        club_id=club_id,
+                        score=score,
+                        player=player,
+                        match_id=match_id,
+                        commit=False
+                    ):
+                        new_records_set += 1
+                        print(f"New individual record set: {player.name} - {score} pins at club {club_id}")
+
+            # Handle team records
+            elif 'team_id' in record_data:
+                team_id = record_data['team_id']
+                team = Team.query.get(team_id)
+
+                if team:
+                    # Get match_id if available
+                    match_id = record_data.get('match_id', None)
+
+                    # Check and update team record (don't commit, will be committed in batch)
+                    if LaneRecord.check_and_update_record(
+                        club_id=club_id,
+                        score=score,
+                        team=team,
+                        match_id=match_id,
+                        commit=False
+                    ):
+                        new_records_set += 1
+                        print(f"New team record set: {team.name} - {score} pins at club {club_id}")
+
+            records_processed += 1
+
+        except Exception as e:
+            print(f"Error processing lane record {record_data}: {str(e)}")
+            continue
+
+    print(f"Processed {records_processed} lane records, {new_records_set} new records set")
 
 
 # Removed duplicate function - using the one below

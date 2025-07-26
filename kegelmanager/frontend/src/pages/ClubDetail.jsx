@@ -645,16 +645,34 @@ const ClubDetail = () => {
                         <th>Mannschaft</th>
                         <th>Ergebnis</th>
                         <th>Datum</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {club.lane_records.team.sort((a, b) => b.score - a.score).map(record => (
-                        <tr key={`team-${record.id}`}>
-                          <td>{record.team_name}</td>
-                          <td className="record-score">{record.score}</td>
-                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
-                        </tr>
-                      ))}
+                      {club.lane_records.team
+                        .sort((a, b) => new Date(b.record_date) - new Date(a.record_date))
+                        .map((record, index) => {
+                          const maxScore = Math.max(...club.lane_records.team.map(r => r.score));
+                          const isCurrentRecord = record.score === maxScore;
+                          return (
+                            <tr key={`team-${record.id}`} className={isCurrentRecord ? 'current-record' : 'historical-record'}>
+                              <td>
+                                <Link to={`/team/${record.team_id}`} className="record-link">
+                                  {record.team_name}
+                                </Link>
+                              </td>
+                              <td className="record-score">{record.score}</td>
+                              <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                              <td>
+                                {isCurrentRecord ? (
+                                  <span className="current-badge">Aktueller Rekord</span>
+                                ) : (
+                                  <span className="historical-badge">Ehemaliger Rekord</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 ) : (
@@ -669,18 +687,46 @@ const ClubDetail = () => {
                     <thead>
                       <tr>
                         <th>Spieler</th>
+                        <th>Mannschaft</th>
                         <th>Ergebnis</th>
                         <th>Datum</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {club.lane_records.individual.Herren.sort((a, b) => b.score - a.score).map(record => (
-                        <tr key={`herren-${record.id}`}>
-                          <td>{record.player_name}</td>
-                          <td className="record-score">{record.score}</td>
-                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
-                        </tr>
-                      ))}
+                      {club.lane_records.individual.Herren
+                        .sort((a, b) => new Date(b.record_date) - new Date(a.record_date))
+                        .map((record, index) => {
+                          const maxScore = Math.max(...club.lane_records.individual.Herren.map(r => r.score));
+                          const isCurrentRecord = record.score === maxScore;
+                          return (
+                            <tr key={`herren-${record.id}`} className={isCurrentRecord ? 'current-record' : 'historical-record'}>
+                              <td>
+                                <Link to={`/player/${record.player_id}`} className="record-link">
+                                  {record.player_name}
+                                </Link>
+                              </td>
+                              <td>
+                                {record.played_for_team_name ? (
+                                  <Link to={`/team/${record.played_for_team_id}`} className="record-link">
+                                    {record.played_for_team_name}
+                                  </Link>
+                                ) : (
+                                  <span className="no-team">Unbekannt</span>
+                                )}
+                              </td>
+                              <td className="record-score">{record.score}</td>
+                              <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                              <td>
+                                {isCurrentRecord ? (
+                                  <span className="current-badge">Aktueller Rekord</span>
+                                ) : (
+                                  <span className="historical-badge">Ehemaliger Rekord</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 ) : (
@@ -695,18 +741,46 @@ const ClubDetail = () => {
                     <thead>
                       <tr>
                         <th>Spieler</th>
+                        <th>Mannschaft</th>
                         <th>Ergebnis</th>
                         <th>Datum</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {club.lane_records.individual.U19.sort((a, b) => b.score - a.score).map(record => (
-                        <tr key={`u19-${record.id}`}>
-                          <td>{record.player_name}</td>
-                          <td className="record-score">{record.score}</td>
-                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
-                        </tr>
-                      ))}
+                      {club.lane_records.individual.U19
+                        .sort((a, b) => new Date(b.record_date) - new Date(a.record_date))
+                        .map((record, index) => {
+                          const maxScore = Math.max(...club.lane_records.individual.U19.map(r => r.score));
+                          const isCurrentRecord = record.score === maxScore;
+                          return (
+                            <tr key={`u19-${record.id}`} className={isCurrentRecord ? 'current-record' : 'historical-record'}>
+                              <td>
+                                <Link to={`/player/${record.player_id}`} className="record-link">
+                                  {record.player_name}
+                                </Link>
+                              </td>
+                              <td>
+                                {record.played_for_team_name ? (
+                                  <Link to={`/team/${record.played_for_team_id}`} className="record-link">
+                                    {record.played_for_team_name}
+                                  </Link>
+                                ) : (
+                                  <span className="no-team">Unbekannt</span>
+                                )}
+                              </td>
+                              <td className="record-score">{record.score}</td>
+                              <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                              <td>
+                                {isCurrentRecord ? (
+                                  <span className="current-badge">Aktueller Rekord</span>
+                                ) : (
+                                  <span className="historical-badge">Ehemaliger Rekord</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 ) : (
@@ -721,18 +795,46 @@ const ClubDetail = () => {
                     <thead>
                       <tr>
                         <th>Spieler</th>
+                        <th>Mannschaft</th>
                         <th>Ergebnis</th>
                         <th>Datum</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {club.lane_records.individual.U14.sort((a, b) => b.score - a.score).map(record => (
-                        <tr key={`u14-${record.id}`}>
-                          <td>{record.player_name}</td>
-                          <td className="record-score">{record.score}</td>
-                          <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
-                        </tr>
-                      ))}
+                      {club.lane_records.individual.U14
+                        .sort((a, b) => new Date(b.record_date) - new Date(a.record_date))
+                        .map((record, index) => {
+                          const maxScore = Math.max(...club.lane_records.individual.U14.map(r => r.score));
+                          const isCurrentRecord = record.score === maxScore;
+                          return (
+                            <tr key={`u14-${record.id}`} className={isCurrentRecord ? 'current-record' : 'historical-record'}>
+                              <td>
+                                <Link to={`/player/${record.player_id}`} className="record-link">
+                                  {record.player_name}
+                                </Link>
+                              </td>
+                              <td>
+                                {record.played_for_team_name ? (
+                                  <Link to={`/team/${record.played_for_team_id}`} className="record-link">
+                                    {record.played_for_team_name}
+                                  </Link>
+                                ) : (
+                                  <span className="no-team">Unbekannt</span>
+                                )}
+                              </td>
+                              <td className="record-score">{record.score}</td>
+                              <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
+                              <td>
+                                {isCurrentRecord ? (
+                                  <span className="current-badge">Aktueller Rekord</span>
+                                ) : (
+                                  <span className="historical-badge">Ehemaliger Rekord</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
                 ) : (

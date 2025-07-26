@@ -409,17 +409,17 @@ def create_sample_data(custom_app=None):
 
 
                         # Base strength by league level (higher level = stronger teams)
-                        league_base = max(30, 70 - (league.level - 1) * 4)  # Level 1: ~70, Level 10: ~34
+                        league_base = max(25, 75 - (league.level - 1) * 5.56)  # Level 1: 75, Level 10: 25
 
                         if points > 0:
                             # Use actual table data if available
-                            staerke = int(points / 10 + goal_diff / 20)
+                            staerke = int(points / 15 + goal_diff / 30)
                         else:
                             staerke = 0
                         staerke = int(league_base + staerke)
                     except (ValueError, IndexError):
                         # Fallback: random strength based on league level
-                        league_base = max(30, 70 - (league.level - 1) * 4)
+                        league_base = max(25, 75 - (league.level - 1) * 5.56)
                         staerke = random.randint(max(30, league_base - 10), min(99, league_base + 10))
 
                     # Team erstellen und mit dem Verein verknüpfen
