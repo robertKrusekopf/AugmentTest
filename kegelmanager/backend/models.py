@@ -1,7 +1,15 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from sqlalchemy import text
 
 db = SQLAlchemy()
+
+# Constants for ID ranges
+CUP_MATCH_ID_OFFSET = 1000000  # Cup match IDs start at 1,000,000
+
+def get_cup_match_frontend_id(db_id):
+    """Convert database cup match ID to frontend ID."""
+    return db_id + CUP_MATCH_ID_OFFSET
 
 # Association table for many-to-many relationship between players and teams
 player_team = db.Table('player_team',
@@ -470,15 +478,19 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in home_cup_matches_raw:
-                # match_date is now already a datetime, no conversion needed
+                # Handle match_date - could be datetime or string
                 match_datetime = cup_match_row.match_date
-
-                # Import the helper function
-                from app import get_cup_match_frontend_id
+                if match_datetime:
+                    if hasattr(match_datetime, 'isoformat'):
+                        date_str = match_datetime.isoformat()
+                    else:
+                        date_str = str(match_datetime)
+                else:
+                    date_str = None
 
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
-                    'date': match_datetime.isoformat() if match_datetime else None,
+                    'date': date_str,
                     'homeTeam': self.name,
                     'awayTeam': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
                     'homeScore': cup_match_row.home_score,
@@ -504,15 +516,19 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in away_cup_matches_raw:
-                # match_date is now already a datetime, no conversion needed
+                # Handle match_date - could be datetime or string
                 match_datetime = cup_match_row.match_date
-
-                # Import the helper function
-                from app import get_cup_match_frontend_id
+                if match_datetime:
+                    if hasattr(match_datetime, 'isoformat'):
+                        date_str = match_datetime.isoformat()
+                    else:
+                        date_str = str(match_datetime)
+                else:
+                    date_str = None
 
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
-                    'date': match_datetime.isoformat() if match_datetime else None,
+                    'date': date_str,
                     'homeTeam': cup_match_row.home_team_name,
                     'awayTeam': self.name,
                     'homeScore': cup_match_row.home_score,
@@ -591,16 +607,20 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in home_cup_matches_raw:
-                # match_date is now already a datetime, no conversion needed
+                # Handle match_date - could be datetime or string
                 match_datetime = cup_match_row.match_date
-
-                # Import the helper function
-                from app import get_cup_match_frontend_id
+                if match_datetime:
+                    if hasattr(match_datetime, 'isoformat'):
+                        date_str = match_datetime.isoformat()
+                    else:
+                        date_str = str(match_datetime)
+                else:
+                    date_str = None
 
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
-                    'date': match_datetime.isoformat() if match_datetime else None,
-                    'match_date': match_datetime.isoformat() if match_datetime else None,
+                    'date': date_str,
+                    'match_date': date_str,
                     'homeTeam': self.name,
                     'awayTeam': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
                     'opponent_name': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
@@ -625,16 +645,20 @@ class Team(db.Model):
             ).fetchall()
 
             for cup_match_row in away_cup_matches_raw:
-                # match_date is now already a datetime, no conversion needed
+                # Handle match_date - could be datetime or string
                 match_datetime = cup_match_row.match_date
-
-                # Import the helper function
-                from app import get_cup_match_frontend_id
+                if match_datetime:
+                    if hasattr(match_datetime, 'isoformat'):
+                        date_str = match_datetime.isoformat()
+                    else:
+                        date_str = str(match_datetime)
+                else:
+                    date_str = None
 
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
-                    'date': match_datetime.isoformat() if match_datetime else None,
-                    'match_date': match_datetime.isoformat() if match_datetime else None,
+                    'date': date_str,
+                    'match_date': date_str,
                     'homeTeam': cup_match_row.home_team_name,
                     'awayTeam': self.name,
                     'opponent_name': cup_match_row.home_team_name,
