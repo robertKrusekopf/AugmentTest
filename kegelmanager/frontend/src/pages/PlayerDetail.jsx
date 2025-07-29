@@ -599,9 +599,6 @@ const PlayerDetail = () => {
                             {match.played_for_team ? (
                               <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
                                 {match.played_for_team}
-                                {match.played_for_team !== player.team && (
-                                  <span className="substitute-indicator"> (Aushilfe)</span>
-                                )}
                               </span>
                             ) : (
                               '-'
@@ -659,9 +656,6 @@ const PlayerDetail = () => {
                             {match.played_for_team ? (
                               <span className={`team-name ${match.played_for_team !== player.team ? 'substitute-team' : 'regular-team'}`}>
                                 {match.played_for_team}
-                                {match.played_for_team !== player.team && (
-                                  <span className="substitute-indicator"> (Aushilfe)</span>
-                                )}
                               </span>
                             ) : (
                               '-'

@@ -349,24 +349,54 @@ def simulate_match_day(season):
     # Step 4: Determine clubs and teams playing (from both league and cup matches)
     clubs_with_matches = set()
     teams_playing = {}
+    playing_teams_info = {}  # New: track which specific teams are playing
 
     # Process league matches
     if matches_data:
         for match_data in matches_data:
             home_club_id = match_data.home_club_id
             away_club_id = match_data.away_club_id
+            home_team_id = match_data.home_team_id
+            away_team_id = match_data.away_team_id
 
             clubs_with_matches.add(home_club_id)
             clubs_with_matches.add(away_club_id)
 
             teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
             teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
+
+            # Collect team info for realistic availability
+            if home_club_id not in playing_teams_info:
+                playing_teams_info[home_club_id] = []
+            if away_club_id not in playing_teams_info:
+                playing_teams_info[away_club_id] = []
+
+            # Get team details for home team
+            from models import Team
+            home_team = Team.query.get(home_team_id)
+            if home_team and home_team.id not in [t['id'] for t in playing_teams_info[home_club_id]]:
+                playing_teams_info[home_club_id].append({
+                    'id': home_team.id,
+                    'name': home_team.name,
+                    'league_level': home_team.league.level if home_team.league else 999
+                })
+
+            # Get team details for away team
+            away_team = Team.query.get(away_team_id)
+            if away_team and away_team.id not in [t['id'] for t in playing_teams_info[away_club_id]]:
+                playing_teams_info[away_club_id].append({
+                    'id': away_team.id,
+                    'name': away_team.name,
+                    'league_level': away_team.league.level if away_team.league else 999
+                })
 
     # Process cup matches
     if cup_matches_data:
         for cup_match_data in cup_matches_data:
             home_club_id = cup_match_data['home_club_id']
             away_club_id = cup_match_data['away_club_id']
+            home_team_id = cup_match_data['home_team_id']
+            away_team_id = cup_match_data['away_team_id']
 
             clubs_with_matches.add(home_club_id)
             clubs_with_matches.add(away_club_id)
@@ -374,11 +404,35 @@ def simulate_match_day(season):
             teams_playing[home_club_id] = teams_playing.get(home_club_id, 0) + 1
             teams_playing[away_club_id] = teams_playing.get(away_club_id, 0) + 1
 
+            # Collect team info for cup matches too
+            if home_club_id not in playing_teams_info:
+                playing_teams_info[home_club_id] = []
+            if away_club_id not in playing_teams_info:
+                playing_teams_info[away_club_id] = []
+
+            # Get team details for cup matches
+            from models import Team
+            home_team = Team.query.get(home_team_id)
+            if home_team and home_team.id not in [t['id'] for t in playing_teams_info[home_club_id]]:
+                playing_teams_info[home_club_id].append({
+                    'id': home_team.id,
+                    'name': home_team.name,
+                    'league_level': home_team.league.level if home_team.league else 999
+                })
+
+            away_team = Team.query.get(away_team_id)
+            if away_team and away_team.id not in [t['id'] for t in playing_teams_info[away_club_id]]:
+                playing_teams_info[away_club_id].append({
+                    'id': away_team.id,
+                    'name': away_team.name,
+                    'league_level': away_team.league.level if away_team.league else 999
+                })
+
     # Step 5: Batch set player availability for all clubs
     try:
         availability_start = time.time()
         from performance_optimizations import batch_set_player_availability
-        batch_set_player_availability(clubs_with_matches, teams_playing)
+        batch_set_player_availability(clubs_with_matches, teams_playing, playing_teams_info)
 
     except Exception as e:
         db.session.rollback()

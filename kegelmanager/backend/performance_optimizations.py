@@ -18,8 +18,8 @@ def determine_player_availability(club_id, teams_playing):
         club_id: The ID of the club
         teams_playing: Number of teams from this club playing on this match day
     """
-    # Use the batch function for consistency
-    batch_set_player_availability({club_id}, {club_id: teams_playing})
+    # Use the batch function for consistency (without specific team info)
+    batch_set_player_availability({club_id}, {club_id: teams_playing}, None)
 
 
 def create_performance_indexes():
@@ -330,16 +330,19 @@ class CacheManager:
         self.lane_quality_cache.clear()
 
 
-def batch_set_player_availability(clubs_with_matches, teams_playing):
+def batch_set_player_availability(clubs_with_matches, teams_playing, playing_teams_info=None):
     """
     Optimized batch setting of player availability for multiple clubs.
-    Uses 0% to 30% unavailability rate per club (randomly determined), then randomly
-    selects which players are unavailable. Allows Stroh players to be used when
-    not enough players are available.
+    Uses realistic availability logic:
+    - If all teams of a club play: normal 0-30% unavailability
+    - If only specific teams play: make players from non-playing higher teams unavailable
+      to simulate that they don't "drop down" to help lower teams unrealistically
 
     Args:
         clubs_with_matches: Set of club IDs that have matches
         teams_playing: Dictionary mapping club_id to number of teams playing
+        playing_teams_info: Optional dictionary mapping club_id to list of playing team info
+                           (with team_id and league_level)
     """
     try:
         start_time = time.time()
@@ -376,7 +379,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
                 row_dict = row._asdict() if hasattr(row, '_asdict') else dict(row)
                 club_player_counts[row_dict['club_id']] = row_dict['player_count']
 
-        # Process each club with random availability
+        # Process each club with realistic availability logic
         all_availability_updates = []
 
         for club_id in clubs_with_matches:
@@ -387,21 +390,100 @@ def batch_set_player_availability(clubs_with_matches, teams_playing):
             if total_players == 0:
                 continue
 
-            # Get player IDs for this club
-            player_ids = [row[0] for row in db.session.query(Player.id).filter_by(club_id=club_id).all()]
+            # Get all teams for this club
+            from models import Team
+            all_club_teams = Team.query.filter_by(club_id=club_id).order_by(Team.league_id).all()
 
-            # Determine unavailable players - new logic: 0% to 30% of players unavailable
-            # First determine what percentage of players will be unavailable (0% to 30%)
-            unavailability_percentage = random.uniform(0.0, 0.30)  # 0% to 30%
+            # Get player IDs sorted by rating (best players first)
+            from simulation import calculate_player_rating
+            club_players = Player.query.filter_by(club_id=club_id).all()
+            club_players.sort(key=calculate_player_rating, reverse=True)
+            player_ids = [p.id for p in club_players]
 
-            # Calculate how many players should be unavailable
-            num_unavailable = int(total_players * unavailability_percentage)
+            # Determine which specific teams are playing if we have that information
+            playing_teams = []
+            if playing_teams_info and club_id in playing_teams_info:
+                playing_teams = playing_teams_info[club_id]
+            else:
+                # Fallback: we don't know which specific teams, use old logic
+                print(f"Club ID {club_id}: No specific team info available, using count-based logic")
 
-            # Add debugging information to track availability patterns
-            # Randomly select which players will be unavailable
+            # Realistic availability logic
             unavailable_player_ids = []
-            if num_unavailable > 0:
-                unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
+
+            if teams_count == len(all_club_teams):
+                # All teams playing - normal random availability (0-30%)
+                unavailability_percentage = random.uniform(0.0, 0.30)
+                num_unavailable = int(total_players * unavailability_percentage)
+                if num_unavailable > 0:
+                    unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
+                print(f"Club ID {club_id}: All {len(all_club_teams)} teams playing - normal availability ({unavailability_percentage:.1%} unavailable)")
+
+            elif teams_count < len(all_club_teams) and playing_teams:
+                # We know which specific teams are playing - use precise logic
+                playing_team_ids = {team['id'] for team in playing_teams}
+                playing_league_levels = {team['league_level'] for team in playing_teams}
+
+                # Find teams that are NOT playing
+                non_playing_teams = [team for team in all_club_teams if team.id not in playing_team_ids]
+
+                # Find teams that are in higher leagues than any playing team
+                highest_playing_level = min(playing_league_levels) if playing_league_levels else 999
+                higher_non_playing_teams = [team for team in non_playing_teams
+                                          if team.league and team.league.level < highest_playing_level]
+
+                if higher_non_playing_teams:
+                    # Calculate how many players would normally be in the higher non-playing teams
+                    players_in_higher_teams = len(higher_non_playing_teams) * 6
+
+                    # Make 80-90% of these top players unavailable
+                    unavailable_from_higher = int(players_in_higher_teams * random.uniform(0.8, 0.9))
+                    unavailable_from_higher = min(unavailable_from_higher, len(player_ids))
+
+                    # Take the best players (they belong to higher teams that aren't playing)
+                    unavailable_player_ids.extend(player_ids[:unavailable_from_higher])
+
+                    # Add normal random unavailability for remaining players
+                    remaining_players = player_ids[unavailable_from_higher:]
+                    normal_unavailable = int(len(remaining_players) * random.uniform(0.0, 0.30))
+                    if normal_unavailable > 0:
+                        unavailable_player_ids.extend(random.sample(remaining_players, normal_unavailable))
+
+                    higher_team_names = [team.name for team in higher_non_playing_teams]
+                    playing_team_names = [team['name'] for team in playing_teams]
+                    print(f"Club ID {club_id}: Teams playing: {playing_team_names}. Higher teams not playing: {higher_team_names}. Made {unavailable_from_higher} top players unavailable, {normal_unavailable} others randomly unavailable")
+                else:
+                    # No higher teams, just normal availability
+                    unavailability_percentage = random.uniform(0.0, 0.30)
+                    num_unavailable = int(total_players * unavailability_percentage)
+                    if num_unavailable > 0:
+                        unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
+                    playing_team_names = [team['name'] for team in playing_teams]
+                    print(f"Club ID {club_id}: Teams playing: {playing_team_names}. No higher teams to make unavailable - normal availability")
+
+            elif teams_count < len(all_club_teams):
+                # Fallback to old logic when we don't have specific team info
+                teams_not_playing = len(all_club_teams) - teams_count
+                players_in_higher_teams = teams_not_playing * 6
+
+                if players_in_higher_teams > 0:
+                    unavailable_from_top = int(players_in_higher_teams * random.uniform(0.8, 0.9))
+                    unavailable_from_top = min(unavailable_from_top, len(player_ids))
+
+                    unavailable_player_ids.extend(player_ids[:unavailable_from_top])
+
+                    remaining_players = player_ids[unavailable_from_top:]
+                    normal_unavailable = int(len(remaining_players) * random.uniform(0.0, 0.30))
+                    if normal_unavailable > 0:
+                        unavailable_player_ids.extend(random.sample(remaining_players, normal_unavailable))
+
+                    print(f"Club ID {club_id}: Only {teams_count}/{len(all_club_teams)} teams playing (fallback logic) - made {unavailable_from_top} top players unavailable, {normal_unavailable} others randomly unavailable")
+                else:
+                    unavailability_percentage = random.uniform(0.0, 0.30)
+                    num_unavailable = int(total_players * unavailability_percentage)
+                    if num_unavailable > 0:
+                        unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
+                    print(f"Club ID {club_id}: {teams_count} teams playing (fallback) - normal availability")
 
             # Log if Stroh players will be needed
             available_players = total_players - len(unavailable_player_ids)
