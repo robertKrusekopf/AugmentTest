@@ -56,41 +56,51 @@ def update_player_form(player):
     updated = False
     
     # Decrease remaining days for all active forms
-    if player.form_short_remaining_days > 0:
+    # Handle NULL values by treating them as 0
+    if player.form_short_remaining_days is not None and player.form_short_remaining_days > 0:
         player.form_short_remaining_days -= 1
         if player.form_short_remaining_days <= 0:
             player.form_short_term = 0.0
             updated = True
-    
-    if player.form_medium_remaining_days > 0:
+    elif player.form_short_remaining_days is None:
+        player.form_short_remaining_days = 0
+        updated = True
+
+    if player.form_medium_remaining_days is not None and player.form_medium_remaining_days > 0:
         player.form_medium_remaining_days -= 1
         if player.form_medium_remaining_days <= 0:
             player.form_medium_term = 0.0
             updated = True
-    
-    if player.form_long_remaining_days > 0:
+    elif player.form_medium_remaining_days is None:
+        player.form_medium_remaining_days = 0
+        updated = True
+
+    if player.form_long_remaining_days is not None and player.form_long_remaining_days > 0:
         player.form_long_remaining_days -= 1
         if player.form_long_remaining_days <= 0:
             player.form_long_term = 0.0
             updated = True
-    
+    elif player.form_long_remaining_days is None:
+        player.form_long_remaining_days = 0
+        updated = True
+
     # Chance to generate new form modifiers
     # Short-term form: 15% chance per match day
-    if player.form_short_remaining_days <= 0 and random.random() < 0.15:
+    if (player.form_short_remaining_days is not None and player.form_short_remaining_days <= 0) and random.random() < 0.15:
         modifier, duration = generate_form_modifier('short')
         player.form_short_term = modifier
         player.form_short_remaining_days = duration
         updated = True
     
     # Medium-term form: 8% chance per match day
-    if player.form_medium_remaining_days <= 0 and random.random() < 0.08:
+    if (player.form_medium_remaining_days is not None and player.form_medium_remaining_days <= 0) and random.random() < 0.08:
         modifier, duration = generate_form_modifier('medium')
         player.form_medium_term = modifier
         player.form_medium_remaining_days = duration
         updated = True
-    
+
     # Long-term form: 4% chance per match day
-    if player.form_long_remaining_days <= 0 and random.random() < 0.04:
+    if (player.form_long_remaining_days is not None and player.form_long_remaining_days <= 0) and random.random() < 0.04:
         modifier, duration = generate_form_modifier('long')
         player.form_long_term = modifier
         player.form_long_remaining_days = duration

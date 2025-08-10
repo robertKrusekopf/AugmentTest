@@ -554,19 +554,108 @@ def supplement_missing_data(analysis):
 
                 print(f"  Spieler {player_name} erfolgreich ergänzt")
 
-        # Aktualisiere verein_id für Vereine ohne verein_id
+        # Migriere verein_id Spalte von INTEGER zu STRING
+        print("Migriere verein_id Spalte von INTEGER zu STRING...")
+        try:
+            # Prüfe aktuelle Spaltenstruktur
+            cursor = db.session.connection().connection.cursor()
+            cursor.execute("PRAGMA table_info(club)")
+            columns = cursor.fetchall()
+
+            verein_id_column = None
+            for col in columns:
+                if col[1] == 'verein_id':
+                    verein_id_column = col
+                    break
+
+            if verein_id_column and 'INTEGER' in verein_id_column[2]:
+                print("  verein_id ist INTEGER, migriere zu STRING...")
+
+                # Erstelle temporäre Tabelle mit neuer Struktur
+                cursor.execute("""
+                    CREATE TABLE club_temp AS
+                    SELECT id, name, founded, reputation,
+                           CAST(verein_id AS TEXT) as verein_id_temp,
+                           fans, training_facilities, coaching, lane_quality,
+                           created_at, updated_at
+                    FROM club
+                """)
+
+                # Lösche alte Tabelle
+                cursor.execute("DROP TABLE club")
+
+                # Erstelle neue Tabelle mit korrekter Struktur
+                cursor.execute("""
+                    CREATE TABLE club (
+                        id INTEGER PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        founded INTEGER,
+                        reputation INTEGER DEFAULT 50,
+                        verein_id VARCHAR(100),
+                        fans INTEGER DEFAULT 1000,
+                        training_facilities INTEGER DEFAULT 50,
+                        coaching INTEGER DEFAULT 50,
+                        lane_quality FLOAT,
+                        created_at DATETIME,
+                        updated_at DATETIME
+                    )
+                """)
+
+                # Kopiere Daten zurück
+                cursor.execute("""
+                    INSERT INTO club (id, name, founded, reputation, verein_id,
+                                    fans, training_facilities, coaching, lane_quality,
+                                    created_at, updated_at)
+                    SELECT id, name, founded, reputation, verein_id_temp,
+                           fans, training_facilities, coaching, lane_quality,
+                           created_at, updated_at
+                    FROM club_temp
+                """)
+
+                # Lösche temporäre Tabelle
+                cursor.execute("DROP TABLE club_temp")
+
+                # Commit der Migration
+                db.session.commit()
+                print("  Migration erfolgreich!")
+            else:
+                print("  verein_id ist bereits STRING oder existiert nicht")
+
+        except Exception as e:
+            print(f"  Fehler bei Migration: {e}")
+            db.session.rollback()
+
+        # Aktualisiere verein_id für Vereine ohne verein_id mit direktem SQL
         print("Aktualisiere verein_id für Vereine ohne verein_id...")
-        clubs = Club.query.all()
-        for club in clubs:
-            if club.verein_id is None or club.verein_id == "":
+        try:
+            cursor = db.session.connection().connection.cursor()
+
+            # Hole alle Clubs
+            cursor.execute("SELECT id, name FROM club")
+            clubs = cursor.fetchall()
+
+            for club_id, club_name in clubs:
                 # Erstelle verein_id aus dem Namen ohne Leerzeichen und in Kleinbuchstaben
-                verein_id_name = club.name.replace(" ", "").replace("-", "").lower()
-                club.verein_id = verein_id_name
-                print(f"  {club.name} -> verein_id: {verein_id_name}")
+                import re
+                verein_id_name = re.sub(r'[^a-zA-ZäöüÄÖÜß0-9]', '', club_name).lower()
+
+                # Update mit direktem SQL
+                cursor.execute("UPDATE club SET verein_id = ? WHERE id = ?", (verein_id_name, club_id))
+                print(f"  {club_name} -> verein_id: {verein_id_name}")
+
+            # Commit der Änderungen
+            db.session.commit()
+            print("  verein_id Updates erfolgreich!")
+
+        except Exception as e:
+            print(f"  Fehler beim Setzen der verein_id: {e}")
+            db.session.rollback()
 
         # Aktualisiere Bahnqualität für alle Vereine
         print("Aktualisiere Bahnqualität für alle Vereine...")
-        for club in clubs:
+        # Hole alle Clubs als ORM-Objekte
+        all_clubs = Club.query.all()
+        for club in all_clubs:
             # Finde das beste Team des Vereins
             best_team = Team.query.filter_by(club_id=club.id).order_by(Team.league_id).first()
             if best_team and best_team.league:
@@ -614,8 +703,8 @@ def supplement_missing_data(analysis):
                     # Wenn mehrere Teams: Verwende initial_player_distribution
                     elif len(teams) > 1:
                         print(f"  {club.name}: Verwende Verteilungslogik für {len(teams)} Teams")
-                        from player_redistribution import redistribute_players_by_club
-                        redistribute_players_by_club(club.id)
+                        from player_redistribution import redistribute_club_players_by_strength
+                        redistribute_club_players_by_strength(club.id)
 
                 db.session.commit()
                 print(f"Player-Team-Zuordnungen erfolgreich erstellt! ({total_assignments} Zuordnungen)")
@@ -625,9 +714,58 @@ def supplement_missing_data(analysis):
         else:
             print(f"Player-Team-Zuordnungen bereits vorhanden ({player_team_count} Einträge)")
 
-        # Erstelle Saisonkalender falls noch nicht vorhanden
+        # Generiere Fixtures für alle Ligen falls noch nicht vorhanden
         season = Season.query.filter_by(is_current=True).first()
         if season:
+            print("Generiere Fixtures für Ligen...")
+            try:
+                from simulation import generate_fixtures
+                from models import League, Match
+
+                leagues = League.query.filter_by(season_id=season.id).all()
+                total_fixtures_generated = 0
+
+                for league in leagues:
+                    # Prüfe ob bereits Fixtures vorhanden sind
+                    existing_matches = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
+
+                    if existing_matches == 0:
+                        # Prüfe ob genug Teams vorhanden sind
+                        teams_in_league = Team.query.filter_by(league_id=league.id).all()
+
+                        if len(teams_in_league) >= 2:
+                            print(f"Generiere Fixtures für Liga {league.name} mit {len(teams_in_league)} Teams...")
+                            generate_fixtures(league, season)
+
+                            # Zähle generierte Fixtures
+                            new_matches = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
+                            total_fixtures_generated += new_matches
+                            print(f"  {new_matches} Fixtures generiert")
+                        else:
+                            print(f"  Liga {league.name} hat nur {len(teams_in_league)} Teams - überspringe")
+                    else:
+                        print(f"  Liga {league.name} hat bereits {existing_matches} Fixtures")
+
+                print(f"Insgesamt {total_fixtures_generated} neue Fixtures generiert!")
+            except Exception as e:
+                print(f"Fehler beim Generieren der Fixtures: {str(e)}")
+
+            # Erstelle Pokale falls noch nicht vorhanden (VOR dem Saisonkalender!)
+            print("Erstelle Pokale...")
+            try:
+                from models import Cup
+                existing_cups = Cup.query.filter_by(season_id=season.id).count()
+
+                if existing_cups == 0:
+                    from app import auto_initialize_cups
+                    auto_initialize_cups(season.id)
+                    print("Pokale erfolgreich erstellt!")
+                else:
+                    print(f"Pokale bereits vorhanden ({existing_cups} Pokale)")
+            except Exception as e:
+                print(f"Fehler beim Erstellen der Pokale: {str(e)}")
+
+            # Erstelle Saisonkalender falls noch nicht vorhanden (NACH den Pokalen!)
             from models import SeasonCalendar
             calendar_count = SeasonCalendar.query.filter_by(season_id=season.id).count()
 
@@ -640,40 +778,6 @@ def supplement_missing_data(analysis):
                 except Exception as e:
                     print(f"Fehler beim Erstellen des Saisonkalenders: {str(e)}")
 
-                # Generiere Fixtures für alle Ligen falls noch nicht vorhanden
-                print("Generiere Fixtures für Ligen...")
-                try:
-                    from simulation import generate_fixtures
-                    from models import League, Match
-
-                    leagues = League.query.filter_by(season_id=season.id).all()
-                    total_fixtures_generated = 0
-
-                    for league in leagues:
-                        # Prüfe ob bereits Fixtures vorhanden sind
-                        existing_matches = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
-
-                        if existing_matches == 0:
-                            # Prüfe ob genug Teams vorhanden sind
-                            teams_in_league = Team.query.filter_by(league_id=league.id).all()
-
-                            if len(teams_in_league) >= 2:
-                                print(f"Generiere Fixtures für Liga {league.name} mit {len(teams_in_league)} Teams...")
-                                generate_fixtures(league, season)
-
-                                # Zähle generierte Fixtures
-                                new_matches = Match.query.filter_by(league_id=league.id, season_id=season.id).count()
-                                total_fixtures_generated += new_matches
-                                print(f"  {new_matches} Fixtures generiert")
-                            else:
-                                print(f"  Liga {league.name} hat nur {len(teams_in_league)} Teams - überspringe")
-                        else:
-                            print(f"  Liga {league.name} hat bereits {existing_matches} Fixtures")
-
-                    print(f"Insgesamt {total_fixtures_generated} neue Fixtures generiert!")
-                except Exception as e:
-                    print(f"Fehler beim Generieren der Fixtures: {str(e)}")
-
                 # Setze Match-Daten für alle Spiele (Liga und Pokal)
                 print("Setze Match-Daten für alle Spiele...")
                 try:
@@ -682,8 +786,79 @@ def supplement_missing_data(analysis):
                     print("Match-Daten erfolgreich gesetzt!")
                 except Exception as e:
                     print(f"Fehler beim Setzen der Match-Daten: {str(e)}")
+
+                # Neuberechnung der Pokal-Spieltage nach Erstellung des Saisonkalenders
+                print("Neuberechnung der Pokal-Spieltage...")
+                try:
+                    from models import Cup, CupMatch
+                    cups = Cup.query.filter_by(season_id=season.id).all()
+
+                    for cup in cups:
+                        print(f"Neuberechnung der Spieltage für {cup.name}...")
+                        cup_matches = CupMatch.query.filter_by(cup_id=cup.id).all()
+
+                        for match in cup_matches:
+                            # Neuberechnung des Pokal-Spieltags mit der neuen Logik
+                            new_cup_match_day = cup.calculate_cup_match_day(match.round_number, cup.total_rounds)
+                            if new_cup_match_day != match.cup_match_day:
+                                match.cup_match_day = new_cup_match_day
+
+                        db.session.commit()
+
+                    print("Pokal-Spieltage erfolgreich neuberechnet!")
+                except Exception as e:
+                    print(f"Fehler bei der Neuberechnung der Pokal-Spieltage: {str(e)}")
             else:
                 print(f"Saisonkalender bereits vorhanden ({calendar_count} Einträge)")
+
+                # Auch bei vorhandenem Kalender: Prüfe ob Match-Daten gesetzt werden müssen
+                print("Prüfe Match-Daten für alle Spiele...")
+                try:
+                    from season_calendar import set_all_match_dates_unified
+                    set_all_match_dates_unified(season.id)
+                    print("Match-Daten überprüft und ggf. gesetzt!")
+                except Exception as e:
+                    print(f"Fehler beim Setzen der Match-Daten: {str(e)}")
+
+        # Bereinige NULL-Werte in kritischen Feldern
+        print("Bereinige NULL-Werte in kritischen Feldern...")
+        try:
+            # Bereinige NULL round_number in CupMatch
+            cursor = db.session.connection().connection.cursor()
+
+            # Prüfe ob CupMatch Tabelle existiert
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cup_match'")
+            if cursor.fetchone():
+                # Setze NULL round_number auf 1 (erste Runde)
+                cursor.execute("UPDATE cup_match SET round_number = 1 WHERE round_number IS NULL")
+                updated_cup_matches = cursor.rowcount
+                if updated_cup_matches > 0:
+                    print(f"  {updated_cup_matches} CupMatch-Einträge mit NULL round_number auf 1 gesetzt")
+
+                # Setze leere round_name auf "1. Runde"
+                cursor.execute("UPDATE cup_match SET round_name = '1. Runde' WHERE round_name IS NULL OR round_name = ''")
+                updated_round_names = cursor.rowcount
+                if updated_round_names > 0:
+                    print(f"  {updated_round_names} CupMatch-Einträge mit leerem round_name auf '1. Runde' gesetzt")
+
+            # Bereinige NULL current_round_number in Cup
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cup'")
+            if cursor.fetchone():
+                cursor.execute("UPDATE cup SET current_round_number = 1 WHERE current_round_number IS NULL")
+                updated_cups = cursor.rowcount
+                if updated_cups > 0:
+                    print(f"  {updated_cups} Cup-Einträge mit NULL current_round_number auf 1 gesetzt")
+
+                cursor.execute("UPDATE cup SET total_rounds = 1 WHERE total_rounds IS NULL")
+                updated_total_rounds = cursor.rowcount
+                if updated_total_rounds > 0:
+                    print(f"  {updated_total_rounds} Cup-Einträge mit NULL total_rounds auf 1 gesetzt")
+
+            db.session.commit()
+            print("NULL-Werte erfolgreich bereinigt")
+
+        except Exception as e:
+            print(f"Fehler beim Bereinigen der NULL-Werte: {str(e)}")
 
         print("Alle fehlenden Daten erfolgreich ergänzt.")
         return {"success": True, "message": "Alle fehlenden Daten erfolgreich ergänzt."}

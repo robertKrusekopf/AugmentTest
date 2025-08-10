@@ -164,7 +164,15 @@ def fill_with_stroh_players(players, team_name):
     # Find the weakest real player to base Stroh strength on
     real_players = [p for p in players if not (isinstance(p, dict) and p.get('is_stroh', False))]
     if real_players:
-        weakest_strength = min(p.strength if hasattr(p, 'strength') else p['strength'] for p in real_players)
+        # Get strength values, handling None values
+        strength_values = []
+        for p in real_players:
+            if hasattr(p, 'strength'):
+                strength = p.strength if p.strength is not None else 30
+            else:
+                strength = p.get('strength', 30)
+            strength_values.append(strength)
+        weakest_strength = min(strength_values)
     else:
         weakest_strength = 30  # Default if no real players
 
@@ -189,30 +197,39 @@ def calculate_player_rating(player, include_youth_bonus=False):
         include_youth_bonus: Whether to include youth bonus for players under 25
 
     Returns:
-        float: Weighted rating of the player
+        float: Weighted rating of the player (never None or NaN)
     """
-    # Get attributes (works for both Player objects and dicts)
-    strength = get_player_attribute(player, 'strength')
-    konstanz = get_player_attribute(player, 'konstanz')
-    drucksicherheit = get_player_attribute(player, 'drucksicherheit')
-    volle = get_player_attribute(player, 'volle')
-    raeumer = get_player_attribute(player, 'raeumer')
+    try:
+        # Get attributes (works for both Player objects and dicts)
+        strength = get_player_attribute(player, 'strength')
+        konstanz = get_player_attribute(player, 'konstanz')
+        drucksicherheit = get_player_attribute(player, 'drucksicherheit')
+        volle = get_player_attribute(player, 'volle')
+        raeumer = get_player_attribute(player, 'raeumer')
 
-    # Standard rating formula
-    base_rating = (
-        strength * 0.5 +           # 50% weight on strength
-        konstanz * 0.1 +           # 10% weight on consistency
-        drucksicherheit * 0.1 +    # 10% weight on pressure resistance
-        volle * 0.15 +             # 15% weight on full pins
-        raeumer * 0.15             # 15% weight on clearing pins
-    )
+        # Standard rating formula
+        base_rating = (
+            strength * 0.5 +           # 50% weight on strength
+            konstanz * 0.1 +           # 10% weight on consistency
+            drucksicherheit * 0.1 +    # 10% weight on pressure resistance
+            volle * 0.15 +             # 15% weight on full pins
+            raeumer * 0.15             # 15% weight on clearing pins
+        )
 
-    # Optional youth bonus for redistribution
-    if include_youth_bonus and hasattr(player, 'age') and player.age < 25:
-        youth_bonus = 25 - player.age
-        return base_rating + youth_bonus
+        # Optional youth bonus for redistribution
+        if include_youth_bonus and hasattr(player, 'age') and player.age and player.age < 25:
+            youth_bonus = 25 - player.age
+            base_rating += youth_bonus
 
-    return base_rating
+        # Ensure we never return None or NaN
+        if base_rating is None or np.isnan(base_rating):
+            return 50.0  # Default rating
+
+        return float(base_rating)
+
+    except Exception as e:
+        print(f"Error calculating player rating for player {getattr(player, 'name', 'unknown')}: {e}")
+        return 50.0  # Default rating on error
 
 
 def calculate_position_score(player, position):
@@ -247,12 +264,14 @@ def get_player_attribute(player, attribute_name):
         attribute_name: The name of the attribute to retrieve
 
     Returns:
-        The attribute value
+        The attribute value (never None, defaults to 0)
     """
     if isinstance(player, dict):
         return player.get(attribute_name, 0)
     else:
-        return getattr(player, attribute_name, 0)
+        value = getattr(player, attribute_name, 0)
+        # Handle NULL values from database
+        return value if value is not None else 0
 
 
 
@@ -2176,7 +2195,13 @@ def save_team_cup_history(season):
                     continue
 
                 # Find the last round this team played in
-                last_round = max(match.round_number for match in team_matches)
+                # Filter out None values to prevent comparison errors
+                valid_round_numbers = [match.round_number for match in team_matches if match.round_number is not None]
+                if not valid_round_numbers:
+                    print(f"    No valid round numbers found for team {team.name} in cup {cup.name}, skipping...")
+                    continue
+
+                last_round = max(valid_round_numbers)
                 last_match = next(match for match in team_matches if match.round_number == last_round)
 
                 # Determine if team won or lost their last match

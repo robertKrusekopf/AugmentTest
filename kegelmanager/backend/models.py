@@ -808,7 +808,7 @@ class Club(db.Model):
     name = db.Column(db.String(100), nullable=False)
     founded = db.Column(db.Integer)
     reputation = db.Column(db.Integer, default=50)  # 1-100
-    verein_id = db.Column(db.Integer)
+    verein_id = db.Column(db.String(100))
 
     # Neue Felder
     fans = db.Column(db.Integer, default=1000)  # Anzahl der Fans
