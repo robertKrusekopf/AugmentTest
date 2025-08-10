@@ -107,6 +107,11 @@ def create_new_database(db_name, with_sample_data=True):
         else:
             return {"success": True, "message": f"Leere Datenbank '{db_name}' erstellt."}
 
+def extend_existing_database(source_db_path, target_db_name):
+    """Extend an existing database by copying it and adding missing data."""
+    from extend_existing_db import extend_existing_database as extend_db
+    return extend_db(source_db_path, target_db_name)
+
 def select_database(db_name):
     """Select a database to use."""
     print(f"=== DEBUG: Wähle Datenbank aus: {db_name} ===")

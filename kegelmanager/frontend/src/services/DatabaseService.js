@@ -69,6 +69,25 @@ class DatabaseService {
       throw error;
     }
   }
+
+  /**
+   * Extend/complete a database by adding missing components
+   * @param {string} sourcePath - The path to the source database
+   * @param {string} targetName - The name for the extended database
+   * @returns {Promise} Promise with the result
+   */
+  async extendDatabase(sourcePath, targetName) {
+    try {
+      const response = await axios.post(`${API_URL}/databases/extend`, {
+        source_db_path: sourcePath,
+        target_db_name: targetName
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error extending database:', error);
+      throw error;
+    }
+  }
 }
 
 export default new DatabaseService();

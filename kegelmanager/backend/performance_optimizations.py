@@ -4,7 +4,7 @@ Performance optimizations for the bowling simulation.
 This module contains optimized functions to improve the performance of match day simulations.
 """
 
-from models import db, Player, Match, PlayerMatchPerformance
+from models import db, Player, Match, PlayerMatchPerformance, Team
 from sqlalchemy import text
 import time
 
@@ -391,7 +391,6 @@ def batch_set_player_availability(clubs_with_matches, teams_playing, playing_tea
                 continue
 
             # Get all teams for this club
-            from models import Team
             all_club_teams = Team.query.filter_by(club_id=club_id).order_by(Team.league_id).all()
 
             # Get player IDs sorted by rating (best players first)
@@ -417,7 +416,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing, playing_tea
                 num_unavailable = int(total_players * unavailability_percentage)
                 if num_unavailable > 0:
                     unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
-                print(f"Club ID {club_id}: All {len(all_club_teams)} teams playing - normal availability ({unavailability_percentage:.1%} unavailable)")
+                
 
             elif teams_count < len(all_club_teams) and playing_teams:
                 # We know which specific teams are playing - use precise logic
@@ -459,7 +458,7 @@ def batch_set_player_availability(clubs_with_matches, teams_playing, playing_tea
                     if num_unavailable > 0:
                         unavailable_player_ids = random.sample(player_ids, min(num_unavailable, len(player_ids)))
                     playing_team_names = [team['name'] for team in playing_teams]
-                    print(f"Club ID {club_id}: Teams playing: {playing_team_names}. No higher teams to make unavailable - normal availability")
+                    
 
             elif teams_count < len(all_club_teams):
                 # Fallback to old logic when we don't have specific team info

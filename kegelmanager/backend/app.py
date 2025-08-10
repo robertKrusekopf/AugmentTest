@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import simulation
 import db_manager
 import auto_lineup
+import extend_existing_db
 
 # Load environment variables
 load_dotenv()
@@ -100,6 +101,37 @@ db.init_app(app)
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "healthy"})
+
+@app.route('/api/debug/database', methods=['GET'])
+def debug_database():
+    """Debug endpoint to show which database is actually being used."""
+    try:
+        # Get the current database URI
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', 'Not configured')
+
+        # Get club count and first few clubs
+        club_count = Club.query.count()
+        clubs = Club.query.limit(5).all()
+        club_names = [club.name for club in clubs]
+
+        # Get ALL clubs to see what's really happening
+        all_clubs = Club.query.all()
+        all_club_names = [club.name for club in all_clubs]
+
+        # Get the actual database file path from the engine
+        engine_url = str(db.engine.url)
+
+        return jsonify({
+            "configured_db_uri": db_uri,
+            "engine_url": engine_url,
+            "club_count": club_count,
+            "total_clubs": len(all_clubs),
+            "first_clubs": club_names,
+            "all_clubs": all_club_names,
+            "selected_db_file": open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "selected_db.txt"), "r").read().strip() if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "selected_db.txt")) else "Not found"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Global search endpoint
 @app.route('/api/search', methods=['GET'])
@@ -2686,6 +2718,45 @@ def create_database():
             "message": f"Unerwarteter Fehler: {str(e)}"
         }), 500
 
+@app.route('/api/databases/extend', methods=['POST'])
+def extend_database():
+    """Extend an existing database by copying it and adding missing data."""
+    data = request.json
+    source_db_path = data.get('source_db_path')
+    target_db_name = data.get('target_db_name')
+
+    if not source_db_path:
+        return jsonify({"success": False, "message": "Quell-Datenbankpfad ist erforderlich."}), 400
+
+    if not target_db_name:
+        return jsonify({"success": False, "message": "Ziel-Datenbankname ist erforderlich."}), 400
+
+    try:
+        # Führe extend_existing_db.py als separaten Prozess aus
+        cmd = [sys.executable, "extend_existing_db.py", source_db_path, target_db_name]
+
+        # Führe den Befehl aus und erfasse die Ausgabe
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+        # Wenn der Prozess erfolgreich war, gib eine Erfolgsmeldung zurück
+        return jsonify({
+            "success": True,
+            "message": f"Datenbank '{target_db_name}' wurde erfolgreich basierend auf '{source_db_path}' erstellt und erweitert.",
+            "output": result.stdout
+        })
+    except subprocess.CalledProcessError as e:
+        # Wenn der Prozess fehlgeschlagen ist, gib eine Fehlermeldung zurück
+        return jsonify({
+            "success": False,
+            "message": f"Fehler beim Erweitern der Datenbank: {e}",
+            "output": e.stderr
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Unerwarteter Fehler: {str(e)}"
+        }), 500
+
 @app.route('/api/databases/select', methods=['POST'])
 def select_database():
     """Select a database to use."""
@@ -2696,6 +2767,23 @@ def select_database():
         return jsonify({"success": False, "message": "Datenbankname ist erforderlich."}), 400
 
     result = db_manager.select_database(db_name)
+
+    if result.get('success'):
+        # Wenn die Datenbankauswahl erfolgreich war, erzwinge einen Neustart
+        result['message'] += " Die Anwendung wird automatisch neu gestartet, um die neue Datenbank zu verwenden."
+        print(f"DEBUG: Datenbank erfolgreich ausgewählt: {result.get('db_path')}")
+
+        # Erzwinge einen Neustart durch eine kleine Änderung an dieser Datei
+        try:
+            import time
+            current_file = __file__
+            with open(current_file, 'a') as f:
+                f.write(f"\n# Auto-reload trigger: {time.time()}")
+            print("DEBUG: Neustart-Trigger hinzugefügt - Server wird neu starten")
+        except Exception as e:
+            print(f"DEBUG: Fehler beim Hinzufügen des Neustart-Triggers: {str(e)}")
+            result['message'] += " Bitte starten Sie die Anwendung manuell neu."
+
     return jsonify(result)
 
 @app.route('/api/databases/delete', methods=['POST'])
@@ -2933,3 +3021,12 @@ if __name__ == '__main__':
 
     # Für Netzwerkzugriff: host='0.0.0.0' ermöglicht Zugriff von anderen Geräten im Netzwerk
     app.run(debug=True, host='0.0.0.0', port=5000)
+
+# Auto-reload trigger: 1754830994.2649052
+# Auto-reload trigger: 1754831031.1776755
+# Auto-reload trigger: 1754831185.2009933
+# Auto-reload trigger: 1754831726.0918536
+# Auto-reload trigger: 1754832279.8555229
+# Auto-reload trigger: 1754832302.0408406
+# Auto-reload trigger: 1754833413.3447957
+# Auto-reload trigger: 1754835072.9065282

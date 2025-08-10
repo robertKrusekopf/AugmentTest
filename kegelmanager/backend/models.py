@@ -814,7 +814,6 @@ class Club(db.Model):
     fans = db.Column(db.Integer, default=1000)  # Anzahl der Fans
     training_facilities = db.Column(db.Integer, default=50)  # Qualität der Trainingseinrichtungen (1-100)
     coaching = db.Column(db.Integer, default=50)  # Qualität der Trainer (1-100)
-    logo_path = db.Column(db.String(255))  # Pfad zum Vereinswappen
     lane_quality = db.Column(db.Float, default=1.0)  # Qualität der Kegelbahn (0.9-1.05)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -936,7 +935,6 @@ class Club(db.Model):
             'fans': self.fans,
             'training_facilities': self.training_facilities,
             'coaching': self.coaching,
-            'logo_path': self.logo_path,
             'lane_quality': self.lane_quality,
             'emblem_url': emblem_url,
             'teams': [team.id for team in self.teams],

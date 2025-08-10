@@ -334,7 +334,6 @@ def create_sample_data(custom_app=None):
                             fans=random.randint(500, 10000),
                             training_facilities=random.randint(30, 90),
                             coaching=random.randint(30, 90),
-                            logo_path=wappen_path,
                             verein_id=verein_id,
                             lane_quality=lane_quality
                         )

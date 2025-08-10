@@ -12,6 +12,7 @@ const MainMenu = () => {
   const [showNewDbForm, setShowNewDbForm] = useState(false);
   const [selectedDb, setSelectedDb] = useState(null);
   const [message, setMessage] = useState(null);
+  const [extendDatabase, setExtendDatabase] = useState(false);
 
   const navigate = useNavigate();
 
@@ -72,21 +73,62 @@ const MainMenu = () => {
       setLoading(true);
       console.log(`Wähle Datenbank aus: ${dbName}`);
 
-      const result = await DatabaseService.selectDatabase(dbName);
+      let finalDbName = dbName;
+
+      // Wenn "Datenbank vervollständigen" aktiviert ist, erweitere die Datenbank zuerst
+      if (extendDatabase) {
+        console.log('Erweitere Datenbank vor Auswahl...');
+
+        // Finde die ausgewählte Datenbank in der Liste
+        const selectedDatabase = databases.find(db => db.name === dbName);
+        if (!selectedDatabase) {
+          setMessage({ type: 'error', text: 'Ausgewählte Datenbank nicht gefunden.' });
+          return;
+        }
+
+        // Erstelle einen Namen für die erweiterte Datenbank
+        const extendedDbName = `${dbName.replace('.db', '')}_complete`;
+
+        try {
+          const extendResult = await DatabaseService.extendDatabase(selectedDatabase.path, extendedDbName);
+
+          if (extendResult.success) {
+            setMessage({
+              type: 'success',
+              text: `Datenbank erfolgreich vervollständigt! Neue Datenbank: ${extendedDbName}.db`
+            });
+            finalDbName = `${extendedDbName}.db`;
+
+            // Aktualisiere die Datenbankliste
+            await loadDatabases();
+          } else {
+            setMessage({ type: 'error', text: `Fehler beim Vervollständigen: ${extendResult.message}` });
+            return;
+          }
+        } catch (extendErr) {
+          setMessage({ type: 'error', text: 'Fehler beim Vervollständigen der Datenbank: ' + extendErr.message });
+          return;
+        }
+      }
+
+      // Wähle die (möglicherweise erweiterte) Datenbank aus
+      const result = await DatabaseService.selectDatabase(finalDbName);
       console.log('Ergebnis der Datenbankauswahl:', result);
 
       if (result.success) {
         // Zeige eine Erfolgsmeldung an
-        setMessage({ type: 'success', text: result.message });
+        if (!extendDatabase) {
+          setMessage({ type: 'success', text: result.message });
+        }
 
         // Speichere die ausgewählte Datenbank in localStorage
-        localStorage.setItem('selectedDatabase', dbName);
-        console.log(`Datenbank "${dbName}" in localStorage gespeichert`);
+        localStorage.setItem('selectedDatabase', finalDbName);
+        console.log(`Datenbank "${finalDbName}" in localStorage gespeichert`);
 
         // Zeige einen Hinweis an, dass die Anwendung neu gestartet werden muss
         setTimeout(() => {
           const confirmRestart = window.confirm(
-            `Die Datenbank "${dbName}" wurde ausgewählt. Um die Änderungen zu übernehmen, muss die Anwendung neu gestartet werden. Möchten Sie die Anwendung jetzt neu starten?`
+            `Die Datenbank "${finalDbName}" wurde ausgewählt. Um die Änderungen zu übernehmen, muss die Anwendung neu gestartet werden. Möchten Sie die Anwendung jetzt neu starten?`
           );
 
           if (confirmRestart) {
@@ -101,7 +143,7 @@ const MainMenu = () => {
           } else {
             console.log('Neustart der Anwendung abgebrochen');
           }
-        }, 500);
+        }, extendDatabase ? 2000 : 500);
       } else {
         console.error('Fehler bei der Datenbankauswahl:', result.message);
         setMessage({ type: 'error', text: result.message });
@@ -196,6 +238,26 @@ const MainMenu = () => {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {databases.length > 0 && (
+                <div className="database-options">
+                  <div className="form-group checkbox">
+                    <input
+                      type="checkbox"
+                      id="extendDatabase"
+                      checked={extendDatabase}
+                      onChange={(e) => setExtendDatabase(e.target.checked)}
+                    />
+                    <label htmlFor="extendDatabase">
+                      Datenbank vervollständigen (Saisonkalender, Fixtures, etc. hinzufügen)
+                    </label>
+                  </div>
+                  <p className="info-text">
+                    Wenn aktiviert, wird eine vollständige Kopie der ausgewählten Datenbank erstellt
+                    und alle fehlenden Komponenten (Saisonkalender, Ligaspiele, Finanzen) automatisch hinzugefügt.
+                  </p>
                 </div>
               )}
 

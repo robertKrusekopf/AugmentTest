@@ -372,7 +372,6 @@ def simulate_match_day(season):
                 playing_teams_info[away_club_id] = []
 
             # Get team details for home team
-            from models import Team
             home_team = Team.query.get(home_team_id)
             if home_team and home_team.id not in [t['id'] for t in playing_teams_info[home_club_id]]:
                 playing_teams_info[home_club_id].append({
@@ -411,7 +410,6 @@ def simulate_match_day(season):
                 playing_teams_info[away_club_id] = []
 
             # Get team details for cup matches
-            from models import Team
             home_team = Team.query.get(home_team_id)
             if home_team and home_team.id not in [t['id'] for t in playing_teams_info[home_club_id]]:
                 playing_teams_info[home_club_id].append({
