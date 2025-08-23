@@ -26,6 +26,9 @@ const Settings = () => {
       showTutorials: true,
       compactView: false,
       showStatistics: true
+    },
+    cheats: {
+      cheatMode: false
     }
   });
   const [message, setMessage] = useState({ show: false, type: '', text: '' });
@@ -33,14 +36,51 @@ const Settings = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Define default settings structure
+        const defaultSettings = {
+          general: {
+            language: 'de',
+            darkMode: false,
+            notifications: true
+          },
+          game: {
+            difficulty: 'normal',
+            simulationSpeed: 'normal',
+            autoSave: true,
+            autoSaveInterval: 15,
+            managerClubId: null
+          },
+          display: {
+            showTutorials: true,
+            compactView: false,
+            showStatistics: true
+          },
+          cheats: {
+            cheatMode: false
+          }
+        };
+
         // Load settings from localStorage if available
         const savedSettings = localStorage.getItem('gameSettings');
         if (savedSettings) {
           try {
-            setSettings(JSON.parse(savedSettings));
+            const parsedSettings = JSON.parse(savedSettings);
+            // Merge saved settings with default settings to ensure all properties exist
+            const mergedSettings = {
+              general: { ...defaultSettings.general, ...parsedSettings.general },
+              game: { ...defaultSettings.game, ...parsedSettings.game },
+              display: { ...defaultSettings.display, ...parsedSettings.display },
+              cheats: { ...defaultSettings.cheats, ...parsedSettings.cheats }
+            };
+            setSettings(mergedSettings);
           } catch (e) {
             console.error('Failed to parse saved settings:', e);
+            // Use default settings if parsing fails
+            setSettings(defaultSettings);
           }
+        } else {
+          // Use default settings if no saved settings exist
+          setSettings(defaultSettings);
         }
 
         // Check if there's a managedClubId in localStorage (for backward compatibility)
@@ -191,6 +231,9 @@ const Settings = () => {
           showTutorials: true,
           compactView: false,
           showStatistics: true
+        },
+        cheats: {
+          cheatMode: false
         }
       };
 
@@ -419,6 +462,16 @@ const Settings = () => {
               <p className="cheat-warning">
                 ⚠️ Diese Optionen sind nur für Testzwecke gedacht und können das Spielerlebnis beeinträchtigen.
               </p>
+
+              <div className="setting-item">
+                <label htmlFor="cheatMode">Cheat-Modus</label>
+                <input
+                  type="checkbox"
+                  id="cheatMode"
+                  checked={settings.cheats?.cheatMode || false}
+                  onChange={(e) => handleSettingChange('cheats', 'cheatMode', e.target.checked)}
+                />
+              </div>
 
               <div className="setting-item">
                 <label htmlFor="multiSeasonCount">Mehrere Saisons simulieren</label>

@@ -15,6 +15,7 @@ const Transfers = () => {
   const [filterAgeMax, setFilterAgeMax] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [showOfferModal, setShowOfferModal] = useState(false);
+  const [cheatModeEnabled, setCheatModeEnabled] = useState(false);
 
   const loadTransferData = async () => {
     if (!managedClubId) {
@@ -26,6 +27,17 @@ const Transfers = () => {
       setLoading(true);
       const data = await getTransfers(managedClubId);
       setTransferData(data);
+
+      // Check cheat mode status
+      const savedSettings = localStorage.getItem('gameSettings');
+      if (savedSettings) {
+        try {
+          const settings = JSON.parse(savedSettings);
+          setCheatModeEnabled(settings.cheats?.cheatMode || false);
+        } catch (e) {
+          console.error('Failed to parse saved settings:', e);
+        }
+      }
     } catch (error) {
       console.error('Error loading transfer data:', error);
       setTransferData(null);
@@ -45,9 +57,15 @@ const Transfers = () => {
 
   const handleSubmitOffer = async (playerId, offerAmount) => {
     try {
-      await createTransferOffer(playerId, managedClubId, offerAmount);
+      const result = await createTransferOffer(playerId, managedClubId, offerAmount);
       await loadTransferData(); // Reload data
-      alert('Transferangebot erfolgreich erstellt!');
+
+      // Show different messages based on cheat mode
+      if (result.cheat_mode) {
+        alert('Transfer automatisch abgeschlossen (Cheat-Modus aktiviert)!');
+      } else {
+        alert('Transferangebot erfolgreich erstellt!');
+      }
     } catch (error) {
       console.error('Error creating offer:', error);
       throw error;
@@ -112,6 +130,11 @@ const Transfers = () => {
         <div className="budget-info">
           <h3>Transferbudget</h3>
           <div className="budget-amount">€{transferData.transferBudget.toLocaleString()}</div>
+          {cheatModeEnabled && (
+            <div className="cheat-mode-indicator">
+              ⚡ Cheat-Modus aktiv - Transfers werden automatisch akzeptiert
+            </div>
+          )}
         </div>
         <div className="budget-actions">
           <button className="btn btn-primary">Budget anpassen</button>
@@ -237,7 +260,7 @@ const Transfers = () => {
                           className="btn btn-small"
                           onClick={() => handleMakeOffer(player)}
                         >
-                          Angebot machen
+                          {cheatModeEnabled ? 'Sofort transferieren' : 'Angebot machen'}
                         </button>
                       </td>
                     </tr>

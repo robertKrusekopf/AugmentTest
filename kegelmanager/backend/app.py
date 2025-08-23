@@ -2839,8 +2839,8 @@ def get_transfers():
     ).order_by(TransferHistory.transfer_date.desc()).limit(20).all()
 
     return jsonify({
-        'transfer_budget': transfer_budget,
-        'market_players': [
+        'transferBudget': transfer_budget,
+        'marketPlayers': [
             {
                 'id': player.id,
                 'name': player.name,
@@ -2854,10 +2854,44 @@ def get_transfers():
             }
             for player in market_players
         ],
-        'my_offers': [offer.to_dict() for offer in my_offers],
-        'received_offers': [offer.to_dict() for offer in received_offers],
-        'transfer_history': [transfer.to_dict() for transfer in transfer_history]
+        'myOffers': [offer.to_dict() for offer in my_offers],
+        'receivedOffers': [offer.to_dict() for offer in received_offers],
+        'transferHistory': [transfer.to_dict() for transfer in transfer_history]
     })
+
+def is_cheat_mode_enabled():
+    """Check if cheat mode is enabled by looking for cheat mode setting in request headers."""
+    # The frontend should send the cheat mode status in the request headers
+    cheat_mode = request.headers.get('X-Cheat-Mode', 'false').lower()
+    return cheat_mode == 'true'
+
+def execute_transfer(offer):
+    """Execute a transfer by updating player club and creating transfer history."""
+    # Get current season
+    current_season = Season.query.filter_by(is_current=True).first()
+    if not current_season:
+        raise Exception("No current season found")
+
+    # Create transfer history record
+    transfer_record = TransferHistory(
+        player_id=offer.player_id,
+        from_club_id=offer.receiving_club_id,
+        to_club_id=offer.offering_club_id,
+        transfer_amount=offer.offer_amount,
+        season_id=current_season.id
+    )
+
+    # Update player's club
+    player = Player.query.get(offer.player_id)
+    player.club_id = offer.offering_club_id
+
+    # Update offer status
+    offer.status = 'accepted'
+
+    # Add records to database
+    db.session.add(transfer_record)
+
+    return transfer_record
 
 @app.route('/api/transfers/offer', methods=['POST'])
 def create_transfer_offer():
@@ -2875,15 +2909,20 @@ def create_transfer_offer():
     if not player.club_id:
         return jsonify({"error": "Player is not assigned to a club"}), 400
 
-    # Check if offer already exists
-    existing_offer = TransferOffer.query.filter_by(
-        player_id=player_id,
-        offering_club_id=offering_club_id,
-        status='pending'
-    ).first()
+    # Check if cheat mode is enabled
+    cheat_mode_enabled = is_cheat_mode_enabled()
 
-    if existing_offer:
-        return jsonify({"error": "You already have a pending offer for this player"}), 400
+    # In cheat mode, skip validation checks
+    if not cheat_mode_enabled:
+        # Check if offer already exists (only in normal mode)
+        existing_offer = TransferOffer.query.filter_by(
+            player_id=player_id,
+            offering_club_id=offering_club_id,
+            status='pending'
+        ).first()
+
+        if existing_offer:
+            return jsonify({"error": "You already have a pending offer for this player"}), 400
 
     # Create new offer
     new_offer = TransferOffer(
@@ -2894,13 +2933,32 @@ def create_transfer_offer():
     )
 
     db.session.add(new_offer)
-    db.session.commit()
 
-    return jsonify({
-        "success": True,
-        "message": "Transferangebot erfolgreich erstellt",
-        "offer": new_offer.to_dict()
-    })
+    # If cheat mode is enabled, auto-accept the transfer immediately
+    if cheat_mode_enabled:
+        try:
+            transfer_record = execute_transfer(new_offer)
+            db.session.commit()
+
+            return jsonify({
+                "success": True,
+                "message": "Transfer automatisch abgeschlossen (Cheat-Modus)",
+                "offer": new_offer.to_dict(),
+                "transfer": transfer_record.to_dict(),
+                "cheat_mode": True
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": f"Transfer failed: {str(e)}"}), 500
+    else:
+        # Normal mode - just create the offer
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "Transferangebot erfolgreich erstellt",
+            "offer": new_offer.to_dict(),
+            "cheat_mode": False
+        })
 
 @app.route('/api/transfers/offer/<int:offer_id>', methods=['PATCH'])
 def update_transfer_offer(offer_id):
@@ -2917,36 +2975,19 @@ def update_transfer_offer(offer_id):
         return jsonify({"error": "Offer is no longer pending"}), 400
 
     if action == 'accept':
-        # Complete the transfer
-        current_season = Season.query.filter_by(is_current=True).first()
-        if not current_season:
-            return jsonify({"error": "No current season found"}), 404
+        try:
+            # Use the helper function to execute the transfer
+            transfer_record = execute_transfer(offer)
+            db.session.commit()
 
-        # Create transfer history record
-        transfer_record = TransferHistory(
-            player_id=offer.player_id,
-            from_club_id=offer.receiving_club_id,
-            to_club_id=offer.offering_club_id,
-            transfer_amount=offer.offer_amount,
-            season_id=current_season.id
-        )
-
-        # Update player's club
-        player = Player.query.get(offer.player_id)
-        player.club_id = offer.offering_club_id
-
-        # Update offer status
-        offer.status = 'accepted'
-
-        # Add records to database
-        db.session.add(transfer_record)
-        db.session.commit()
-
-        return jsonify({
-            "success": True,
-            "message": "Transfer erfolgreich abgeschlossen",
-            "transfer": transfer_record.to_dict()
-        })
+            return jsonify({
+                "success": True,
+                "message": "Transfer erfolgreich abgeschlossen",
+                "transfer": transfer_record.to_dict()
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": f"Transfer failed: {str(e)}"}), 500
 
     elif action == 'reject':
         offer.status = 'rejected'
@@ -3042,3 +3083,22 @@ if __name__ == '__main__':
 # Auto-reload trigger: 1754841308.5559716
 # Auto-reload trigger: 1754841697.9890375
 # Auto-reload trigger: 1754842020.0525026
+# Auto-reload trigger: 1754848544.3160722
+# Auto-reload trigger: 1754863551.2313797
+# Auto-reload trigger: 1754911349.591263
+# Auto-reload trigger: 1754912414.9335341
+# Auto-reload trigger: 1755084501.1091442
+# Auto-reload trigger: 1755084601.2602162
+# Auto-reload trigger: 1755253945.874502
+# Auto-reload trigger: 1755254005.5653944
+# Auto-reload trigger: 1755254081.6409316
+# Auto-reload trigger: 1755254469.7373235
+# Auto-reload trigger: 1755255811.4856644
+# Auto-reload trigger: 1755256313.1673632
+# Auto-reload trigger: 1755256335.5748365
+# Auto-reload trigger: 1755948710.9709704
+# Auto-reload trigger: 1755949310.0896444
+# Auto-reload trigger: 1755950586.6612043
+# Auto-reload trigger: 1755950877.135245
+# Auto-reload trigger: 1755951316.652527
+# Auto-reload trigger: 1755951326.2751179

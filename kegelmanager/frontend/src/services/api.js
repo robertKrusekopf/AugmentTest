@@ -432,10 +432,27 @@ export const getTransfers = async (managedClubId) => {
 
 export const createTransferOffer = async (playerId, offeringClubId, offerAmount) => {
   try {
+    // Check if cheat mode is enabled
+    const savedSettings = localStorage.getItem('gameSettings');
+    let cheatMode = false;
+
+    if (savedSettings) {
+      try {
+        const settings = JSON.parse(savedSettings);
+        cheatMode = settings.cheats?.cheatMode || false;
+      } catch (e) {
+        console.error('Failed to parse saved settings:', e);
+      }
+    }
+
     const response = await api.post('/transfers/offer', {
       player_id: playerId,
       offering_club_id: offeringClubId,
       offer_amount: offerAmount
+    }, {
+      headers: {
+        'X-Cheat-Mode': cheatMode.toString()
+      }
     });
     return response.data;
   } catch (error) {

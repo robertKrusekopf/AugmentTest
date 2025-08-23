@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPlayer, updatePlayer, getPlayerHistory, getPlayerMatches } from '../services/api';
+import { getPlayer, updatePlayer, getPlayerHistory, getPlayerMatches, createTransferOffer } from '../services/api';
 import './PlayerDetail.css';
 
 const PlayerDetail = () => {
@@ -15,6 +15,9 @@ const PlayerDetail = () => {
   const [cheatForm, setCheatForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState({ show: false, type: '', text: '' });
+  const [cheatModeEnabled, setCheatModeEnabled] = useState(false);
+  const [managedClubId, setManagedClubId] = useState(null);
+  const [transferring, setTransferring] = useState(false);
 
 
   // Lade Spielerdaten aus der API
@@ -78,6 +81,18 @@ const PlayerDetail = () => {
           };
 
           setPlayer(processedPlayer);
+
+          // Load cheat mode status and managed club ID
+          const savedSettings = localStorage.getItem('gameSettings');
+          if (savedSettings) {
+            try {
+              const settings = JSON.parse(savedSettings);
+              setCheatModeEnabled(settings.cheats?.cheatMode || false);
+              setManagedClubId(settings.game?.managerClubId || null);
+            } catch (e) {
+              console.error('Failed to parse saved settings:', e);
+            }
+          }
 
           // Initialize cheat form with player data
           setCheatForm({
@@ -229,6 +244,46 @@ const PlayerDetail = () => {
     }
   };
 
+  // Handle transfer offer creation
+  const handleTransferOffer = async () => {
+    if (!managedClubId) {
+      alert('Bitte wählen Sie zuerst einen Verein in den Einstellungen aus.');
+      return;
+    }
+
+    if (!player.club_id) {
+      alert('Dieser Spieler ist keinem Verein zugeordnet und kann nicht transferiert werden.');
+      return;
+    }
+
+    if (player.club_id === managedClubId) {
+      alert('Dieser Spieler gehört bereits zu Ihrem Verein.');
+      return;
+    }
+
+    // Calculate a reasonable offer amount based on player strength
+    const offerAmount = player.strength * 5000; // Same calculation as in backend
+
+    try {
+      setTransferring(true);
+      const result = await createTransferOffer(player.id, managedClubId, offerAmount);
+
+      // Show different messages based on cheat mode
+      if (result.cheat_mode) {
+        alert(`${player.name} wurde erfolgreich zu Ihrem Verein transferiert (Cheat-Modus aktiviert)!`);
+        // Reload player data to reflect the transfer
+        window.location.reload();
+      } else {
+        alert(`Transferangebot für ${player.name} erfolgreich erstellt!`);
+      }
+    } catch (error) {
+      console.error('Error creating transfer offer:', error);
+      alert('Fehler beim Erstellen des Transferangebots. Bitte versuchen Sie es erneut.');
+    } finally {
+      setTransferring(false);
+    }
+  };
+
 
 
   if (loading) {
@@ -246,7 +301,21 @@ const PlayerDetail = () => {
           <Link to="/players">Spieler</Link> / {player.name}
         </div>
         <div className="header-actions">
-          <button className="btn btn-primary">Transferangebot</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleTransferOffer}
+            disabled={transferring || !managedClubId || (player && player.club_id === managedClubId)}
+            title={
+              !managedClubId ? 'Bitte wählen Sie zuerst einen Verein in den Einstellungen aus' :
+              (player && player.club_id === managedClubId) ? 'Dieser Spieler gehört bereits zu Ihrem Verein' :
+              cheatModeEnabled ? 'Spieler sofort zu Ihrem Verein transferieren (Cheat-Modus)' :
+              'Transferangebot für diesen Spieler erstellen'
+            }
+          >
+            {transferring ? 'Wird verarbeitet...' :
+             (player && player.club_id === managedClubId) ? 'Bereits in Ihrem Verein' :
+             cheatModeEnabled ? 'Sofort transferieren' : 'Transferangebot'}
+          </button>
         </div>
       </div>
 
@@ -261,6 +330,11 @@ const PlayerDetail = () => {
               <span className="player-position">{player.position}</span>
               <span className="player-team">{player.team}</span>
               <span className="player-age">{player.age} Jahre</span>
+              {cheatModeEnabled && (
+                <span className="cheat-mode-indicator">
+                  ⚡ Cheat-Modus aktiv
+                </span>
+              )}
             </div>
           </div>
           <div className="player-ratings">

@@ -2555,7 +2555,7 @@ def calculate_standings(league):
                 match_points_against += match.away_match_points
 
                 if match.home_match_points > match.away_match_points:
-                    table_points += 2  # Win = 2 points in table
+                    table_points += 3  # Win = 3 points in table
                     wins += 1
                 elif match.home_match_points == match.away_match_points:
                     table_points += 1  # Draw = 1 point in table
@@ -2572,7 +2572,7 @@ def calculate_standings(league):
                 match_points_against += match.home_match_points
 
                 if match.away_match_points > match.home_match_points:
-                    table_points += 2  # Win = 2 points in table
+                    table_points += 3  # Win = 3 points in table
                     wins += 1
                 elif match.away_match_points == match.home_match_points:
                     table_points += 1  # Draw = 1 point in table

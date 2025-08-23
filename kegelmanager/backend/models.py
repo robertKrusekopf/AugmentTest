@@ -2219,12 +2219,13 @@ class TransferOffer(db.Model):
                 'strength': self.player.strength,
                 'team': self.player.teams[0].name if self.player.teams else 'Vereinslos'
             },
-            'offering_club': self.offering_club.name,
-            'receiving_club': self.receiving_club.name,
-            'offer_amount': self.offer_amount,
+            'offeringClub': self.offering_club.name,
+            'receivingClub': self.receiving_club.name,
+            'fromTeam': self.receiving_club.name,  # For received offers display
+            'offerAmount': self.offer_amount,
             'status': self.status,
             'date': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'updatedAt': self.updated_at.isoformat()
         }
 
 
@@ -2264,11 +2265,15 @@ class TransferHistory(db.Model):
                 'position': self.player.position,
                 'strength': self.player.strength
             },
-            'from_club': self.from_club.name,
-            'to_club': self.to_club.name,
-            'transfer_amount': self.transfer_amount,
-            'transfer_date': self.transfer_date.isoformat(),
-            'season': self.season.year
+            'fromClub': self.from_club.name,
+            'toClub': self.to_club.name,
+            'fromTeam': self.from_club.name,  # For display compatibility
+            'toTeam': self.to_club.name,     # For display compatibility
+            'amount': self.transfer_amount,   # Frontend expects 'amount'
+            'transferAmount': self.transfer_amount,
+            'date': self.transfer_date.isoformat(),  # Frontend expects 'date'
+            'transferDate': self.transfer_date.isoformat(),
+            'season': self.season.name
         }
 
 
