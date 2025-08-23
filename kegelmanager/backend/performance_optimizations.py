@@ -11,6 +11,9 @@ import time
 
 def determine_player_availability(club_id, teams_playing):
     """
+    DEPRECATED: This function provides limited context and may produce inconsistent results.
+    Use batch_set_player_availability() directly with proper team information instead.
+
     Wrapper function for single club availability determination.
     Uses the optimized batch function for consistency.
 
@@ -18,6 +21,13 @@ def determine_player_availability(club_id, teams_playing):
         club_id: The ID of the club
         teams_playing: Number of teams from this club playing on this match day
     """
+    import warnings
+    warnings.warn(
+        "determine_player_availability() is deprecated. Use batch_set_player_availability() "
+        "with proper team context information for consistent results.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # Use the batch function for consistency (without specific team info)
     batch_set_player_availability({club_id}, {club_id: teams_playing}, None)
 

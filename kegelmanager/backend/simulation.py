@@ -818,8 +818,8 @@ def simulate_match(home_team, away_team, home_players, away_players, cache_manag
     home_club_id = home_team.club_id
     lane_quality = cache_manager.get_lane_quality(home_club_id)
 
-    # Home advantage (5%)
-    home_advantage = 1.05
+    # Home advantage (2%)
+    home_advantage = 1.02
 
     # Initialize scores and match points
     home_score = 0

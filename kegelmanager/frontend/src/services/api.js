@@ -339,6 +339,16 @@ export const getSeasonStatus = async () => {
   }
 };
 
+export const getLastMatchDate = async () => {
+  try {
+    const response = await api.get('/season/last-match-date');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching last match date:', error);
+    throw error;
+  }
+};
+
 export const transitionToNewSeason = async () => {
   try {
     const response = await api.post('/season/transition');

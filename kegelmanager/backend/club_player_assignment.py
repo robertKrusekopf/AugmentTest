@@ -2,7 +2,7 @@
 Module for assigning players to teams within a club for a match day.
 """
 
-from models import db, Player, Team, Match, CupMatch, Cup
+from models import db, Player, Team, Match, CupMatch, Cup, UserLineup, LineupPosition
 from sqlalchemy import or_
 
 def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
@@ -136,6 +136,72 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     return team_players
 
 
+def get_manual_lineup_for_team(match_id, team_id, is_home_team):
+    """
+    Retrieve manual lineup for a specific team in a match.
+
+    Args:
+        match_id: The ID of the match
+        team_id: The ID of the team
+        is_home_team: Whether the team is the home team
+
+    Returns:
+        list: List of player dictionaries in position order (1-6), or None if no manual lineup exists
+    """
+    # Check if there's a manual lineup for this team
+    lineup = UserLineup.query.filter_by(
+        match_id=match_id,
+        team_id=team_id,
+        is_home_team=is_home_team
+    ).first()
+
+    if not lineup:
+        return None
+
+    # Get the positions and players
+    positions = LineupPosition.query.filter_by(lineup_id=lineup.id).all()
+
+    if not positions:
+        return None
+
+    # Create a list of 6 positions, initially filled with None
+    positioned_players = [None] * 6
+
+    # Fill in the players at their assigned positions
+    for position in positions:
+        if 1 <= position.position_number <= 6:
+            player = Player.query.get(position.player_id)
+            if player:
+                # Create player data dictionary compatible with simulation
+                player_data = {
+                    'id': player.id,
+                    'name': player.name,
+                    'strength': player.strength,
+                    'konstanz': player.konstanz,
+                    'drucksicherheit': player.drucksicherheit,
+                    'volle': player.volle,
+                    'raeumer': player.raeumer,
+                    'ausdauer': player.ausdauer,
+                    'sicherheit': player.sicherheit,
+                    'auswaerts': player.auswaerts,
+                    'start': player.start,
+                    'mitte': player.mitte,
+                    'schluss': player.schluss,
+                    'form_short_term': player.form_short_term,
+                    'form_medium_term': player.form_medium_term,
+                    'form_long_term': player.form_long_term,
+                    'form_short_remaining_days': player.form_short_remaining_days,
+                    'form_medium_remaining_days': player.form_medium_remaining_days,
+                    'form_long_remaining_days': player.form_long_remaining_days
+                }
+                positioned_players[position.position_number - 1] = player_data
+
+    # Filter out None values to return only real players
+    manual_players = [player for player in positioned_players if player is not None]
+
+    return manual_players
+
+
 def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cache_manager, include_played_matches=False, target_date=None):
     """
     Optimized batch assignment of players to teams for multiple clubs.
@@ -213,6 +279,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             t.club_id,
             t.name as team_name,
             l.level as league_level,
+            m.id as match_id,
             CASE
                 WHEN m.home_team_id = t.id THEN 'home'
                 WHEN m.away_team_id = t.id THEN 'away'
@@ -232,6 +299,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             t.club_id,
             t.name as team_name,
             l.level as league_level,
+            cm.id as match_id,
             CASE
                 WHEN cm.home_team_id = t.id THEN 'home'
                 WHEN cm.away_team_id = t.id THEN 'away'
@@ -263,6 +331,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             'id': row_dict['team_id'],
             'name': row_dict['team_name'],
             'league_level': row_dict['league_level'],
+            'match_id': row_dict['match_id'],
             'match_type': row_dict['match_type']
         }
 
@@ -358,8 +427,26 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         # Assign 6 players to each team
         for team in teams:
             team_id = team['id']
+            match_id = team['match_id']
+            match_type = team['match_type']
+            is_home_team = (match_type == 'home')
             result[club_id][team_id] = []
 
+            # First, check if there's a manual lineup for this team
+            manual_lineup = get_manual_lineup_for_team(match_id, team_id, is_home_team)
+
+            if manual_lineup:
+                # Use the manual lineup
+                print(f"Using manual lineup for team {team_id} in match {match_id}")
+                result[club_id][team_id] = manual_lineup
+
+                # Mark these players as used so they can't be assigned to other teams
+                for player_data in manual_lineup:
+                    used_players.add(player_data['id'])
+
+                continue
+
+            # No manual lineup found, use automatic assignment
             # Select the best 6 available players (same logic as before)
             assigned_count = 0
             selected_players = []

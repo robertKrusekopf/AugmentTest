@@ -151,10 +151,22 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     club_players = Player.query.filter_by(club_id=team.club_id).all()
     if not club_players or len(club_players) < 6:
         return None
-    
-    # Use centralized player availability determination
-    from performance_optimizations import determine_player_availability
-    determine_player_availability(team.club_id, 1)  # 1 team playing
+
+    # Build detailed team information for proper availability calculation
+    # This ensures consistency with automatic simulation logic
+    clubs_with_matches = {team.club_id}
+    teams_playing = {team.club_id: 1}
+    playing_teams_info = {
+        team.club_id: [{
+            'id': team.id,
+            'name': team.name,
+            'league_level': team.league.level if team.league else 999
+        }]
+    }
+
+    # Use centralized player availability determination with proper context
+    from performance_optimizations import batch_set_player_availability
+    batch_set_player_availability(clubs_with_matches, teams_playing, playing_teams_info)
 
     # Get available players after availability determination
     available_players = [p for p in club_players if p.is_available_current_matchday]

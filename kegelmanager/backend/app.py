@@ -1970,6 +1970,76 @@ def get_season_status():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route('/api/season/last-match-date', methods=['GET'])
+def get_last_match_date():
+    """Get the date of the most recently played match in the current season."""
+    try:
+        from sqlalchemy import func
+
+        print("DEBUG: Getting last match date...")
+
+        # Get current season
+        current_season = Season.query.filter_by(is_current=True).first()
+        if not current_season:
+            print("DEBUG: No current season found")
+            return jsonify({"error": "Keine aktuelle Saison gefunden"}), 404
+
+        print(f"DEBUG: Current season: {current_season.name}")
+
+        # Find the most recent match date from league matches
+        latest_league_date = db.session.query(func.max(Match.match_date)).filter(
+            Match.season_id == current_season.id,
+            Match.is_played == True,
+            Match.match_date.isnot(None)
+        ).scalar()
+
+        # Find the most recent match date from cup matches
+        latest_cup_date = db.session.query(func.max(CupMatch.match_date)).filter(
+            CupMatch.cup_id.in_(
+                db.session.query(Cup.id).filter_by(season_id=current_season.id)
+            ),
+            CupMatch.is_played == True,
+            CupMatch.match_date.isnot(None)
+        ).scalar()
+
+        print(f"DEBUG: Latest league date: {latest_league_date}")
+        print(f"DEBUG: Latest cup date: {latest_cup_date}")
+
+        # Determine the most recent date
+        latest_date = None
+        if latest_league_date and latest_cup_date:
+            latest_date = max(latest_league_date, latest_cup_date)
+        elif latest_league_date:
+            latest_date = latest_league_date
+        elif latest_cup_date:
+            latest_date = latest_cup_date
+
+        print(f"DEBUG: Final latest date: {latest_date}")
+
+        if latest_date:
+            result = {
+                'last_match_date': latest_date.isoformat(),
+                'has_played_matches': True
+            }
+            print(f"DEBUG: Returning: {result}")
+            return jsonify(result)
+        else:
+            # No matches have been played yet, return season start date
+            result = {
+                'last_match_date': current_season.start_date.isoformat() if current_season.start_date else None,
+                'has_played_matches': False
+            }
+            print(f"DEBUG: No played matches, returning season start: {result}")
+            return jsonify(result)
+
+    except Exception as e:
+        print(f"Error getting last match date: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden des letzten Spieltermins"}), 500
+
+
 @app.route('/api/season/transition', methods=['POST'])
 def transition_to_new_season():
     """Start a new season after the current one is completed."""
@@ -2418,10 +2488,60 @@ def debug_fix_league_distribution():
         return jsonify({"error": str(e)}), 500
 
 # Lineup management endpoints
+
+def ensure_home_team_lineup_exists_universal(match_id):
+    """
+    Ensure that the home team has a lineup for the given match (league or cup).
+    If no lineup exists, create one automatically.
+
+    Args:
+        match_id: The ID of the match (frontend ID for cup matches)
+
+    Returns:
+        bool: True if a lineup exists or was created, False otherwise
+    """
+    # Check if this is a cup match ID
+    if is_cup_match_id(match_id):
+        # Convert to database ID and look for cup match
+        db_id = get_cup_match_db_id(match_id)
+        match = CupMatch.query.get(db_id)
+        if not match:
+            return False
+        home_team_id = match.home_team_id
+    else:
+        # Look for regular league match
+        match = Match.query.get(match_id)
+        if not match:
+            return False
+        home_team_id = match.home_team_id
+
+    # Check if the home team already has a lineup
+    home_lineup = UserLineup.query.filter_by(
+        match_id=match_id,
+        team_id=home_team_id,
+        is_home_team=True
+    ).first()
+
+    if home_lineup:
+        return True
+
+    # Create an automatic lineup for the home team
+    from auto_lineup import create_auto_lineup_for_team
+    home_lineup = create_auto_lineup_for_team(match_id, home_team_id, True)
+
+    return home_lineup is not None
+
 @app.route('/api/matches/<int:match_id>/available-players', methods=['GET'])
 def get_available_players_for_match(match_id):
     """Get available players for a match."""
-    match = Match.query.get_or_404(match_id)
+    # Check if this is a cup match ID (>= 1,000,000)
+    if is_cup_match_id(match_id):
+        # Convert to database ID and look for cup match
+        db_id = get_cup_match_db_id(match_id)
+        match = CupMatch.query.get_or_404(db_id)
+    else:
+        # Look for regular league match
+        match = Match.query.get_or_404(match_id)
 
     # Get the managed club ID from the request
     managed_club_id = request.args.get('managed_club_id', type=int)
@@ -2430,7 +2550,7 @@ def get_available_players_for_match(match_id):
 
     # Check if the managed club is playing in this match
     is_home_team = match.home_team.club_id == managed_club_id
-    is_away_team = match.away_team.club_id == managed_club_id
+    is_away_team = match.away_team.club_id == managed_club_id if match.away_team else False
 
     if not (is_home_team or is_away_team):
         return jsonify({"error": "The managed club is not playing in this match"}), 400
@@ -2440,16 +2560,28 @@ def get_available_players_for_match(match_id):
 
     # If this is an away team, ensure the home team has a lineup
     if is_away_team:
-        home_lineup_exists = auto_lineup.ensure_home_team_lineup_exists(match_id)
+        home_lineup_exists = ensure_home_team_lineup_exists_universal(match_id)
         if not home_lineup_exists:
             return jsonify({"error": "Failed to create home team lineup"}), 500
 
     # Get all players from the club
     club_players = Player.query.filter_by(club_id=managed_club_id).all()
 
-    # Use centralized player availability determination
-    from performance_optimizations import determine_player_availability
-    determine_player_availability(team.club_id, 1)  # 1 team playing
+    # Build detailed team information for proper availability calculation
+    # This ensures consistency with automatic simulation logic
+    clubs_with_matches = {managed_club_id}
+    teams_playing = {managed_club_id: 1}
+    playing_teams_info = {
+        managed_club_id: [{
+            'id': team.id,
+            'name': team.name,
+            'league_level': team.league.level if team.league else 999
+        }]
+    }
+
+    # Use centralized player availability determination with proper context
+    from performance_optimizations import batch_set_player_availability
+    batch_set_player_availability(clubs_with_matches, teams_playing, playing_teams_info)
 
     # Get available players after availability determination
     available_players = [p for p in club_players if p.is_available_current_matchday]
@@ -2467,11 +2599,13 @@ def get_available_players_for_match(match_id):
 
     # Check if there's an existing lineup for the opponent
     opponent_team = match.away_team if is_home_team else match.home_team
-    opponent_lineup = UserLineup.query.filter_by(
-        match_id=match_id,
-        team_id=opponent_team.id,
-        is_home_team=not is_home_team
-    ).first()
+    opponent_lineup = None
+    if opponent_team:  # Only check for opponent lineup if there is an opponent (not a bye)
+        opponent_lineup = UserLineup.query.filter_by(
+            match_id=match_id,
+            team_id=opponent_team.id,
+            is_home_team=not is_home_team
+        ).first()
 
     # Prepare the response
     result = {
@@ -2479,6 +2613,8 @@ def get_available_players_for_match(match_id):
         'team_id': team.id,
         'team_name': team.name,
         'is_home_team': is_home_team,
+        'home_team_name': match.home_team.name,
+        'away_team_name': match.away_team.name if match.away_team else 'Freilos',
         'players': [
             {
                 'id': player.id,
@@ -2523,7 +2659,15 @@ def get_available_players_for_match(match_id):
 @app.route('/api/matches/<int:match_id>/lineup', methods=['POST'])
 def save_lineup(match_id):
     """Save a user-selected lineup for a match."""
-    match = Match.query.get_or_404(match_id)
+    # Check if this is a cup match ID (>= 1,000,000)
+    if is_cup_match_id(match_id):
+        # Convert to database ID and look for cup match
+        db_id = get_cup_match_db_id(match_id)
+        match = CupMatch.query.get_or_404(db_id)
+    else:
+        # Look for regular league match
+        match = Match.query.get_or_404(match_id)
+
     data = request.json
 
     team_id = data.get('team_id')
@@ -2540,12 +2684,14 @@ def save_lineup(match_id):
         return jsonify({"error": "Exactly 6 positions are required"}), 400
 
     # Check if the team is actually playing in this match
-    if (is_home_team and match.home_team_id != team_id) or (not is_home_team and match.away_team_id != team_id):
+    # For cup matches, away_team_id might be None (bye matches)
+    away_team_id = match.away_team_id if hasattr(match, 'away_team_id') else getattr(match, 'away_team_id', None)
+    if (is_home_team and match.home_team_id != team_id) or (not is_home_team and away_team_id != team_id):
         return jsonify({"error": "The specified team is not playing in this match"}), 400
 
     # If this is the away team, ensure the home team has a lineup
     if not is_home_team:
-        home_lineup_exists = auto_lineup.ensure_home_team_lineup_exists(match_id)
+        home_lineup_exists = ensure_home_team_lineup_exists_universal(match_id)
         if not home_lineup_exists:
             return jsonify({
                 "error": "Fehler beim Erstellen der Heimmannschaftsaufstellung",
@@ -2614,7 +2760,13 @@ def save_lineup(match_id):
 def get_lineup(match_id):
     """Get the user-selected lineup for a match."""
     # Verify the match exists
-    Match.query.get_or_404(match_id)
+    if is_cup_match_id(match_id):
+        # Convert to database ID and look for cup match
+        db_id = get_cup_match_db_id(match_id)
+        CupMatch.query.get_or_404(db_id)
+    else:
+        # Look for regular league match
+        Match.query.get_or_404(match_id)
 
     # Get the team ID from the request
     team_id = request.args.get('team_id', type=int)
@@ -2642,7 +2794,13 @@ def get_lineup(match_id):
 def delete_lineup(match_id):
     """Delete a user-selected lineup for a match."""
     # Verify the match exists
-    Match.query.get_or_404(match_id)
+    if is_cup_match_id(match_id):
+        # Convert to database ID and look for cup match
+        db_id = get_cup_match_db_id(match_id)
+        CupMatch.query.get_or_404(db_id)
+    else:
+        # Look for regular league match
+        Match.query.get_or_404(match_id)
 
     # Get the team ID from the request
     team_id = request.args.get('team_id', type=int)
@@ -3102,3 +3260,12 @@ if __name__ == '__main__':
 # Auto-reload trigger: 1755950877.135245
 # Auto-reload trigger: 1755951316.652527
 # Auto-reload trigger: 1755951326.2751179
+# Auto-reload trigger: 1755955205.7628763
+# Auto-reload trigger: 1755960068.9427621
+# Auto-reload trigger: 1755960821.7383313
+# Auto-reload trigger: 1755962322.519022
+# Auto-reload trigger: 1755964347.4266496
+# Auto-reload trigger: 1755965361.696831
+# Auto-reload trigger: 1755965368.3820956
+# Auto-reload trigger: 1755965443.603214
+# Auto-reload trigger: 1755965636.3035235

@@ -80,6 +80,7 @@ const Sidebar = ({ isOpen }) => {
                   <img
                     src={userClub.emblem_url}
                     alt={`${userClub.name} Wappen`}
+                    className="club-emblem"
                     onError={(e) => {
                       e.target.style.display = 'none';
                       e.target.nextSibling.style.display = 'flex';

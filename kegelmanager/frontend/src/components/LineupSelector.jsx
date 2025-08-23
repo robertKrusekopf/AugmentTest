@@ -21,7 +21,9 @@ const LineupSelector = ({ matchId, managedClubId, onSave, onCancel }) => {
         setTeamInfo({
           team_id: data.team_id,
           team_name: data.team_name,
-          is_home_team: data.is_home_team
+          is_home_team: data.is_home_team,
+          home_team_name: data.home_team_name,
+          away_team_name: data.away_team_name
         });
 
         // If there's an existing lineup, use it
@@ -144,77 +146,151 @@ const LineupSelector = ({ matchId, managedClubId, onSave, onCancel }) => {
     );
   }
 
+  // Helper function to get opponent team name
+  const getOpponentTeamName = () => {
+    if (!teamInfo) return 'Gegner';
+    return teamInfo.is_home_team ? 'Auswärtsteam' : 'Heimteam';
+  };
+
   return (
     <div className="lineup-selector">
-      <h2>Aufstellung für {teamInfo?.team_name}</h2>
+      <h2>Aufstellung festlegen</h2>
 
-      {/* Zeige unterschiedliche Anweisungen je nach Heim- oder Auswärtsteam */}
+      {/* Action buttons at the top */}
+      <div className="lineup-actions-top">
+        <button className="btn btn-secondary" onClick={onCancel}>Abbrechen</button>
+        <button className="btn btn-primary" onClick={handleSave}>Aufstellung speichern</button>
+      </div>
+
+      {/* Instructions */}
       {teamInfo?.is_home_team ? (
         <p className="instructions">
           Als Heimmannschaft stellen Sie zuerst auf. Wählen Sie für jede Position einen Spieler aus.
-          Nicht verfügbare Spieler sind ausgegraut.
         </p>
       ) : (
         <p className="instructions">
           Als Auswärtsmannschaft können Sie Ihre Aufstellung gegen die bereits festgelegte Heimaufstellung setzen.
-          Wählen Sie für jede Position einen Spieler aus. Nicht verfügbare Spieler sind ausgegraut.
         </p>
       )}
 
-      {/* Zeige die Aufstellung der Heimmannschaft, wenn wir das Auswärtsteam sind */}
-      {!teamInfo?.is_home_team && opponentLineup && (
-        <div className="opponent-lineup">
-          <h3>Aufstellung der Heimmannschaft</h3>
-          <div className="opponent-positions">
-            {opponentLineup.map(pos => (
-              <div key={pos.position} className="opponent-player">
-                <div className="position-number">Position {pos.position}</div>
-                <div className="player-name">{pos.player_name}</div>
-                <div className="player-strength">Stärke: {pos.player_strength}</div>
-              </div>
-            ))}
+      {/* Two-column layout for lineups */}
+      <div className="lineups-container">
+        {/* Home team column */}
+        <div className="team-lineup-column">
+          <h3 className="team-header">
+            {teamInfo?.home_team_name ? `${teamInfo.home_team_name} (Heim)` : 'Heimteam'}
+          </h3>
+
+          <div className="lineup-table">
+            {[1, 2, 3, 4, 5, 6].map(position => {
+              const isMyTeam = teamInfo?.is_home_team;
+              const selectedPlayer = isMyTeam ? selectedPlayers[position - 1] : null;
+              const opponentPlayer = !isMyTeam && opponentLineup ?
+                opponentLineup.find(p => p.position === position) : null;
+
+              return (
+                <div key={position} className="position-row">
+                  <div className="position-label">Position {position}</div>
+                  <div className="player-selection">
+                    {isMyTeam ? (
+                      // Interactive selection for my team
+                      <>
+                        <select
+                          value={selectedPlayer ? selectedPlayer.id : ''}
+                          onChange={(e) => handlePlayerSelect(position - 1, e.target.value ? parseInt(e.target.value) : null)}
+                          className="player-select"
+                        >
+                          <option value="">-- Spieler auswählen --</option>
+                          {availablePlayers
+                            .filter(player => player.is_available)
+                            .map(player => (
+                              <option
+                                key={player.id}
+                                value={player.id}
+                                disabled={selectedPlayers.some(p => p && p.id === player.id && p !== selectedPlayer)}
+                              >
+                                {player.name}
+                              </option>
+                            ))
+                          }
+                        </select>
+                        {selectedPlayer && (
+                          <div className="selected-player-display">
+                            {selectedPlayer.name}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      // Read-only display for opponent
+                      <div className="opponent-player-display">
+                        {opponentPlayer ? opponentPlayer.player_name : 'Noch nicht festgelegt'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-      )}
 
-      <div className="positions-container">
-        {selectedPlayers.map((selectedPlayer, position) => (
-          <div key={position} className="position-selector">
-            <div className="position-label">Position {position + 1}</div>
-            {/* Zeige den gegnerischen Spieler an, wenn wir das Auswärtsteam sind */}
-            {!teamInfo?.is_home_team && opponentLineup && (
-              <div className="opponent-at-position">
-                Gegen: {opponentLineup.find(p => p.position === position + 1)?.player_name || 'Unbekannt'}
-              </div>
-            )}
-            <select
-              value={selectedPlayer ? selectedPlayer.id : ''}
-              onChange={(e) => handlePlayerSelect(position, e.target.value ? parseInt(e.target.value) : null)}
-            >
-              <option value="">-- Spieler auswählen --</option>
-              {availablePlayers
-                .filter(player => player.is_available)
-                .map(player => (
-                  <option
-                    key={player.id}
-                    value={player.id}
-                    disabled={selectedPlayers.some(p => p && p.id === player.id && p !== selectedPlayer)}
-                  >
-                    {player.name} (Stärke: {player.strength})
-                  </option>
-                ))
-              }
-            </select>
-            {selectedPlayer && (
-              <div className="selected-player-info">
-                <span className="player-name">{selectedPlayer.name}</span>
-                <span className="player-strength">Stärke: {selectedPlayer.strength}</span>
-              </div>
-            )}
+        {/* Away team column */}
+        <div className="team-lineup-column">
+          <h3 className="team-header">
+            {teamInfo?.away_team_name ? `${teamInfo.away_team_name} (Auswärts)` : 'Auswärtsteam'}
+          </h3>
+
+          <div className="lineup-table">
+            {[1, 2, 3, 4, 5, 6].map(position => {
+              const isMyTeam = !teamInfo?.is_home_team;
+              const selectedPlayer = isMyTeam ? selectedPlayers[position - 1] : null;
+
+              return (
+                <div key={position} className="position-row">
+                  <div className="position-label">Position {position}</div>
+                  <div className="player-selection">
+                    {isMyTeam ? (
+                      // Interactive selection for my team
+                      <>
+                        <select
+                          value={selectedPlayer ? selectedPlayer.id : ''}
+                          onChange={(e) => handlePlayerSelect(position - 1, e.target.value ? parseInt(e.target.value) : null)}
+                          className="player-select"
+                        >
+                          <option value="">-- Spieler auswählen --</option>
+                          {availablePlayers
+                            .filter(player => player.is_available)
+                            .map(player => (
+                              <option
+                                key={player.id}
+                                value={player.id}
+                                disabled={selectedPlayers.some(p => p && p.id === player.id && p !== selectedPlayer)}
+                              >
+                                {player.name}
+                              </option>
+                            ))
+                          }
+                        </select>
+                        {selectedPlayer && (
+                          <div className="selected-player-display">
+                            {selectedPlayer.name}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      // Read-only display for opponent (away team not set yet)
+                      <div className="opponent-player-display">
+                        Noch nicht festgelegt
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        </div>
       </div>
 
+      {/* Unavailable players section - unchanged */}
       <div className="unavailable-players">
         <h3>Nicht verfügbare Spieler</h3>
         <ul>
@@ -222,17 +298,14 @@ const LineupSelector = ({ matchId, managedClubId, onSave, onCancel }) => {
             .filter(player => !player.is_available)
             .map(player => (
               <li key={player.id} className="unavailable-player">
-                {player.name} (Stärke: {player.strength})
+                {player.name}
               </li>
             ))
           }
         </ul>
       </div>
 
-      <div className="lineup-actions">
-        <button className="btn btn-secondary" onClick={onCancel}>Abbrechen</button>
-        <button className="btn btn-primary" onClick={handleSave}>Aufstellung speichern</button>
-      </div>
+
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
-import { simulateMatchDay, simulateSeason, getCurrentSeason, getSeasonStatus, transitionToNewSeason } from '../services/api';
+import { simulateMatchDay, simulateSeason, getCurrentSeason, getSeasonStatus, transitionToNewSeason, getLastMatchDate } from '../services/api';
 import { invalidateAfterSimulation, invalidateAfterSeasonTransition } from '../services/apiCache';
 import GlobalSearch from './GlobalSearch';
 import './Navbar.css';
@@ -29,10 +29,26 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
           season = await getCurrentSeason();
         }
 
-        // Setze ein Datum innerhalb der Saison als aktuelles Datum
-        if (season && season.start_date) {
-          const startDate = new Date(season.start_date);
-          setCurrentDate(startDate);
+        // Lade das Datum des zuletzt gespielten Spiels
+        try {
+          const lastMatchData = await getLastMatchDate();
+          if (lastMatchData && lastMatchData.last_match_date) {
+            const lastMatchDate = new Date(lastMatchData.last_match_date);
+            setCurrentDate(lastMatchDate);
+            console.log("Letztes Spieldatum gesetzt:", lastMatchDate);
+          } else if (season && season.start_date) {
+            // Fallback auf Saisonstart, wenn noch keine Spiele gespielt wurden
+            const startDate = new Date(season.start_date);
+            setCurrentDate(startDate);
+            console.log("Fallback auf Saisonstart:", startDate);
+          }
+        } catch (error) {
+          console.error("Fehler beim Laden des letzten Spieldatums:", error);
+          // Fallback auf Saisonstart bei Fehlern
+          if (season && season.start_date) {
+            const startDate = new Date(season.start_date);
+            setCurrentDate(startDate);
+          }
         }
 
         try {
@@ -147,7 +163,7 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
       // Sende Event für Dashboard-Aktualisierung
       window.dispatchEvent(new CustomEvent('simulationComplete'));
 
-      // Aktualisiere die Match-Daten ohne Seitenreload
+      // Aktualisiere die Match-Daten und das Datum ohne Seitenreload
       try {
         const matches = await getMatches();
         const matchesWithMatchDay = matches.filter(match => match.match_day !== null && match.match_day !== undefined);
@@ -160,6 +176,18 @@ const Navbar = ({ toggleSidebar, onLogout }) => {
           } else {
             setNextMatchDay(null);
           }
+        }
+
+        // Aktualisiere das Datum nach der Simulation
+        try {
+          const lastMatchData = await getLastMatchDate();
+          if (lastMatchData && lastMatchData.last_match_date) {
+            const lastMatchDate = new Date(lastMatchData.last_match_date);
+            setCurrentDate(lastMatchDate);
+            console.log("Datum nach Simulation aktualisiert:", lastMatchDate);
+          }
+        } catch (error) {
+          console.error("Fehler beim Aktualisieren des Datums nach Simulation:", error);
         }
       } catch (error) {
         console.error("Fehler beim Aktualisieren der Match-Daten:", error);

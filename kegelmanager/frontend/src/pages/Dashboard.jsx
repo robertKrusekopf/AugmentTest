@@ -328,43 +328,6 @@ const Dashboard = () => {
           </table>
         </div>
 
-        <div className="card upcoming-matches">
-          <div className="card-header">
-            <h2>Nächste Spiele</h2>
-            {firstTeam && <Link to={`/teams/${firstTeam.id}`} className="btn btn-secondary">Alle anzeigen</Link>}
-          </div>
-          <div className="match-list">
-            {upcomingMatches && upcomingMatches.length > 0 ? upcomingMatches.slice(0, 4).map((match, index) => {
-              const matchDate = match.match_date ? new Date(match.match_date).toLocaleDateString() : 'TBD';
-              const isHome = match.is_home;
-
-              return (
-                <div className="match-item" key={match.id || index}>
-                  <div className="match-date">{matchDate}</div>
-                  <div className="match-teams">
-                    <span className={`team ${isHome ? 'home' : ''}`}>{isHome ? firstTeam.name : match.opponent_name}</span>
-                    <span className="vs">vs</span>
-                    <span className={`team ${!isHome ? 'home' : ''}`}>{!isHome ? firstTeam.name : match.opponent_name}</span>
-                  </div>
-                  <div className="match-league">{match.league_name || 'Unbekannte Liga'}</div>
-                </div>
-              );
-            }) : (
-              <div className="match-item">
-                <div className="match-date">Keine Spiele geplant</div>
-                <div className="match-teams">
-                  <span className="team home">-</span>
-                  <span className="vs">vs</span>
-                  <span className="team away">-</span>
-                </div>
-                <div className="match-league">-</div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="dashboard-row">
         <div className="card recent-matches">
           <div className="card-header">
             <h2>Letzte Spiele aller Teams</h2>
@@ -404,6 +367,43 @@ const Dashboard = () => {
             }) : (
               <div className="match-item">
                 <div className="match-date">Keine Spiele gespielt</div>
+                <div className="match-teams">
+                  <span className="team home">-</span>
+                  <span className="vs">vs</span>
+                  <span className="team away">-</span>
+                </div>
+                <div className="match-league">-</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="dashboard-row">
+        <div className="card upcoming-matches">
+          <div className="card-header">
+            <h2>Nächste Spiele</h2>
+            {firstTeam && <Link to={`/teams/${firstTeam.id}`} className="btn btn-secondary">Alle anzeigen</Link>}
+          </div>
+          <div className="match-list">
+            {upcomingMatches && upcomingMatches.length > 0 ? upcomingMatches.slice(0, 4).map((match, index) => {
+              const matchDate = match.match_date ? new Date(match.match_date).toLocaleDateString() : 'TBD';
+              const isHome = match.is_home;
+
+              return (
+                <div className="match-item" key={match.id || index}>
+                  <div className="match-date">{matchDate}</div>
+                  <div className="match-teams">
+                    <span className={`team ${isHome ? 'home' : ''}`}>{isHome ? firstTeam.name : match.opponent_name}</span>
+                    <span className="vs">vs</span>
+                    <span className={`team ${!isHome ? 'home' : ''}`}>{!isHome ? firstTeam.name : match.opponent_name}</span>
+                  </div>
+                  <div className="match-league">{match.league_name || 'Unbekannte Liga'}</div>
+                </div>
+              );
+            }) : (
+              <div className="match-item">
+                <div className="match-date">Keine Spiele geplant</div>
                 <div className="match-teams">
                   <span className="team home">-</span>
                   <span className="vs">vs</span>
