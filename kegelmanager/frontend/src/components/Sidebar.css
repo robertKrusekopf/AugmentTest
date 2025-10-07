@@ -142,6 +142,32 @@
   border-left-color: var(--primary-color);
 }
 
+.sidebar-nav a span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Unread message badge */
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.sidebar-nav a.active .unread-badge {
+  background-color: var(--primary-color);
+}
+
 /* Dropdown styles */
 .sidebar-nav .dropdown-item {
   position: relative;

@@ -72,6 +72,11 @@ const Dashboard = () => {
               // Setze das letzte Spiel für die Detailansicht
               if (teamData.recentMatches.length > 0) {
                 const lastMatchData = await getMatch(teamData.recentMatches[0].id);
+                // Merge the opponent emblem information from recent match data
+                const recentMatchInfo = teamData.recentMatches[0];
+                lastMatchData.opponent_emblem_url = recentMatchInfo.opponent_emblem_url;
+                lastMatchData.opponent_club_id = recentMatchInfo.opponent_club_id;
+                lastMatchData.opponent_club_name = recentMatchInfo.opponent_club_name;
                 setLastMatch(lastMatchData);
               }
             }
@@ -223,14 +228,33 @@ const Dashboard = () => {
             <div className="change">
               <span>
                 {lastMatch ? (
-                  <>
-                    {firstTeam && lastMatch.home_team_id === firstTeam.id ?
-                      `vs ${lastMatch.away_team_name}` :
-                      `@ ${lastMatch.home_team_name}`}
+                  <div className="match-info-container">
+                    <div className="match-opponent-info">
+                      <span className={`home-away-indicator ${firstTeam && lastMatch.home_team_id === firstTeam.id ? 'home' : 'away'}`}>
+                        {firstTeam && lastMatch.home_team_id === firstTeam.id ? 'H' : 'A'}
+                      </span>
+                      {lastMatch.opponent_emblem_url && (
+                        <img
+                          src={lastMatch.opponent_emblem_url}
+                          alt="Gegner Wappen"
+                          className="opponent-emblem-small"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                      )}
+                      <span className="opponent-name">
+                        {firstTeam && lastMatch.home_team_id === firstTeam.id ?
+                          `vs ${lastMatch.away_team_name}` :
+                          `@ ${lastMatch.home_team_name}`}
+                      </span>
+                    </div>
                     {lastMatch.match_date && (
-                      <> • {new Date(lastMatch.match_date).toLocaleDateString()}</>
+                      <div className="match-date">
+                        {new Date(lastMatch.match_date).toLocaleDateString()}
+                      </div>
                     )}
-                  </>
+                  </div>
                 ) : 'Kein Spiel verfügbar'}
               </span>
             </div>
@@ -249,9 +273,30 @@ const Dashboard = () => {
             </div>
             <div className="change">
               <span>
-                {upcomingMatches && upcomingMatches.length > 0 && upcomingMatches[0].match_date ?
-                  new Date(upcomingMatches[0].match_date).toLocaleDateString() :
-                  'Kein Spiel geplant'}
+                {upcomingMatches && upcomingMatches.length > 0 ? (
+                  <div className="match-info-container">
+                    <div className="match-opponent-info">
+                      <span className={`home-away-indicator ${upcomingMatches[0].is_home ? 'home' : 'away'}`}>
+                        {upcomingMatches[0].is_home ? 'H' : 'A'}
+                      </span>
+                      {upcomingMatches[0].opponent_emblem_url && (
+                        <img
+                          src={upcomingMatches[0].opponent_emblem_url}
+                          alt="Gegner Wappen"
+                          className="opponent-emblem-small"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </div>
+                    {upcomingMatches[0].match_date && (
+                      <div className="match-date">
+                        {new Date(upcomingMatches[0].match_date).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                ) : 'Kein Spiel geplant'}
               </span>
             </div>
             {upcomingMatches && upcomingMatches.length > 0 && managedClubId && (
@@ -455,6 +500,11 @@ const Dashboard = () => {
                     {lastMatch.match_date ? new Date(lastMatch.match_date).toLocaleDateString() : 'Unbekanntes Datum'}
                   </div>
                   <div className="match-league-large">{lastMatch.league_name}</div>
+                  <div className="match-venue-indicator">
+                    <span className={`home-away-indicator-large ${firstTeam && lastMatch.home_team_id === firstTeam.id ? 'home' : 'away'}`}>
+                      {firstTeam && lastMatch.home_team_id === firstTeam.id ? 'Heimspiel' : 'Auswärtsspiel'}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="match-stats">

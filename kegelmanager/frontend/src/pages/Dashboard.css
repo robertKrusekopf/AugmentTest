@@ -262,6 +262,81 @@ tr.own-team {
   font-weight: 700;
 }
 
+/* Styling für Home/Away Indikatoren und Gegner-Embleme in Stat Cards */
+.match-info-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.match-opponent-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-away-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+
+.home-away-indicator.home {
+  background-color: #1a73e8;
+}
+
+.home-away-indicator.away {
+  background-color: #ea4335;
+}
+
+.opponent-emblem-small {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.opponent-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.match-date {
+  font-size: 12px;
+  color: #5f6368;
+  margin-left: 24px; /* Align with opponent name */
+}
+
+/* Styling für Home/Away Indikator im detaillierten Letztes Spiel Widget */
+.match-venue-indicator {
+  margin-top: 8px;
+}
+
+.home-away-indicator-large {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+.home-away-indicator-large.home {
+  background-color: #1a73e8;
+}
+
+.home-away-indicator-large.away {
+  background-color: #ea4335;
+}
+
 /* Styling für das letzte Spiel */
 .last-match-content {
   padding: 15px;

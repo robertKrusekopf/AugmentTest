@@ -506,4 +506,133 @@ export const globalSearch = async (query) => {
   }
 };
 
+// Message endpoints
+export const getMessages = async (isRead = null) => {
+  try {
+    const params = {};
+    if (isRead !== null) {
+      params.is_read = isRead;
+    }
+    const response = await api.get('/messages', { params });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    throw error;
+  }
+};
+
+export const getMessage = async (id) => {
+  try {
+    const response = await api.get(`/messages/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching message ${id}:`, error);
+    throw error;
+  }
+};
+
+export const markMessageRead = async (id) => {
+  try {
+    const response = await api.put(`/messages/${id}/mark-read`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error marking message ${id} as read:`, error);
+    throw error;
+  }
+};
+
+export const markMessageUnread = async (id) => {
+  try {
+    const response = await api.put(`/messages/${id}/mark-unread`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error marking message ${id} as unread:`, error);
+    throw error;
+  }
+};
+
+export const deleteMessage = async (id) => {
+  try {
+    const response = await api.delete(`/messages/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error deleting message ${id}:`, error);
+    throw error;
+  }
+};
+
+export const markAllMessagesRead = async () => {
+  try {
+    const response = await api.put('/messages/mark-all-read');
+    return response.data;
+  } catch (error) {
+    console.error('Error marking all messages as read:', error);
+    throw error;
+  }
+};
+
+export const getUnreadMessageCount = async () => {
+  try {
+    const response = await api.get('/messages/unread-count');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching unread message count:', error);
+    throw error;
+  }
+};
+
+// Game Settings endpoints
+export const getGameSettings = async () => {
+  try {
+    const response = await api.get('/game-settings');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching game settings:', error);
+    throw error;
+  }
+};
+
+export const updateManagerClub = async (managerClubId) => {
+  try {
+    const response = await api.put('/game-settings/manager-club', {
+      manager_club_id: managerClubId
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating manager club:', error);
+    throw error;
+  }
+};
+
+// Notification Settings endpoints
+export const getNotificationSettings = async () => {
+  try {
+    const response = await api.get('/notification-settings');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching notification settings:', error);
+    throw error;
+  }
+};
+
+export const updateNotificationSettings = async (settings) => {
+  try {
+    const response = await api.put('/notification-settings', settings);
+    return response.data;
+  } catch (error) {
+    console.error('Error updating notification settings:', error);
+    throw error;
+  }
+};
+
+export const getNotificationCategories = async () => {
+  try {
+    const response = await api.get('/notification-settings/categories');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching notification categories:', error);
+    throw error;
+  }
+};
+
 export default api;

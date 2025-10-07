@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, send_file, abort
 from flask_cors import CORS
-from models import db, Player, Team, Club, League, Match, Season, Finance, UserLineup, LineupPosition, TransferOffer, TransferHistory, Cup, CupMatch, PlayerCupMatchPerformance
+from models import db, Player, Team, Club, League, Match, Season, Finance, UserLineup, LineupPosition, TransferOffer, TransferHistory, Cup, CupMatch, PlayerCupMatchPerformance, Message, GameSettings, NotificationSettings
 import os
 import sys
 import subprocess
@@ -598,7 +598,14 @@ def get_team_achievements(team_id):
 # Player endpoints
 @app.route('/api/players', methods=['GET'])
 def get_players():
-    players = Player.query.all()
+    # Check if we should include retired players
+    include_retired = request.args.get('include_retired', 'false').lower() == 'true'
+
+    if include_retired:
+        players = Player.query.all()
+    else:
+        players = Player.query.filter_by(is_retired=False).all()
+
     return jsonify([player.to_dict() for player in players])
 
 @app.route('/api/players/<int:player_id>', methods=['GET'])
@@ -1190,6 +1197,10 @@ def update_player(player_id):
         player.form_medium_remaining_days = data['form_medium_remaining_days']
     if 'form_long_remaining_days' in data:
         player.form_long_remaining_days = data['form_long_remaining_days']
+
+    # Update retirement system attributes (only in cheat mode)
+    if 'retirement_age' in data:
+        player.retirement_age = data['retirement_age']
 
     # Save changes to database
     db.session.commit()
@@ -2564,8 +2575,8 @@ def get_available_players_for_match(match_id):
         if not home_lineup_exists:
             return jsonify({"error": "Failed to create home team lineup"}), 500
 
-    # Get all players from the club
-    club_players = Player.query.filter_by(club_id=managed_club_id).all()
+    # Get all active (non-retired) players from the club
+    club_players = Player.query.filter_by(club_id=managed_club_id, is_retired=False).all()
 
     # Build detailed team information for proper availability calculation
     # This ensures consistency with automatic simulation logic
@@ -3181,6 +3192,296 @@ def delete_transfer_offer(offer_id):
         "message": "Transferangebot zurückgezogen"
     })
 
+
+# Message endpoints
+@app.route('/api/messages', methods=['GET'])
+def get_messages():
+    """Get all messages, optionally filtered by read status and notification settings."""
+    try:
+        # Get query parameters
+        is_read = request.args.get('is_read')
+
+        # Build query
+        query = Message.query
+
+        # Filter by read status if specified
+        if is_read is not None:
+            is_read_bool = is_read.lower() == 'true'
+            query = query.filter_by(is_read=is_read_bool)
+
+        # Order by created_at descending (newest first)
+        messages = query.order_by(Message.created_at.desc()).all()
+
+        # Filter messages based on notification settings
+        notification_settings = NotificationSettings.query.first()
+        if notification_settings:
+            filtered_messages = []
+            for message in messages:
+                category = message.notification_category or 'general'
+                if notification_settings.is_category_enabled(category):
+                    filtered_messages.append(message)
+            messages = filtered_messages
+
+        return jsonify([message.to_dict() for message in messages])
+    except Exception as e:
+        print(f"Error getting messages: {e}")
+        return jsonify({"error": "Fehler beim Laden der Nachrichten"}), 500
+
+
+@app.route('/api/messages/<int:message_id>', methods=['GET'])
+def get_message(message_id):
+    """Get a specific message by ID."""
+    try:
+        message = Message.query.get_or_404(message_id)
+        return jsonify(message.to_dict())
+    except Exception as e:
+        print(f"Error getting message {message_id}: {e}")
+        return jsonify({"error": "Nachricht nicht gefunden"}), 404
+
+
+@app.route('/api/messages/<int:message_id>/mark-read', methods=['PUT'])
+def mark_message_read(message_id):
+    """Mark a message as read."""
+    try:
+        message = Message.query.get_or_404(message_id)
+        message.is_read = True
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Nachricht als gelesen markiert",
+            "data": message.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error marking message {message_id} as read: {e}")
+        return jsonify({"error": "Fehler beim Markieren der Nachricht"}), 500
+
+
+@app.route('/api/messages/<int:message_id>/mark-unread', methods=['PUT'])
+def mark_message_unread(message_id):
+    """Mark a message as unread."""
+    try:
+        message = Message.query.get_or_404(message_id)
+        message.is_read = False
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Nachricht als ungelesen markiert",
+            "data": message.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error marking message {message_id} as unread: {e}")
+        return jsonify({"error": "Fehler beim Markieren der Nachricht"}), 500
+
+
+@app.route('/api/messages/<int:message_id>', methods=['DELETE'])
+def delete_message(message_id):
+    """Delete a message."""
+    try:
+        message = Message.query.get_or_404(message_id)
+        db.session.delete(message)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Nachricht gelöscht"
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting message {message_id}: {e}")
+        return jsonify({"error": "Fehler beim Löschen der Nachricht"}), 500
+
+
+@app.route('/api/messages/mark-all-read', methods=['PUT'])
+def mark_all_messages_read():
+    """Mark all messages as read."""
+    try:
+        Message.query.filter_by(is_read=False).update({'is_read': True})
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Alle Nachrichten als gelesen markiert"
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error marking all messages as read: {e}")
+        return jsonify({"error": "Fehler beim Markieren aller Nachrichten"}), 500
+
+
+@app.route('/api/messages/unread-count', methods=['GET'])
+def get_unread_message_count():
+    """Get the count of unread messages."""
+    try:
+        count = Message.query.filter_by(is_read=False).count()
+        return jsonify({"count": count})
+    except Exception as e:
+        print(f"Error getting unread message count: {e}")
+        return jsonify({"error": "Fehler beim Zählen ungelesener Nachrichten"}), 500
+
+
+# Game Settings endpoints
+@app.route('/api/game-settings', methods=['GET'])
+def get_game_settings():
+    """Get game settings (manager club, etc.)."""
+    try:
+        settings = GameSettings.query.first()
+        if not settings:
+            # Create default settings if none exist
+            settings = GameSettings(manager_club_id=None)
+            db.session.add(settings)
+            db.session.commit()
+
+        return jsonify(settings.to_dict())
+    except Exception as e:
+        print(f"Error getting game settings: {e}")
+        return jsonify({"error": "Fehler beim Laden der Spieleinstellungen"}), 500
+
+
+@app.route('/api/game-settings/manager-club', methods=['PUT'])
+def update_manager_club():
+    """Update the manager's club."""
+    try:
+        data = request.get_json()
+        manager_club_id = data.get('manager_club_id')
+
+        # Get or create settings
+        settings = GameSettings.query.first()
+        if not settings:
+            settings = GameSettings()
+            db.session.add(settings)
+
+        # Update manager club
+        settings.manager_club_id = manager_club_id
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Manager-Verein aktualisiert",
+            "data": settings.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating manager club: {e}")
+        return jsonify({"error": "Fehler beim Aktualisieren des Manager-Vereins"}), 500
+
+
+# Notification Settings endpoints
+@app.route('/api/notification-settings', methods=['GET'])
+def get_notification_settings():
+    """Get notification settings."""
+    try:
+        settings = NotificationSettings.query.first()
+        if not settings:
+            # Create default settings if none exist
+            settings = NotificationSettings()
+            db.session.add(settings)
+            db.session.commit()
+
+        return jsonify(settings.to_dict())
+    except Exception as e:
+        print(f"Error getting notification settings: {e}")
+        return jsonify({"error": "Fehler beim Laden der Benachrichtigungseinstellungen"}), 500
+
+
+@app.route('/api/notification-settings', methods=['PUT'])
+def update_notification_settings():
+    """Update notification settings."""
+    try:
+        data = request.get_json()
+
+        # Get or create settings
+        settings = NotificationSettings.query.first()
+        if not settings:
+            settings = NotificationSettings()
+            db.session.add(settings)
+
+        # Update settings
+        if 'player_retirement' in data:
+            settings.player_retirement = data['player_retirement']
+        if 'transfers' in data:
+            settings.transfers = data['transfers']
+        if 'match_results' in data:
+            settings.match_results = data['match_results']
+        if 'injuries' in data:
+            settings.injuries = data['injuries']
+        if 'contracts' in data:
+            settings.contracts = data['contracts']
+        if 'finances' in data:
+            settings.finances = data['finances']
+        if 'achievements' in data:
+            settings.achievements = data['achievements']
+        if 'general' in data:
+            settings.general = data['general']
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Benachrichtigungseinstellungen aktualisiert",
+            "data": settings.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating notification settings: {e}")
+        return jsonify({"error": "Fehler beim Aktualisieren der Benachrichtigungseinstellungen"}), 500
+
+
+@app.route('/api/notification-settings/categories', methods=['GET'])
+def get_notification_categories():
+    """Get available notification categories with descriptions."""
+    try:
+        categories = [
+            {
+                'id': 'player_retirement',
+                'name': 'Spieler-Ruhestand',
+                'description': 'Benachrichtigungen wenn Spieler in den Ruhestand gehen'
+            },
+            {
+                'id': 'transfers',
+                'name': 'Transfers',
+                'description': 'Benachrichtigungen über Transferangebote und -abschlüsse'
+            },
+            {
+                'id': 'match_results',
+                'name': 'Spielergebnisse',
+                'description': 'Benachrichtigungen über Spielergebnisse und besondere Leistungen'
+            },
+            {
+                'id': 'injuries',
+                'name': 'Verletzungen',
+                'description': 'Benachrichtigungen über Spielerverletzungen'
+            },
+            {
+                'id': 'contracts',
+                'name': 'Verträge',
+                'description': 'Benachrichtigungen über auslaufende Verträge und Vertragsverlängerungen'
+            },
+            {
+                'id': 'finances',
+                'name': 'Finanzen',
+                'description': 'Benachrichtigungen über finanzielle Ereignisse und Warnungen'
+            },
+            {
+                'id': 'achievements',
+                'name': 'Erfolge',
+                'description': 'Benachrichtigungen über Erfolge, Rekorde und Meilensteine'
+            },
+            {
+                'id': 'general',
+                'name': 'Allgemein',
+                'description': 'Allgemeine Informationen und sonstige Benachrichtigungen'
+            }
+        ]
+        return jsonify(categories)
+    except Exception as e:
+        print(f"Error getting notification categories: {e}")
+        return jsonify({"error": "Fehler beim Laden der Benachrichtigungskategorien"}), 500
+
+
 if __name__ == '__main__':
     # Überprüfe, ob die Datenbank existiert
     if not os.path.exists(selected_db_path):
@@ -3221,6 +3522,9 @@ if __name__ == '__main__':
     # Für Netzwerkzugriff: host='0.0.0.0' ermöglicht Zugriff von anderen Geräten im Netzwerk
     app.run(debug=True, host='0.0.0.0', port=5000)
 
+# Auto-reload trigger: 1759680000.0000000
+# Auto-reload trigger: 1759679000.0000000
+# Auto-reload trigger: 1759678000.0000000
 # Auto-reload trigger: 1754830994.2649052
 # Auto-reload trigger: 1754831031.1776755
 # Auto-reload trigger: 1754831185.2009933
@@ -3269,3 +3573,28 @@ if __name__ == '__main__':
 # Auto-reload trigger: 1755965368.3820956
 # Auto-reload trigger: 1755965443.603214
 # Auto-reload trigger: 1755965636.3035235
+# Auto-reload trigger: 1755967404.4980497
+# Auto-reload trigger: 1755968343.5512023
+# Auto-reload trigger: 1759673662.2134955
+# Auto-reload trigger: 1759675197.4318612
+# Auto-reload trigger: 1759677683.941806
+# Auto-reload trigger: 1759678360.114166
+# Auto-reload trigger: 1759678539.3895407
+# Auto-reload trigger: 1759678936.6914248
+# Auto-reload trigger: 1759678959.5576835
+# Auto-reload trigger: 1759680382.2014673
+# Auto-reload trigger: 1759681383.1604831
+# Auto-reload trigger: 1759681706.1160207
+# Auto-reload trigger: 1759682199.6995127
+# Auto-reload trigger: 1759682671.8469086
+# Auto-reload trigger: 1759683293.435989
+# Auto-reload trigger: 1759684487.9753299
+# Auto-reload trigger: 1759684894.0723271
+# Auto-reload trigger: 1759685302.468814
+# Auto-reload trigger: 1759848667.3613791
+# Auto-reload trigger: 1759849536.4709396
+# Auto-reload trigger: 1759849618.632267
+# Auto-reload trigger: 1759850966.9996185
+# Auto-reload trigger: 1759851630.6044295
+# Auto-reload trigger: 1759852850.8799868
+# Auto-reload trigger: 1759853378.967468

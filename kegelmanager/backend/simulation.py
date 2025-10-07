@@ -1,10 +1,67 @@
 import numpy as np
 from datetime import datetime, timedelta, timezone
-from models import db, Match, Player, Team, League, Season
+from models import db, Match, Player, Team, League, Season, Message, GameSettings
 from form_system import apply_form_to_strength, get_player_total_form_modifier
 
 # Central player rating formula for SQL queries
 PLAYER_RATING_SQL = "(strength * 0.5 + konstanz * 0.1 + drucksicherheit * 0.1 + volle * 0.15 + raeumer * 0.15)"
+
+
+def create_retirement_message(player):
+    """
+    Erstellt eine Nachricht, wenn ein Spieler in den Ruhestand geht.
+    Nur für Spieler des Manager-Vereins.
+
+    Args:
+        player: Der Spieler, der in den Ruhestand geht
+    """
+    try:
+        # Get game settings to check if this player belongs to the manager's club
+        settings = GameSettings.query.first()
+
+        # Only create message if player belongs to the manager's club
+        if not settings or not settings.manager_club_id:
+            # No manager club set, don't create messages
+            return
+
+        if player.club_id != settings.manager_club_id:
+            # Player doesn't belong to manager's club, don't create message
+            return
+
+        # Get the club name
+        club_name = player.club.name if player.club else "Unbekannter Verein"
+
+        # Create the message
+        subject = f"Spieler {player.name} geht in den Ruhestand"
+
+        # Create HTML content with clickable player name
+        content = f"""Sehr geehrter Manager,
+
+wir möchten Sie darüber informieren, dass <a href="/players/{player.id}" class="player-link">{player.name}</a> seine aktive Karriere beendet hat.
+
+Nach vielen Jahren im Dienste von {club_name} hat sich {player.name} im Alter von {player.age} Jahren dazu entschieden, in den wohlverdienten Ruhestand zu gehen.
+
+Wir danken {player.name} für seinen Einsatz und wünschen ihm alles Gute für die Zukunft!
+
+Mit freundlichen Grüßen
+Die Geschäftsführung"""
+
+        # Create the message
+        message = Message(
+            subject=subject,
+            content=content,
+            message_type='info',
+            notification_category='player_retirement',
+            is_read=False,
+            related_club_id=player.club_id,
+            related_player_id=player.id
+        )
+
+        db.session.add(message)
+        print(f"  Created retirement notification for {player.name} (Manager's club)")
+
+    except Exception as e:
+        print(f"  Error creating retirement message for {player.name}: {e}")
 
 
 class SimplePlayer:
@@ -3118,13 +3175,36 @@ def create_new_season(old_season):
 
     print("Generated fixtures for all leagues and cups in the new season")
 
-    # Age all players by 1 year
-    players = Player.query.all()
+    # Age all players by 1 year and handle retirements
+    players = Player.query.filter_by(is_retired=False).all()
+    retired_count = 0
+
     for player in players:
         player.age += 1
 
+        # Check if player should retire
+        if player.retirement_age and player.age >= player.retirement_age:
+            # Mark player as retired
+            player.is_retired = True
+            player.retirement_season_id = new_season.id
+
+            # Remove player from all teams
+            player.teams.clear()
+
+            # Remove club association (optional - keep for history)
+            # player.club_id = None
+
+            retired_count += 1
+            print(f"  Player {player.name} retired at age {player.age}")
+
+            # Create retirement notification message for the player's club
+            if player.club_id:
+                create_retirement_message(player)
+
     db.session.commit()
     print(f"Aged {len(players)} players by 1 year")
+    if retired_count > 0:
+        print(f"{retired_count} players retired this season")
 
     # Note: Player redistribution is disabled during season transitions to avoid conflicts
     # with the game's dynamic player assignment system. The current system assigns players

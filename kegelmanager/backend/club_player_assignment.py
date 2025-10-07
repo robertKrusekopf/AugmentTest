@@ -2,7 +2,7 @@
 Module for assigning players to teams within a club for a match day.
 """
 
-from models import db, Player, Team, Match, CupMatch, Cup, UserLineup, LineupPosition
+from models import db, Player, Team, Match, CupMatch, Cup, UserLineup, LineupPosition, get_cup_match_frontend_id
 from sqlalchemy import or_
 
 def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
@@ -82,10 +82,12 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     # Get all available players from this club with optimized query
     # Load only the attributes we need for sorting to reduce memory usage
     # Filter out players who have already played on this match day
+    # IMPORTANT: Also filter out retired players
     available_players = Player.query.filter_by(
         club_id=club_id,
         is_available_current_matchday=True,
-        has_played_current_matchday=False
+        has_played_current_matchday=False,
+        is_retired=False
     ).options(
         db.load_only(Player.id, Player.strength, Player.konstanz, Player.drucksicherheit, Player.volle, Player.raeumer)
     ).all()
@@ -280,6 +282,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             t.name as team_name,
             l.level as league_level,
             m.id as match_id,
+            'league' as match_source,
             CASE
                 WHEN m.home_team_id = t.id THEN 'home'
                 WHEN m.away_team_id = t.id THEN 'away'
@@ -300,6 +303,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             t.name as team_name,
             l.level as league_level,
             cm.id as match_id,
+            'cup' as match_source,
             CASE
                 WHEN cm.home_team_id = t.id THEN 'home'
                 WHEN cm.away_team_id = t.id THEN 'away'
@@ -327,11 +331,16 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         if club_id not in club_teams:
             club_teams[club_id] = []
 
+        # Convert cup match IDs to frontend IDs for consistency with UserLineup storage
+        match_id = row_dict['match_id']
+        if row_dict['match_source'] == 'cup':
+            match_id = get_cup_match_frontend_id(match_id)
+
         team_info = {
             'id': row_dict['team_id'],
             'name': row_dict['team_name'],
             'league_level': row_dict['league_level'],
-            'match_id': row_dict['match_id'],
+            'match_id': match_id,
             'match_type': row_dict['match_type']
         }
 
@@ -365,6 +374,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             form_short_remaining_days, form_medium_remaining_days, form_long_remaining_days
         FROM player
         WHERE club_id IN ({placeholders})
+            AND is_retired = 0
             {player_filter}
         ORDER BY club_id, {PLAYER_RATING_SQL} DESC
     """)
@@ -424,20 +434,41 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
 
         used_players = set()
 
-        # Assign 6 players to each team
+        # First pass: collect all teams and check for manual lineups
+        team_manual_lineups = {}  # team_id -> manual_lineup
+        teams_to_process = []
+
         for team in teams:
             team_id = team['id']
             match_id = team['match_id']
             match_type = team['match_type']
             is_home_team = (match_type == 'home')
-            result[club_id][team_id] = []
 
-            # First, check if there's a manual lineup for this team
+            # Check if there's a manual lineup for this team/match combination
             manual_lineup = get_manual_lineup_for_team(match_id, team_id, is_home_team)
 
             if manual_lineup:
-                # Use the manual lineup
-                print(f"Using manual lineup for team {team_id} in match {match_id}")
+                # If this team doesn't have a manual lineup yet, use this lineup
+                if team_id not in team_manual_lineups:
+                    team_manual_lineups[team_id] = manual_lineup
+
+            teams_to_process.append(team)
+
+        # Second pass: assign players to teams
+        for team in teams_to_process:
+            team_id = team['id']
+            match_id = team['match_id']
+            match_type = team['match_type']
+
+            # Skip if we've already processed this team
+            if team_id in result[club_id]:
+                continue
+
+            result[club_id][team_id] = []
+
+            # Check if this team has a manual lineup
+            if team_id in team_manual_lineups:
+                manual_lineup = team_manual_lineups[team_id]
                 result[club_id][team_id] = manual_lineup
 
                 # Mark these players as used so they can't be assigned to other teams

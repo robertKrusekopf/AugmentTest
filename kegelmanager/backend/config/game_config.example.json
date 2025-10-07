@@ -1,0 +1,260 @@
+{
+  "_comment": "=== KEGELMANAGER GAME CONFIGURATION EXAMPLE ===",
+  "_info": "Copy this file to 'game_config.json' and adjust values to customize your game",
+  "_version": "1.0.0",
+  
+  "player_generation": {
+    "_comment": "Settings for generating new players",
+    
+    "retirement": {
+      "_description": "Retirement age distribution settings",
+      "mean_age": 37.5,
+      "_mean_age_info": "Average retirement age (center of distribution)",
+      "std_dev": 1.95,
+      "_std_dev_info": "Standard deviation (lower = more consistent ages)",
+      "min_age": 30,
+      "_min_age_info": "Minimum possible retirement age",
+      "max_age": 45,
+      "_max_age_info": "Maximum possible retirement age",
+      "_example_distributions": {
+        "realistic_long_careers": {"mean_age": 40, "std_dev": 2.5},
+        "short_careers": {"mean_age": 35, "std_dev": 1.5},
+        "high_variation": {"mean_age": 37.5, "std_dev": 3.5}
+      }
+    },
+    
+    "age_ranges": {
+      "_description": "Age ranges for player generation",
+      "youth_min": 16,
+      "youth_max": 19,
+      "adult_min": 20,
+      "adult_max": 35,
+      "_info": "Youth teams use youth_min/max, regular teams use adult_min/max"
+    },
+    
+    "attributes": {
+      "_description": "Player attribute calculation parameters",
+      "base_std_dev": 5.0,
+      "_base_std_dev_info": "Base standard deviation for strength generation",
+      "league_level_factor": 0.5,
+      "_league_level_factor_info": "How much league level affects consistency (higher = more variation in lower leagues)",
+      "attr_base_value_offset": 60,
+      "_attr_base_value_offset_info": "Base value for attribute calculation",
+      "attr_strength_factor": 0.6,
+      "_attr_strength_factor_info": "How much strength affects other attributes",
+      "attr_std_dev_base": 5.0,
+      "attr_std_dev_league_factor": 0.3,
+      "min_attribute_value": 1,
+      "max_attribute_value": 99,
+      "_info": "All attributes are clamped between min and max values"
+    },
+    
+    "talent": {
+      "_description": "Talent range (independent of league level)",
+      "min": 1,
+      "max": 10
+    },
+    
+    "contract": {
+      "_description": "Contract duration in years",
+      "min_years": 1,
+      "max_years": 4
+    },
+    
+    "salary": {
+      "_description": "Salary calculation parameters",
+      "base_multiplier": 100,
+      "_base_multiplier_info": "Base salary = strength * base_multiplier * age_factor",
+      "prime_age_min": 25,
+      "prime_age_max": 30,
+      "_prime_age_info": "Players in this age range get prime_age_factor bonus",
+      "prime_age_factor": 1.5,
+      "normal_age_factor": 1.0
+    },
+    
+    "positions": [
+      "Angriff",
+      "Mittelfeld",
+      "Abwehr"
+    ]
+  },
+  
+  "team_generation": {
+    "_comment": "Settings for generating teams",
+    
+    "players_per_team": {
+      "_description": "Number of players per team based on league level",
+      "level_1_4_min": 8,
+      "level_1_4_max": 10,
+      "_level_1_4_info": "Top leagues (Bundesliga, etc.)",
+      "level_5_8_min": 7,
+      "level_5_8_max": 9,
+      "_level_5_8_info": "Mid-tier leagues",
+      "level_9_plus_min": 7,
+      "level_9_plus_max": 8,
+      "_level_9_plus_info": "Lower leagues"
+    }
+  },
+  
+  "club_generation": {
+    "_comment": "Settings for generating clubs",
+    "_description": "Club attribute ranges for generation",
+    
+    "founded_year_min": 1900,
+    "founded_year_max": 1980,
+    
+    "reputation_min": 50,
+    "reputation_max": 90,
+    "_reputation_info": "Club reputation (1-100)",
+    
+    "fans_min": 500,
+    "fans_max": 10000,
+    "_fans_info": "Number of fans",
+    
+    "training_facilities_min": 30,
+    "training_facilities_max": 90,
+    "_training_facilities_info": "Training facilities quality (1-100)",
+    
+    "coaching_min": 30,
+    "coaching_max": 90,
+    "_coaching_info": "Coaching quality (1-100)",
+    
+    "initial_balance_min": 500000,
+    "initial_balance_max": 2000000,
+    "_balance_info": "Starting balance in euros",
+    
+    "initial_income_min": 50000,
+    "initial_income_max": 200000,
+    "_income_info": "Initial income per period",
+    
+    "initial_expenses_min": 40000,
+    "initial_expenses_max": 180000,
+    "_expenses_info": "Initial expenses per period"
+  },
+  
+  "simulation": {
+    "_comment": "Settings for match simulation",
+    
+    "player_availability": {
+      "_description": "Player unavailability rates (0.0 = 0%, 1.0 = 100%)",
+      "unavailability_min": 0.0,
+      "unavailability_max": 0.30,
+      "_info": "Each player gets a random unavailability rate between min and max",
+      "higher_team_unavailability_min": 0.80,
+      "higher_team_unavailability_max": 0.90,
+      "_higher_team_info": "Players in higher teams are less available for lower teams"
+    },
+    
+    "home_advantage": {
+      "_description": "Home team advantage",
+      "factor": 1.02,
+      "_info": "1.02 = 2% bonus for home team. Range: 0.9-1.2 recommended"
+    },
+    
+    "scoring": {
+      "_description": "Base scoring calculation parameters",
+      "base_score": 120,
+      "_base_score_info": "Base score before strength modifier",
+      "strength_factor": 0.6,
+      "_strength_factor_info": "mean_score = base_score + (strength * strength_factor)",
+      "away_factor_base": 0.98,
+      "away_factor_range": 0.04,
+      "_away_factor_info": "Away performance: base + (auswaerts / 2500) * range",
+      "position_factor_base": 0.8,
+      "position_factor_range": 0.2,
+      "_position_factor_info": "Position bonus: base + (position_attr / 500) * range"
+    },
+    
+    "volle_raeumer": {
+      "_description": "Volle (full pins) vs Räumer (clearing) distribution",
+      "volle_percentage_base": 0.5,
+      "volle_percentage_range": 0.3,
+      "volle_min": 0.55,
+      "volle_max": 0.75,
+      "_info": "Volle typically 55-75% of total score"
+    },
+    
+    "errors": {
+      "_description": "Error calculation using exponential decay",
+      "base_mean": 15.0,
+      "_base_mean_info": "Base error count at minimum score",
+      "decay_rate": 0.004,
+      "_decay_rate_info": "How quickly errors decrease with higher scores",
+      "min_score_threshold": 300,
+      "_threshold_info": "Minimum score for error calculation",
+      "std_dev_factor": 0.3,
+      "sicherheit_factor": 0.02,
+      "_formula": "base_mean * exp(-decay_rate * (score - threshold))"
+    },
+    
+    "stroh_player": {
+      "_description": "Stroh (substitute) player attribute penalties",
+      "_info": "All values are penalties (0.10 = 10% weaker than weakest real player)",
+      "strength_penalty": 0.10,
+      "konstanz_penalty": 0.05,
+      "drucksicherheit_penalty": 0.05,
+      "volle_penalty": 0.03,
+      "raeumer_penalty": 0.03,
+      "sicherheit_penalty": 0.05,
+      "auswaerts_penalty": 0.05,
+      "start_penalty": 0.03,
+      "mitte_penalty": 0.03,
+      "schluss_penalty": 0.03,
+      "ausdauer_penalty": 0.05
+    },
+    
+    "match_points": {
+      "_description": "Match points system",
+      "team_total_pins_bonus": 2,
+      "_info": "Bonus match points for team with higher total pins"
+    }
+  },
+  
+  "form_system": {
+    "_comment": "Player form system settings",
+    "enabled": true,
+    "short_term_impact": 0.10,
+    "_short_term_info": "Short-term form impact (10% modifier)",
+    "medium_term_impact": 0.05,
+    "_medium_term_info": "Medium-term form impact (5% modifier)",
+    "long_term_impact": 0.03,
+    "_long_term_info": "Long-term form impact (3% modifier)"
+  },
+  
+  "lane_quality": {
+    "_comment": "Lane quality multipliers based on best team's league level",
+    "level_1_4": 1.05,
+    "_level_1_4_info": "Top leagues get 5% bonus",
+    "level_5_8": 1.02,
+    "_level_5_8_info": "Mid leagues get 2% bonus",
+    "level_9_plus": 1.0,
+    "_level_9_plus_info": "Lower leagues get no bonus"
+  },
+  
+  "player_rating": {
+    "_comment": "Player rating formula weights",
+    "_description": "These weights determine overall player rating",
+    "strength_weight": 0.5,
+    "konstanz_weight": 0.1,
+    "drucksicherheit_weight": 0.1,
+    "volle_weight": 0.15,
+    "raeumer_weight": 0.15,
+    "_info": "Weights must sum to 1.0",
+    "_formula": "rating = strength*0.5 + konstanz*0.1 + drucksicherheit*0.1 + volle*0.15 + raeumer*0.15"
+  },
+  
+  "season": {
+    "_comment": "Season settings",
+    "max_match_days": 104,
+    "_info": "Maximum possible match days per season (Saturdays and Wednesdays)"
+  },
+  
+  "validation": {
+    "_comment": "Configuration validation settings",
+    "enabled": true,
+    "_enabled_info": "Validate config values on load",
+    "strict_mode": false,
+    "_strict_mode_info": "If true, reject invalid configs. If false, show warnings only"
+  }
+}
+

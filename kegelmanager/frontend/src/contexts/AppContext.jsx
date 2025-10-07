@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as api from '../services/api';
-import { 
-  getClubsOptimized, 
-  getTeamsOptimized, 
-  getLeaguesOptimized, 
-  getPlayersOptimized, 
+import {
+  getClubsOptimized,
+  getTeamsOptimized,
+  getLeaguesOptimized,
+  getPlayersOptimized,
   getMatchesOptimized,
   loadOverviewData,
   clearAllCache as clearApiCache
 } from '../services/apiCache';
+import { getGameSettings } from '../services/api';
 
 const AppContext = createContext();
 
@@ -47,17 +48,35 @@ export const AppProvider = ({ children }) => {
   const initializeApp = async () => {
     try {
       setGlobalLoading(true);
-      
-      // Load managed club from localStorage
-      const storedManagedClubId = localStorage.getItem('managedClubId');
-      if (storedManagedClubId) {
-        setManagedClubId(parseInt(storedManagedClubId));
+
+      // Load managed club from backend (source of truth)
+      try {
+        const gameSettings = await getGameSettings();
+        console.log('[AppContext] Loaded game settings from backend:', gameSettings);
+        setManagedClubId(gameSettings.manager_club_id);
+
+        // Sync localStorage with backend value
+        if (gameSettings.manager_club_id) {
+          localStorage.setItem('managedClubId', gameSettings.manager_club_id.toString());
+        } else {
+          // Remove old localStorage value if backend has null
+          localStorage.removeItem('managedClubId');
+        }
+      } catch (error) {
+        console.error('[AppContext] Error loading game settings from backend:', error);
+
+        // Fallback: Load from localStorage only if backend fails
+        const storedManagedClubId = localStorage.getItem('managedClubId');
+        if (storedManagedClubId) {
+          console.log('[AppContext] Using managedClubId from localStorage as fallback:', storedManagedClubId);
+          setManagedClubId(parseInt(storedManagedClubId));
+        }
       }
 
       // Load current season
       const season = await api.getCurrentSeason();
       setCurrentSeason(season);
-      
+
     } catch (error) {
       console.error('Error initializing app:', error);
     } finally {

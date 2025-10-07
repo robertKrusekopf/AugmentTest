@@ -147,8 +147,8 @@ def create_auto_lineup_for_team(match_id, team_id, is_home_team):
     if not team:
         return None
     
-    # Get all players from the club
-    club_players = Player.query.filter_by(club_id=team.club_id).all()
+    # Get all active (non-retired) players from the club
+    club_players = Player.query.filter_by(club_id=team.club_id, is_retired=False).all()
     if not club_players or len(club_players) < 6:
         return None
 

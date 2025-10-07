@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMatch } from '../services/api';
+import { useAppContext } from '../contexts/AppContext';
 import LineupSelector from '../components/LineupSelector';
 import './MatchDetail.css';
 
 const MatchDetail = () => {
   const { id } = useParams();
+  const { managedClubId } = useAppContext();
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showLineupSelector, setShowLineupSelector] = useState(false);
-  const [managedClubId, setManagedClubId] = useState(null);
 
   // Lade Spieldaten aus der API
   useEffect(() => {
@@ -58,15 +59,8 @@ const MatchDetail = () => {
       });
   }, [id]);
 
-  // Lade den verwalteten Verein aus den Einstellungen
-  useEffect(() => {
-    // In einer echten Anwendung würde dies aus den Benutzereinstellungen geladen
-    // Für dieses Beispiel verwenden wir localStorage
-    const storedManagedClubId = localStorage.getItem('managedClubId');
-    if (storedManagedClubId) {
-      setManagedClubId(parseInt(storedManagedClubId));
-    }
-  }, []);
+  // Note: managedClubId is now loaded from AppContext (backend source of truth)
+  // No need to load from localStorage anymore
 
   if (loading) {
     return <div className="loading">Lade Spieldaten...</div>;

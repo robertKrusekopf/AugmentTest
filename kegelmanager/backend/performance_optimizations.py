@@ -403,9 +403,9 @@ def batch_set_player_availability(clubs_with_matches, teams_playing, playing_tea
             # Get all teams for this club
             all_club_teams = Team.query.filter_by(club_id=club_id).order_by(Team.league_id).all()
 
-            # Get player IDs sorted by rating (best players first)
+            # Get active (non-retired) player IDs sorted by rating (best players first)
             from simulation import calculate_player_rating
-            club_players = Player.query.filter_by(club_id=club_id).all()
+            club_players = Player.query.filter_by(club_id=club_id, is_retired=False).all()
             club_players.sort(key=calculate_player_rating, reverse=True)
             player_ids = [p.id for p in club_players]
 

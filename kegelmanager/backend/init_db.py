@@ -4,10 +4,11 @@ import random
 import numpy as np
 from datetime import datetime, timedelta
 from flask import Flask
-from models import db, Player, Team, Club, League, Match, Season, Finance
+from models import db, Player, Team, Club, League, Match, Season, Finance, GameSettings, NotificationSettings
 import xlrd
 import requests
 from bs4 import BeautifulSoup
+from config.config import get_config
 
 
 # Funktionen für die Namensgenerierung und Spielerstärke
@@ -84,31 +85,99 @@ def calculate_lane_quality_for_club(club):
 
     return lane_quality
 
+def generate_retirement_age():
+    """
+    Generiert das Ruhestandsalter für einen Spieler.
+
+    Verwendet Werte aus der Konfigurationsdatei (game_config.json).
+    Standard: ~80% zwischen 35-40 Jahren, Rest zwischen 30-45 Jahren.
+
+    Returns:
+        int: Ruhestandsalter zwischen min_age und max_age
+    """
+    config = get_config()
+    mean_age = config.get('player_generation.retirement.mean_age', 37.5)
+    std_dev = config.get('player_generation.retirement.std_dev', 1.95)
+    min_age = config.get('player_generation.retirement.min_age', 30)
+    max_age = config.get('player_generation.retirement.max_age', 45)
+
+    retirement_age = int(np.random.normal(mean_age, std_dev))
+    # Clamp auf konfigurierten Bereich
+    retirement_age = max(min_age, min(max_age, retirement_age))
+    return retirement_age
+
+
+def get_age_range_for_altersklasse(altersklasse):
+    """
+    Bestimmt den Altersbereich basierend auf der Altersklasse der Liga.
+
+    Args:
+        altersklasse: String mit der Altersklasse (z.B. "Herren", "A-Jugend", "A", etc.)
+
+    Returns:
+        tuple: (min_age, max_age) für die Altersklasse
+    """
+    if not altersklasse:
+        return (18, 35)  # Default: Herren
+
+    altersklasse_lower = altersklasse.lower().strip()
+
+    # Jugendklassen (sowohl Langform "A-Jugend" als auch Kurzform "A")
+    if 'a-jugend' in altersklasse_lower or 'a jugend' in altersklasse_lower or altersklasse_lower == 'a':
+        return (17, 18)
+    elif 'b-jugend' in altersklasse_lower or 'b jugend' in altersklasse_lower or altersklasse_lower == 'b':
+        return (15, 16)
+    elif 'c-jugend' in altersklasse_lower or 'c jugend' in altersklasse_lower or altersklasse_lower == 'c':
+        return (13, 14)
+    elif 'd-jugend' in altersklasse_lower or 'd jugend' in altersklasse_lower or altersklasse_lower == 'd':
+        return (11, 12)
+    elif 'e-jugend' in altersklasse_lower or 'e jugend' in altersklasse_lower or altersklasse_lower == 'e':
+        return (9, 10)
+    elif 'f-jugend' in altersklasse_lower or 'f jugend' in altersklasse_lower or altersklasse_lower == 'f':
+        return (7, 8)
+    else:
+        # Herren oder unbekannte Altersklasse
+        return (18, 35)
+
 def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False, team_staerke=None):
     """
     Calculate player attributes based on team strength.
-
+    Uses values from game_config.json.
     """
+    config = get_config()
+
+    # Get configuration values
+    base_std_dev = config.get('player_generation.attributes.base_std_dev', 5.0)
+    league_factor = config.get('player_generation.attributes.league_level_factor', 0.5)
+    min_attr = config.get('player_generation.attributes.min_attribute_value', 1)
+    max_attr = config.get('player_generation.attributes.max_attribute_value', 99)
+    talent_min = config.get('player_generation.talent.min', 1)
+    talent_max = config.get('player_generation.talent.max', 10)
+
+    attr_base_offset = config.get('player_generation.attributes.attr_base_value_offset', 60)
+    attr_strength_factor = config.get('player_generation.attributes.attr_strength_factor', 0.6)
+    attr_std_dev_base = config.get('player_generation.attributes.attr_std_dev_base', 5.0)
+    attr_std_dev_league_factor = config.get('player_generation.attributes.attr_std_dev_league_factor', 0.3)
 
     # Calculate standard deviation (higher leagues have more consistent players)
-    std_dev = 5 + (league_level - 1) * 0.5
+    std_dev = base_std_dev + (league_level - 1) * league_factor
 
     # Generate attribute values using normal distribution
-    player_strength = max(1, min(99, int(np.random.normal(team_staerke, std_dev))))
+    player_strength = max(min_attr, min(max_attr, int(np.random.normal(team_staerke, std_dev))))
 
     attributes = {
         'strength': player_strength,
-        'talent': random.randint(1, 10),  # Talent is independent of league level
+        'talent': random.randint(talent_min, talent_max),  # Talent is independent of league level
     }
 
     # Calculate other attributes based on strength
-    base_attr_value = 60 + (attributes['strength'] - 50) * 0.6
-    attr_std_dev = 5 + (league_level - 1) * 0.3
+    base_attr_value = attr_base_offset + (attributes['strength'] - 50) * attr_strength_factor
+    attr_std_dev = attr_std_dev_base + (league_level - 1) * attr_std_dev_league_factor
 
     # Generate all other attributes
     for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
                 'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
-        attributes[attr] = max(1, min(99, int(np.random.normal(base_attr_value, attr_std_dev))))
+        attributes[attr] = max(min_attr, min(max_attr, int(np.random.normal(base_attr_value, attr_std_dev))))
 
     return attributes
 
@@ -326,14 +395,33 @@ def create_sample_data(custom_app=None):
                         # Hier setzen wir erstmal einen Standardwert
                         lane_quality = 1.0
 
+                        # Get club generation config
+                        config = get_config()
+                        founded_min = config.get('club_generation.founded_year_min', 1900)
+                        founded_max = config.get('club_generation.founded_year_max', 1980)
+                        rep_min = config.get('club_generation.reputation_min', 50)
+                        rep_max = config.get('club_generation.reputation_max', 90)
+                        fans_min = config.get('club_generation.fans_min', 500)
+                        fans_max = config.get('club_generation.fans_max', 10000)
+                        training_min = config.get('club_generation.training_facilities_min', 30)
+                        training_max = config.get('club_generation.training_facilities_max', 90)
+                        coaching_min = config.get('club_generation.coaching_min', 30)
+                        coaching_max = config.get('club_generation.coaching_max', 90)
+                        balance_min = config.get('club_generation.initial_balance_min', 500000)
+                        balance_max = config.get('club_generation.initial_balance_max', 2000000)
+                        income_min = config.get('club_generation.initial_income_min', 50000)
+                        income_max = config.get('club_generation.initial_income_max', 200000)
+                        expenses_min = config.get('club_generation.initial_expenses_min', 40000)
+                        expenses_max = config.get('club_generation.initial_expenses_max', 180000)
+
                         # Neuen Verein erstellen
                         club = Club(
                             name=zeile_arr[1],
-                            founded=random.randint(1900, 1980),
-                            reputation=random.randint(50, 90),
-                            fans=random.randint(500, 10000),
-                            training_facilities=random.randint(30, 90),
-                            coaching=random.randint(30, 90),
+                            founded=random.randint(founded_min, founded_max),
+                            reputation=random.randint(rep_min, rep_max),
+                            fans=random.randint(fans_min, fans_max),
+                            training_facilities=random.randint(training_min, training_max),
+                            coaching=random.randint(coaching_min, coaching_max),
                             verein_id=verein_id,
                             lane_quality=lane_quality
                         )
@@ -350,9 +438,9 @@ def create_sample_data(custom_app=None):
                         # Add initial finances
                         finance = Finance(
                             club_id=club.id,
-                            balance=random.randint(500000, 2000000),
-                            income=random.randint(50000, 200000),
-                            expenses=random.randint(40000, 180000),
+                            balance=random.randint(balance_min, balance_max),
+                            income=random.randint(income_min, income_max),
+                            expenses=random.randint(expenses_min, expenses_max),
                             date=datetime.now().date(),
                             description="Initial balance"
                         )
@@ -439,18 +527,22 @@ def create_sample_data(custom_app=None):
 
 
         for team in all_teams:
-            # Generate players per team based on league level
-            # Levels 1-4: 8-10 players
-            # Levels 5-8: 7-9 players
-            # Levels 9+: 7-8 players
+            # Generate players per team based on league level (from config)
+            config = get_config()
             league_level = team.league.level if team.league else 5  # Default to middle level if no league
 
             if league_level <= 4:
-                num_players = random.randint(8, 10)
+                min_players = config.get('team_generation.players_per_team.level_1_4_min', 8)
+                max_players = config.get('team_generation.players_per_team.level_1_4_max', 10)
+                num_players = random.randint(min_players, max_players)
             elif league_level <= 8:
-                num_players = random.randint(7, 9)
+                min_players = config.get('team_generation.players_per_team.level_5_8_min', 7)
+                max_players = config.get('team_generation.players_per_team.level_5_8_max', 9)
+                num_players = random.randint(min_players, max_players)
             else:  # Level 9 and below
-                num_players = random.randint(7, 8)
+                min_players = config.get('team_generation.players_per_team.level_9_plus_min', 7)
+                max_players = config.get('team_generation.players_per_team.level_9_plus_max', 8)
+                num_players = random.randint(min_players, max_players)
 
             print(f"Generating {num_players} players for team {team.name} (League Level {league_level})")
 
@@ -469,33 +561,50 @@ def create_sample_data(custom_app=None):
                     team_staerke=team.staerke  # Pass the team's strength value
                 )
 
-                # Youth players are younger
-                if team.is_youth_team:
-                    age = random.randint(16, 19)
+                # Get configuration values
+                config = get_config()
+                youth_min = config.get('player_generation.age_ranges.youth_min', 16)
+                youth_max = config.get('player_generation.age_ranges.youth_max', 19)
+                adult_min = config.get('player_generation.age_ranges.adult_min', 20)
+                adult_max = config.get('player_generation.age_ranges.adult_max', 35)
+
+                contract_min = config.get('player_generation.contract.min_years', 1)
+                contract_max = config.get('player_generation.contract.max_years', 4)
+
+                salary_multiplier = config.get('player_generation.salary.base_multiplier', 100)
+                prime_age_min = config.get('player_generation.salary.prime_age_min', 25)
+                prime_age_max = config.get('player_generation.salary.prime_age_max', 30)
+                prime_factor = config.get('player_generation.salary.prime_age_factor', 1.5)
+                normal_factor = config.get('player_generation.salary.normal_age_factor', 1.0)
+
+                positions = config.get('player_generation.positions', ["Angriff", "Mittelfeld", "Abwehr"])
+
+                # Determine age based on league's altersklasse
+                if team.league and team.league.altersklasse:
+                    min_age, max_age = get_age_range_for_altersklasse(team.league.altersklasse)
+                    age = random.randint(min_age, max_age)
+                elif team.is_youth_team:
+                    # Fallback: use old logic if no altersklasse is set
+                    age = random.randint(youth_min, youth_max)
                 else:
-                    age = random.randint(20, 35)
+                    # Default: Herren (18-35 Jahre)
+                    age = random.randint(18, 35)
 
                 # Get attributes from the calculated values
                 strength = attributes['strength']
                 talent = attributes['talent']
 
-                # Contract length based on age
-                if age < 23:
-                    contract_years = random.randint(3, 5)
-                elif age < 30:
-                    contract_years = random.randint(2, 4)
-                else:
-                    contract_years = random.randint(1, 2)
-
+                # Contract length
+                contract_years = random.randint(contract_min, contract_max)
                 contract_end = datetime.now() + timedelta(days=365 * contract_years)
 
                 # Salary based on strength and age
-                base_salary = strength * 100
-                age_factor = 1.5 if 25 <= age <= 30 else 1.0
+                base_salary = strength * salary_multiplier
+                age_factor = prime_factor if prime_age_min <= age <= prime_age_max else normal_factor
                 salary = base_salary * age_factor
 
                 # Random position
-                position = random.choice(["Angriff", "Mittelfeld", "Abwehr"])
+                position = random.choice(positions)
 
                 # Get all the other attributes from the calculated values
                 ausdauer = attributes['ausdauer']
@@ -516,6 +625,9 @@ def create_sample_data(custom_app=None):
                     full_name = f"{first_name} {last_name}"
                 else:
                     full_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+
+                # Generiere Ruhestandsalter
+                retirement_age = generate_retirement_age()
 
                 player = Player(
                     name=full_name,
@@ -538,7 +650,10 @@ def create_sample_data(custom_app=None):
                     auswaerts=auswaerts,
                     start=start,
                     mitte=mitte,
-                    schluss=schluss
+                    schluss=schluss,
+                    # Ruhestandsalter
+                    retirement_age=retirement_age,
+                    is_retired=False
                 )
                 db.session.add(player)
 
@@ -617,6 +732,35 @@ def create_sample_data(custom_app=None):
 
         except Exception as e:
             print(f"Error recalculating cup match days: {str(e)}")
+
+        # Create default GameSettings record
+        print("Creating default game settings...")
+        try:
+            # Check if GameSettings already exists (shouldn't happen in new DB, but be safe)
+            existing_settings = GameSettings.query.first()
+            if not existing_settings:
+                settings = GameSettings(manager_club_id=None)
+                db.session.add(settings)
+                print("Default game settings created (manager_club_id=NULL)")
+                print("Users can select their managed club in the Settings page")
+            else:
+                print("Game settings already exist, skipping creation")
+        except Exception as e:
+            print(f"Error creating game settings: {str(e)}")
+
+        # Create default NotificationSettings record
+        print("Creating default notification settings...")
+        try:
+            # Check if NotificationSettings already exists
+            existing_notification_settings = NotificationSettings.query.first()
+            if not existing_notification_settings:
+                notification_settings = NotificationSettings()
+                db.session.add(notification_settings)
+                print("Default notification settings created (all categories enabled)")
+            else:
+                print("Notification settings already exist, skipping creation")
+        except Exception as e:
+            print(f"Error creating notification settings: {str(e)}")
 
         # Final commit
         db.session.commit()

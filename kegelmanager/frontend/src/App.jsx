@@ -12,6 +12,7 @@ import Sidebar from './components/Sidebar'
 // Pages
 import MainMenu from './pages/MainMenu'
 import Dashboard from './pages/Dashboard'
+import Messages from './pages/Messages'
 import Clubs from './pages/Clubs'
 import ClubDetail from './pages/ClubDetail'
 import Teams from './pages/Teams'
@@ -71,6 +72,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/main-menu" element={<MainMenu />} />
+              <Route path="/messages" element={<Messages />} />
               <Route path="/clubs" element={<Clubs />} />
               <Route path="/clubs/:id" element={<ClubDetail />} />
               <Route path="/teams" element={<Teams />} />

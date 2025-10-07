@@ -1,37 +1,28 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { getClubs, getClub } from '../services/api';
+import { getClubs, getClub, getUnreadMessageCount } from '../services/api';
+import { useAppContext } from '../contexts/AppContext';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen }) => {
+  const { managedClubId } = useAppContext();
   const [userClub, setUserClub] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
 
-  // Lade den Verein des Benutzers
+  // Lade den Verein des Benutzers basierend auf managedClubId aus AppContext
   const loadUserClub = async () => {
     try {
       setLoading(true);
-      // Lade die Einstellungen aus dem localStorage
-      const savedSettings = localStorage.getItem('gameSettings');
-      let managerClubId = null;
 
-      if (savedSettings) {
+      // Verwende managedClubId aus AppContext (bereits vom Backend geladen)
+      if (managedClubId) {
         try {
-          const settings = JSON.parse(savedSettings);
-          managerClubId = settings.game?.managerClubId || null;
-        } catch (e) {
-          console.error('Failed to parse saved settings:', e);
-        }
-      }
-
-      // Wenn ein Manager-Verein ausgewählt wurde, lade diesen
-      if (managerClubId) {
-        try {
-          const club = await getClub(managerClubId);
+          const club = await getClub(managedClubId);
           setUserClub(club);
         } catch (error) {
-          console.error(`Fehler beim Laden des Vereins mit ID ${managerClubId}:`, error);
+          console.error(`Fehler beim Laden des Vereins mit ID ${managedClubId}:`, error);
           // Fallback: Setze keinen Verein als aktiv
           setUserClub(null);
         }
@@ -47,26 +38,53 @@ const Sidebar = ({ isOpen }) => {
     }
   };
 
-  // Lade den Verein beim ersten Rendern
+  // Lade die Anzahl ungelesener Nachrichten
+  const loadUnreadMessageCount = async () => {
+    try {
+      const data = await getUnreadMessageCount();
+      setUnreadMessageCount(data.count || 0);
+    } catch (error) {
+      console.error('Fehler beim Laden der ungelesenen Nachrichten:', error);
+      setUnreadMessageCount(0);
+    }
+  };
+
+  // Lade den Verein wenn managedClubId sich ändert
   useEffect(() => {
     loadUserClub();
+  }, [managedClubId]);
+
+  // Lade ungelesene Nachrichten beim ersten Rendern
+  useEffect(() => {
+    loadUnreadMessageCount();
   }, []);
 
-  // Reagiere auf Änderungen im localStorage (wenn die Einstellungen geändert werden)
+  // Aktualisiere die Anzahl ungelesener Nachrichten regelmäßig
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'gameSettings') {
-        loadUserClub();
-      }
+    // Lade initial
+    loadUnreadMessageCount();
+
+    // Aktualisiere alle 30 Sekunden
+    const interval = setInterval(() => {
+      loadUnreadMessageCount();
+    }, 30000);
+
+    // Event-Listener für manuelle Aktualisierung
+    const handleMessageUpdate = () => {
+      loadUnreadMessageCount();
     };
 
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('messagesUpdated', handleMessageUpdate);
 
     // Cleanup
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+      window.removeEventListener('messagesUpdated', handleMessageUpdate);
     };
   }, []);
+
+  // Note: We no longer need to listen to localStorage changes
+  // because we use managedClubId from AppContext which is the source of truth
   return (
     <aside className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
       <div className="sidebar-content">
@@ -123,6 +141,20 @@ const Sidebar = ({ isOpen }) => {
                   <rect x="3" y="16" width="7" height="5"></rect>
                 </svg>
                 <span>Dashboard</span>
+              </NavLink>
+            </li>
+            <li>
+              <NavLink to="/messages" className={({ isActive }) => isActive ? 'active' : ''}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                  <polyline points="22,6 12,13 2,6"></polyline>
+                </svg>
+                <span>
+                  Nachrichten
+                  {unreadMessageCount > 0 && (
+                    <span className="unread-badge">{unreadMessageCount}</span>
+                  )}
+                </span>
               </NavLink>
             </li>
             <li>

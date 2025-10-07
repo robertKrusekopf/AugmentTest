@@ -66,6 +66,11 @@ class Player(db.Model):
     form_medium_remaining_days = db.Column(db.Integer, default=0) # Verbleibende Tage für mittelfristige Form
     form_long_remaining_days = db.Column(db.Integer, default=0)   # Verbleibende Tage für langfristige Form
 
+    # Ruhestandssystem
+    retirement_age = db.Column(db.Integer, nullable=True)  # Alter, in dem der Spieler in den Ruhestand geht
+    is_retired = db.Column(db.Boolean, default=False, index=True)  # Ist der Spieler im Ruhestand?
+    retirement_season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=True)  # Saison des Ruhestands
+
     # Relationships
     club = db.relationship('Club', back_populates='players')
     teams = db.relationship('Team', secondary=player_team, back_populates='players')
@@ -258,6 +263,10 @@ class Player(db.Model):
             # Spieltag-bezogene Flags
             'has_played_current_matchday': self.has_played_current_matchday,
             'is_available_current_matchday': self.is_available_current_matchday,
+            # Ruhestandssystem
+            'retirement_age': self.retirement_age,
+            'is_retired': self.is_retired,
+            'retirement_season_id': self.retirement_season_id,
             # Include player statistics
             'statistics': self.calculate_stats()
         }
@@ -350,6 +359,10 @@ class Team(db.Model):
         current_season = Season.query.filter_by(is_current=True).first()
 
         for player in self.players:
+            # Skip retired players
+            if player.is_retired:
+                continue
+
             # Calculate statistics for this player specifically for this team (all-time)
             team_stats = player.calculate_team_specific_stats(self.id)
             # Calculate current season statistics
@@ -385,6 +398,10 @@ class Team(db.Model):
         # Get detailed player information for substitute players
         substitute_players = self.get_substitute_players()
         for player in substitute_players:
+            # Skip retired players
+            if player.is_retired:
+                continue
+
             # Calculate statistics for this player specifically for this team (all-time)
             team_stats = player.calculate_team_specific_stats(self.id)
             # Calculate current season statistics
@@ -434,34 +451,58 @@ class Team(db.Model):
         # Get home league matches (only from current season)
         home_matches = Match.query.filter_by(home_team_id=self.id, is_played=True, season_id=current_season_id).all()
         for match in home_matches:
+            # Get opponent club information
+            opponent_club_info = {}
+            if match.away_team and match.away_team.club:
+                opponent_club_info = {
+                    'opponent_club_id': match.away_team.club.id,
+                    'opponent_club_name': match.away_team.club.name,
+                    'opponent_emblem_url': f"/api/club-emblem/{match.away_team.club.verein_id}" if match.away_team.club.verein_id else None
+                }
+
             match_data = {
                 'id': match.id,
                 'date': match.match_date.isoformat() if match.match_date else None,
                 'homeTeam': self.name,
                 'awayTeam': match.away_team.name,
+                'opponent_name': match.away_team.name,
+                'is_home': True,
                 'homeScore': match.home_score,
                 'awayScore': match.away_score,
                 'league': match.league.name,
                 'status': 'played',
                 'match_type': 'league',
-                'match_day': match.match_day or 0
+                'match_day': match.match_day or 0,
+                **opponent_club_info
             }
             all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
         # Get away league matches (only from current season)
         away_matches = Match.query.filter_by(away_team_id=self.id, is_played=True, season_id=current_season_id).all()
         for match in away_matches:
+            # Get opponent club information
+            opponent_club_info = {}
+            if match.home_team and match.home_team.club:
+                opponent_club_info = {
+                    'opponent_club_id': match.home_team.club.id,
+                    'opponent_club_name': match.home_team.club.name,
+                    'opponent_emblem_url': f"/api/club-emblem/{match.home_team.club.verein_id}" if match.home_team.club.verein_id else None
+                }
+
             match_data = {
                 'id': match.id,
                 'date': match.match_date.isoformat() if match.match_date else None,
                 'homeTeam': match.home_team.name,
                 'awayTeam': self.name,
+                'opponent_name': match.home_team.name,
+                'is_home': False,
                 'homeScore': match.home_score,
                 'awayScore': match.away_score,
                 'league': match.league.name,
                 'status': 'played',
                 'match_type': 'league',
-                'match_day': match.match_day or 0
+                'match_day': match.match_day or 0,
+                **opponent_club_info
             }
             all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
@@ -472,10 +513,12 @@ class Team(db.Model):
             home_cup_matches_raw = db.session.execute(
                 text("""
                     SELECT cm.id, cm.match_date, cm.home_score, cm.away_score,
-                           cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as away_team_name
+                           cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as away_team_name,
+                           cl.id as away_club_id, cl.name as away_club_name, cl.verein_id as away_club_verein_id
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     LEFT JOIN team t ON cm.away_team_id = t.id
+                    LEFT JOIN club cl ON t.club_id = cl.id
                     WHERE cm.home_team_id = :team_id AND cm.is_played = 1 AND c.season_id = :season_id
                 """),
                 {"team_id": self.id, "season_id": current_season_id}
@@ -492,17 +535,29 @@ class Team(db.Model):
                 else:
                     date_str = None
 
+                # Get opponent club information
+                opponent_club_info = {}
+                if cup_match_row.away_club_id:
+                    opponent_club_info = {
+                        'opponent_club_id': cup_match_row.away_club_id,
+                        'opponent_club_name': cup_match_row.away_club_name,
+                        'opponent_emblem_url': f"/api/club-emblem/{cup_match_row.away_club_verein_id}" if cup_match_row.away_club_verein_id else None
+                    }
+
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
                     'date': date_str,
                     'homeTeam': self.name,
                     'awayTeam': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
+                    'opponent_name': cup_match_row.away_team_name if cup_match_row.away_team_name else 'Freilos',
+                    'is_home': True,
                     'homeScore': cup_match_row.home_score,
                     'awayScore': cup_match_row.away_score,
                     'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
                     'status': 'played',
                     'match_type': 'cup',
-                    'match_day': cup_match_row.cup_match_day or 0
+                    'match_day': cup_match_row.cup_match_day or 0,
+                    **opponent_club_info
                 }
                 all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
 
@@ -510,10 +565,12 @@ class Team(db.Model):
             away_cup_matches_raw = db.session.execute(
                 text("""
                     SELECT cm.id, cm.match_date, cm.home_score, cm.away_score,
-                           cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as home_team_name
+                           cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as home_team_name,
+                           cl.id as home_club_id, cl.name as home_club_name, cl.verein_id as home_club_verein_id
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     JOIN team t ON cm.home_team_id = t.id
+                    LEFT JOIN club cl ON t.club_id = cl.id
                     WHERE cm.away_team_id = :team_id AND cm.is_played = 1 AND c.season_id = :season_id
                 """),
                 {"team_id": self.id, "season_id": current_season_id}
@@ -530,17 +587,29 @@ class Team(db.Model):
                 else:
                     date_str = None
 
+                # Get opponent club information
+                opponent_club_info = {}
+                if cup_match_row.home_club_id:
+                    opponent_club_info = {
+                        'opponent_club_id': cup_match_row.home_club_id,
+                        'opponent_club_name': cup_match_row.home_club_name,
+                        'opponent_emblem_url': f"/api/club-emblem/{cup_match_row.home_club_verein_id}" if cup_match_row.home_club_verein_id else None
+                    }
+
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
                     'date': date_str,
                     'homeTeam': cup_match_row.home_team_name,
                     'awayTeam': self.name,
+                    'opponent_name': cup_match_row.home_team_name,
+                    'is_home': False,
                     'homeScore': cup_match_row.home_score,
                     'awayScore': cup_match_row.away_score,
                     'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
                     'status': 'played',
                     'match_type': 'cup',
-                    'match_day': cup_match_row.cup_match_day or 0
+                    'match_day': cup_match_row.cup_match_day or 0,
+                    **opponent_club_info
                 }
                 all_played_matches.append((match_data['date'] or '1900-01-01', match_data))
         except Exception as e:
@@ -563,6 +632,15 @@ class Team(db.Model):
         # Get home league matches (only from current season)
         home_matches = Match.query.filter_by(home_team_id=self.id, is_played=False, season_id=current_season_id).all()
         for match in home_matches:
+            # Get opponent club information
+            opponent_club_info = {}
+            if match.away_team and match.away_team.club:
+                opponent_club_info = {
+                    'opponent_club_id': match.away_team.club.id,
+                    'opponent_club_name': match.away_team.club.name,
+                    'opponent_emblem_url': f"/api/club-emblem/{match.away_team.club.verein_id}" if match.away_team.club.verein_id else None
+                }
+
             match_data = {
                 'id': match.id,
                 'date': match.match_date.isoformat() if match.match_date else None,
@@ -574,13 +652,23 @@ class Team(db.Model):
                 'league': match.league.name,
                 'status': 'upcoming',
                 'match_type': 'league',
-                'match_day': match.match_day or 0
+                'match_day': match.match_day or 0,
+                **opponent_club_info
             }
             all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
         # Get away league matches (only from current season)
         away_matches = Match.query.filter_by(away_team_id=self.id, is_played=False, season_id=current_season_id).all()
         for match in away_matches:
+            # Get opponent club information
+            opponent_club_info = {}
+            if match.home_team and match.home_team.club:
+                opponent_club_info = {
+                    'opponent_club_id': match.home_team.club.id,
+                    'opponent_club_name': match.home_team.club.name,
+                    'opponent_emblem_url': f"/api/club-emblem/{match.home_team.club.verein_id}" if match.home_team.club.verein_id else None
+                }
+
             match_data = {
                 'id': match.id,
                 'date': match.match_date.isoformat() if match.match_date else None,
@@ -592,7 +680,8 @@ class Team(db.Model):
                 'league': match.league.name,
                 'status': 'upcoming',
                 'match_type': 'league',
-                'match_day': match.match_day or 0
+                'match_day': match.match_day or 0,
+                **opponent_club_info
             }
             all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
@@ -601,10 +690,12 @@ class Team(db.Model):
             # Query upcoming home cup matches (only current season)
             home_cup_matches_raw = db.session.execute(
                 text("""
-                    SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as away_team_name
+                    SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as away_team_name,
+                           cl.id as away_club_id, cl.name as away_club_name, cl.verein_id as away_club_verein_id
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     LEFT JOIN team t ON cm.away_team_id = t.id
+                    LEFT JOIN club cl ON t.club_id = cl.id
                     WHERE cm.home_team_id = :team_id AND cm.is_played = 0 AND c.season_id = :season_id
                 """),
                 {"team_id": self.id, "season_id": current_season_id}
@@ -621,6 +712,15 @@ class Team(db.Model):
                 else:
                     date_str = None
 
+                # Get opponent club information
+                opponent_club_info = {}
+                if cup_match_row.away_club_id:
+                    opponent_club_info = {
+                        'opponent_club_id': cup_match_row.away_club_id,
+                        'opponent_club_name': cup_match_row.away_club_name,
+                        'opponent_emblem_url': f"/api/club-emblem/{cup_match_row.away_club_verein_id}" if cup_match_row.away_club_verein_id else None
+                    }
+
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
                     'date': date_str,
@@ -632,17 +732,20 @@ class Team(db.Model):
                     'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
                     'status': 'upcoming',
                     'match_type': 'cup',
-                    'match_day': cup_match_row.cup_match_day or 0
+                    'match_day': cup_match_row.cup_match_day or 0,
+                    **opponent_club_info
                 }
                 all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
 
             # Query upcoming away cup matches (only current season)
             away_cup_matches_raw = db.session.execute(
                 text("""
-                    SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as home_team_name
+                    SELECT cm.id, cm.match_date, cm.round_name, cm.cup_match_day, c.name as cup_name, t.name as home_team_name,
+                           cl.id as home_club_id, cl.name as home_club_name, cl.verein_id as home_club_verein_id
                     FROM cup_match cm
                     JOIN cup c ON cm.cup_id = c.id
                     JOIN team t ON cm.home_team_id = t.id
+                    LEFT JOIN club cl ON t.club_id = cl.id
                     WHERE cm.away_team_id = :team_id AND cm.is_played = 0 AND c.season_id = :season_id
                 """),
                 {"team_id": self.id, "season_id": current_season_id}
@@ -659,6 +762,15 @@ class Team(db.Model):
                 else:
                     date_str = None
 
+                # Get opponent club information
+                opponent_club_info = {}
+                if cup_match_row.home_club_id:
+                    opponent_club_info = {
+                        'opponent_club_id': cup_match_row.home_club_id,
+                        'opponent_club_name': cup_match_row.home_club_name,
+                        'opponent_emblem_url': f"/api/club-emblem/{cup_match_row.home_club_verein_id}" if cup_match_row.home_club_verein_id else None
+                    }
+
                 match_data = {
                     'id': get_cup_match_frontend_id(cup_match_row.id),  # Convert to frontend ID
                     'date': date_str,
@@ -670,7 +782,8 @@ class Team(db.Model):
                     'league': f"{cup_match_row.cup_name} - {cup_match_row.round_name}",
                     'status': 'upcoming',
                     'match_type': 'cup',
-                    'match_day': cup_match_row.cup_match_day or 0
+                    'match_day': cup_match_row.cup_match_day or 0,
+                    **opponent_club_info
                 }
                 all_upcoming_matches.append((match_data['date'] or '9999-12-31', match_data))
         except Exception as e:
@@ -871,9 +984,13 @@ class Club(db.Model):
 
             teams_info.append(team_info)
 
-        # Get detailed player information
+        # Get detailed player information (exclude retired players)
         players_info = []
         for player in self.players:
+            # Skip retired players
+            if player.is_retired:
+                continue
+
             player_info = {
                 'id': player.id,
                 'name': player.name,
@@ -2624,3 +2741,107 @@ class PlayerCupMatchPerformance(db.Model):
             'set_points': self.set_points,
             'match_points': self.match_points
         }
+
+
+class Message(db.Model):
+    """Model for in-game messages/notifications."""
+    id = db.Column(db.Integer, primary_key=True)
+    subject = db.Column(db.String(200), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    message_type = db.Column(db.String(50), default='info')  # info, success, warning, error
+    notification_category = db.Column(db.String(50), default='general', index=True)  # Category for filtering
+    is_read = db.Column(db.Boolean, default=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    # Optional: Link to related entities
+    related_club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=True)
+    related_team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=True)
+    related_player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=True)
+    related_match_id = db.Column(db.Integer, db.ForeignKey('match.id'), nullable=True)
+
+    # Relationships
+    related_club = db.relationship('Club', foreign_keys=[related_club_id])
+    related_team = db.relationship('Team', foreign_keys=[related_team_id])
+    related_player = db.relationship('Player', foreign_keys=[related_player_id])
+    related_match = db.relationship('Match', foreign_keys=[related_match_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'subject': self.subject,
+            'content': self.content,
+            'message_type': self.message_type,
+            'notification_category': self.notification_category,
+            'is_read': self.is_read,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'related_club_id': self.related_club_id,
+            'related_team_id': self.related_team_id,
+            'related_player_id': self.related_player_id,
+            'related_match_id': self.related_match_id,
+            'related_club_name': self.related_club.name if self.related_club else None,
+            'related_team_name': self.related_team.name if self.related_team else None,
+            'related_player_name': self.related_player.name if self.related_player else None,
+        }
+
+
+class GameSettings(db.Model):
+    """
+    Stores game settings like the manager's club.
+    Only one row should exist in this table.
+    """
+    __tablename__ = 'game_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    manager_club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=True)
+
+    # Relationship
+    manager_club = db.relationship('Club', foreign_keys=[manager_club_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'manager_club_id': self.manager_club_id,
+            'manager_club_name': self.manager_club.name if self.manager_club else None,
+        }
+
+
+class NotificationSettings(db.Model):
+    """
+    Stores user notification preferences.
+    Only one row should exist in this table.
+    """
+    __tablename__ = 'notification_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Notification category toggles (True = enabled, False = disabled)
+    player_retirement = db.Column(db.Boolean, default=True)
+    transfers = db.Column(db.Boolean, default=True)
+    match_results = db.Column(db.Boolean, default=True)
+    injuries = db.Column(db.Boolean, default=True)
+    contracts = db.Column(db.Boolean, default=True)
+    finances = db.Column(db.Boolean, default=True)
+    achievements = db.Column(db.Boolean, default=True)
+    general = db.Column(db.Boolean, default=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'player_retirement': self.player_retirement,
+            'transfers': self.transfers,
+            'match_results': self.match_results,
+            'injuries': self.injuries,
+            'contracts': self.contracts,
+            'finances': self.finances,
+            'achievements': self.achievements,
+            'general': self.general,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def is_category_enabled(self, category):
+        """Check if a notification category is enabled."""
+        return getattr(self, category, True)

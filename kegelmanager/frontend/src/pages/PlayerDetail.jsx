@@ -119,7 +119,9 @@ const PlayerDetail = () => {
             form_long_term: processedPlayer.form_long_term || 0,
             form_short_remaining_days: processedPlayer.form_short_remaining_days || 0,
             form_medium_remaining_days: processedPlayer.form_medium_remaining_days || 0,
-            form_long_remaining_days: processedPlayer.form_long_remaining_days || 0
+            form_long_remaining_days: processedPlayer.form_long_remaining_days || 0,
+            // Retirement system attributes
+            retirement_age: processedPlayer.retirement_age || 40
           });
         } else {
           console.error(`Keine Daten für Spieler ${id} gefunden`);
@@ -892,6 +894,20 @@ const PlayerDetail = () => {
                         name="contract_end"
                         value={cheatForm.contract_end || ''}
                         onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="retirement_age">Ruhestandsalter (30-45):</label>
+                      <input
+                        type="number"
+                        id="retirement_age"
+                        name="retirement_age"
+                        min="30"
+                        max="45"
+                        value={cheatForm.retirement_age || ''}
+                        onChange={handleCheatInputChange}
+                        title="Alter, in dem der Spieler in den Ruhestand geht"
                       />
                     </div>
                   </div>

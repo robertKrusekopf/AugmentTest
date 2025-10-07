@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from flask import Flask
 from models import db, Player, Team, Club, League, Match, Season, Finance
 import xlrd
+from config.config import get_config
 
 
 def load_names_from_excel(file_path):
@@ -51,6 +52,62 @@ def select_random_name(names, frequencies):
             return name
     
     return names[-1]  # Fallback
+
+
+def generate_retirement_age():
+    """
+    Generiert das Ruhestandsalter für einen Spieler.
+
+    Verwendet Werte aus der Konfigurationsdatei (game_config.json).
+    Standard: ~80% zwischen 35-40 Jahren, Rest zwischen 30-45 Jahren.
+
+    Returns:
+        int: Ruhestandsalter zwischen min_age und max_age
+    """
+    config = get_config()
+    mean_age = config.get('player_generation.retirement.mean_age', 37.5)
+    std_dev = config.get('player_generation.retirement.std_dev', 1.95)
+    min_age = config.get('player_generation.retirement.min_age', 30)
+    max_age = config.get('player_generation.retirement.max_age', 45)
+
+    retirement_age = int(np.random.normal(mean_age, std_dev))
+    # Clamp auf konfigurierten Bereich
+    retirement_age = max(min_age, min(max_age, retirement_age))
+    return retirement_age
+
+
+def get_age_range_for_altersklasse(altersklasse):
+    """
+    Bestimmt den Altersbereich basierend auf der Altersklasse der Liga.
+    IDENTICAL to init_db.py version for consistency.
+
+    Args:
+        altersklasse: String mit der Altersklasse (z.B. "Herren", "A-Jugend", "A", etc.)
+
+    Returns:
+        tuple: (min_age, max_age) für die Altersklasse
+    """
+    if not altersklasse:
+        return (18, 35)  # Default: Herren
+
+    altersklasse_lower = altersklasse.lower().strip()
+
+    # Jugendklassen (sowohl Langform "A-Jugend" als auch Kurzform "A")
+    if 'a-jugend' in altersklasse_lower or 'a jugend' in altersklasse_lower or altersklasse_lower == 'a':
+        return (17, 18)
+    elif 'b-jugend' in altersklasse_lower or 'b jugend' in altersklasse_lower or altersklasse_lower == 'b':
+        return (15, 16)
+    elif 'c-jugend' in altersklasse_lower or 'c jugend' in altersklasse_lower or altersklasse_lower == 'c':
+        return (13, 14)
+    elif 'd-jugend' in altersklasse_lower or 'd jugend' in altersklasse_lower or altersklasse_lower == 'd':
+        return (11, 12)
+    elif 'e-jugend' in altersklasse_lower or 'e jugend' in altersklasse_lower or altersklasse_lower == 'e':
+        return (9, 10)
+    elif 'f-jugend' in altersklasse_lower or 'f jugend' in altersklasse_lower or altersklasse_lower == 'f':
+        return (7, 8)
+    else:
+        # Herren oder unbekannte Altersklasse
+        return (18, 35)
 
 
 def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False, team_staerke=None):
@@ -243,14 +300,14 @@ def analyze_existing_database():
             result = db.session.execute(db.text("""
                 SELECT id, name, club_id, age, talent, position, salary, contract_end,
                        ausdauer, konstanz, drucksicherheit, volle, raeumer, sicherheit,
-                       auswaerts, start, mitte, schluss
+                       auswaerts, start, mitte, schluss, retirement_age, is_retired
                 FROM player
             """))
 
             for row in result:
                 player_id, name, club_id, age, talent, position, salary, contract_end, \
                 ausdauer, konstanz, drucksicherheit, volle, raeumer, sicherheit, \
-                auswaerts, start, mitte, schluss = row
+                auswaerts, start, mitte, schluss, retirement_age, is_retired = row
 
                 missing_attributes = []
 
@@ -285,6 +342,10 @@ def analyze_existing_database():
                     missing_attributes.append('mitte')
                 if schluss is None or schluss == 0 or schluss == "":
                     missing_attributes.append('schluss')
+                if retirement_age is None or retirement_age == 0 or retirement_age == "":
+                    missing_attributes.append('retirement_age')
+                if is_retired is None:
+                    missing_attributes.append('is_retired')
 
                 if missing_attributes:
                     analysis["players_with_incomplete_attributes"].append({
@@ -305,7 +366,8 @@ def analyze_existing_database():
                     'club_id': club_id,
                     'missing_attributes': ['age', 'talent', 'position', 'salary', 'contract_end',
                                          'ausdauer', 'konstanz', 'drucksicherheit', 'volle', 'raeumer',
-                                         'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']
+                                         'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss',
+                                         'retirement_age', 'is_retired']
                 })
 
     return analysis
@@ -393,11 +455,16 @@ def supplement_missing_data(analysis):
                         team_staerke=team.staerke
                     )
 
-                    # Alter basierend auf Team-Typ
-                    if team.is_youth_team:
+                    # Determine age based on league's altersklasse
+                    if team.league and team.league.altersklasse:
+                        min_age, max_age = get_age_range_for_altersklasse(team.league.altersklasse)
+                        age = random.randint(min_age, max_age)
+                    elif team.is_youth_team:
+                        # Fallback: use old logic if no altersklasse is set
                         age = random.randint(16, 19)
                     else:
-                        age = random.randint(20, 35)
+                        # Default: Herren (18-35 Jahre)
+                        age = random.randint(18, 35)
 
                     # Gehalt basierend auf Stärke und Alter - IDENTICAL to init_db.py
                     base_salary = attributes['strength'] * 100
@@ -424,6 +491,9 @@ def supplement_missing_data(analysis):
                     else:
                         full_name = f"{random.choice(first_names)} {random.choice(last_names)}"
 
+                    # Generiere Ruhestandsalter
+                    retirement_age = generate_retirement_age()
+
                     # Spieler erstellen
                     player = Player(
                         name=full_name,
@@ -443,7 +513,10 @@ def supplement_missing_data(analysis):
                         auswaerts=attributes['auswaerts'],
                         start=attributes['start'],
                         mitte=attributes['mitte'],
-                        schluss=attributes['schluss']
+                        schluss=attributes['schluss'],
+                        # Ruhestandsalter
+                        retirement_age=retirement_age,
+                        is_retired=False
                     )
                     db.session.add(player)
 
@@ -469,9 +542,9 @@ def supplement_missing_data(analysis):
 
                 current_strength = row[0]
 
-                # Bestimme Team-Stärke für Attribut-Berechnung
+                # Bestimme Team-Stärke und Altersklasse für Attribut-Berechnung
                 team_result = db.session.execute(db.text("""
-                    SELECT t.staerke, l.level
+                    SELECT t.staerke, l.level, l.altersklasse
                     FROM team t
                     LEFT JOIN league l ON t.league_id = l.id
                     WHERE t.club_id = :club_id
@@ -481,11 +554,12 @@ def supplement_missing_data(analysis):
 
                 team_row = team_result.fetchone()
                 if team_row:
-                    team_staerke, league_level = team_row
+                    team_staerke, league_level, altersklasse = team_row
                     league_level = league_level or 5
                 else:
                     team_staerke = 50
                     league_level = 5
+                    altersklasse = None
 
                 # Verwende bestehende Stärke falls vorhanden, sonst berechne neue
                 if current_strength and current_strength > 0:
@@ -504,8 +578,13 @@ def supplement_missing_data(analysis):
 
                 # Ergänze fehlende Attribute - IDENTICAL to init_db.py logic
                 if 'age' in missing_attributes:
-                    # Bestimme ob Jugendteam (vereinfacht)
-                    updates['age'] = random.randint(20, 35)
+                    # Determine age based on league's altersklasse
+                    if altersklasse:
+                        min_age, max_age = get_age_range_for_altersklasse(altersklasse)
+                        updates['age'] = random.randint(min_age, max_age)
+                    else:
+                        # Fallback: default Herren age range (18-35)
+                        updates['age'] = random.randint(18, 35)
 
                 if 'talent' in missing_attributes:
                     updates['talent'] = random.randint(1, 10)
@@ -538,6 +617,13 @@ def supplement_missing_data(analysis):
                            'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
                     if attr in missing_attributes:
                         updates[attr] = max(1, min(99, int(np.random.normal(base_attr_value, attr_std_dev))))
+
+                # Ruhestandsalter ergänzen falls fehlend
+                if 'retirement_age' in missing_attributes:
+                    updates['retirement_age'] = generate_retirement_age()
+
+                if 'is_retired' in missing_attributes:
+                    updates['is_retired'] = False
 
                 # Führe Update aus
                 if updates:

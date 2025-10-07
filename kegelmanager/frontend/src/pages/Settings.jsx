@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getClubs, simulateSeason, getCurrentSeason, transitionToNewSeason } from '../services/api';
+import { getClubs, simulateSeason, getCurrentSeason, transitionToNewSeason, updateManagerClub, getGameSettings } from '../services/api';
 import { invalidateAfterSimulation, invalidateAfterSeasonTransition } from '../services/apiCache';
+import { useAppContext } from '../contexts/AppContext';
 import './Settings.css';
 
 const Settings = () => {
+  const { setManagedClubId } = useAppContext();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('general');
   const [clubs, setClubs] = useState([]);
@@ -83,17 +85,51 @@ const Settings = () => {
           setSettings(defaultSettings);
         }
 
-        // Check if there's a managedClubId in localStorage (for backward compatibility)
-        const managedClubId = localStorage.getItem('managedClubId');
-        if (managedClubId) {
-          // Update the settings with the managedClubId
+        // Load manager club from backend (source of truth)
+        try {
+          const gameSettings = await getGameSettings();
+          console.log('Loaded game settings from backend:', gameSettings);
+
+          // Update settings with backend value
           setSettings(prev => ({
             ...prev,
             game: {
               ...prev.game,
-              managerClubId: parseInt(managedClubId)
+              managerClubId: gameSettings.manager_club_id
             }
           }));
+
+          // Sync localStorage with backend value
+          if (gameSettings.manager_club_id) {
+            localStorage.setItem('managedClubId', gameSettings.manager_club_id.toString());
+          } else {
+            // Remove old localStorage value if backend has null
+            localStorage.removeItem('managedClubId');
+          }
+        } catch (error) {
+          console.error('Error loading game settings from backend:', error);
+
+          // Fallback: Check if there's a managedClubId in localStorage (for backward compatibility)
+          const managedClubId = localStorage.getItem('managedClubId');
+          if (managedClubId) {
+            console.log('Using managedClubId from localStorage as fallback:', managedClubId);
+            // Update the settings with the managedClubId
+            setSettings(prev => ({
+              ...prev,
+              game: {
+                ...prev.game,
+                managerClubId: parseInt(managedClubId)
+              }
+            }));
+
+            // Try to sync to backend
+            try {
+              await updateManagerClub(parseInt(managedClubId));
+              console.log('Manager club synced to backend:', managedClubId);
+            } catch (syncError) {
+              console.error('Error syncing manager club to backend:', syncError);
+            }
+          }
         }
 
         // Load clubs for the manager club selection
@@ -120,35 +156,49 @@ const Settings = () => {
     }));
   };
 
-  const saveSettings = () => {
-    // In a real application, we would save to an API
-    // For now, we'll just save to localStorage
-    localStorage.setItem('gameSettings', JSON.stringify(settings));
+  const saveSettings = async () => {
+    try {
+      // Save to localStorage
+      localStorage.setItem('gameSettings', JSON.stringify(settings));
 
-    // Also save the managedClubId separately for compatibility with the lineup selector
-    if (settings.game.managerClubId) {
-      localStorage.setItem('managedClubId', settings.game.managerClubId.toString());
-    } else {
-      localStorage.removeItem('managedClubId');
+      // Also save the managedClubId separately for compatibility with the lineup selector
+      if (settings.game.managerClubId) {
+        localStorage.setItem('managedClubId', settings.game.managerClubId.toString());
+      } else {
+        localStorage.removeItem('managedClubId');
+      }
+
+      // Save manager club to backend
+      await updateManagerClub(settings.game.managerClubId);
+
+      // Update AppContext so all components get the new value immediately
+      setManagedClubId(settings.game.managerClubId);
+
+      // Note: We no longer need to dispatch storage events
+      // because components now use AppContext which is already updated
+
+      setMessage({
+        show: true,
+        type: 'success',
+        text: 'Einstellungen wurden gespeichert!'
+      });
+
+      // Hide message after 3 seconds
+      setTimeout(() => {
+        setMessage({ show: false, type: '', text: '' });
+      }, 3000);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      setMessage({
+        show: true,
+        type: 'error',
+        text: 'Fehler beim Speichern der Einstellungen!'
+      });
+
+      setTimeout(() => {
+        setMessage({ show: false, type: '', text: '' });
+      }, 3000);
     }
-
-    // Dispatch a storage event to notify other components (like Sidebar)
-    // that the settings have changed
-    window.dispatchEvent(new StorageEvent('storage', {
-      key: 'gameSettings',
-      newValue: JSON.stringify(settings)
-    }));
-
-    setMessage({
-      show: true,
-      type: 'success',
-      text: 'Einstellungen wurden gespeichert!'
-    });
-
-    // Hide message after 3 seconds
-    setTimeout(() => {
-      setMessage({ show: false, type: '', text: '' });
-    }, 3000);
   };
 
   const handleMultiSeasonSimulation = async () => {
