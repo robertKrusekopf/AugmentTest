@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { getTeam, getTeamHistory, getTeamCupHistory, getTeamAchievements, updateTeam } from '../services/api';
+import ClubEmblem from '../components/ClubEmblem';
 import './TeamDetail.css';
 
 const TeamDetail = () => {
@@ -21,6 +22,7 @@ const TeamDetail = () => {
   const [loadingCupHistory, setLoadingCupHistory] = useState(false);
   const [teamAchievements, setTeamAchievements] = useState(null);
   const [loadingAchievements, setLoadingAchievements] = useState(false);
+  const [cheatModeEnabled, setCheatModeEnabled] = useState(false);
 
   // Lade Teamdaten aus der API
   useEffect(() => {
@@ -72,6 +74,17 @@ const TeamDetail = () => {
           setStaerkeValue(data.staerke || 0);
         } else {
           console.error(`Keine Daten für Team ${id} gefunden`);
+        }
+
+        // Load cheat mode status
+        const savedSettings = localStorage.getItem('gameSettings');
+        if (savedSettings) {
+          try {
+            const settings = JSON.parse(savedSettings);
+            setCheatModeEnabled(settings.cheats?.cheatMode || false);
+          } catch (e) {
+            console.error('Failed to parse saved settings:', e);
+          }
         }
 
         setLoading(false);
@@ -211,20 +224,11 @@ const TeamDetail = () => {
       <div className="team-profile card">
         <div className="team-header">
           <div className="team-logo">
-            {team.club && team.club.emblem_url ? (
-              <img
-                src={team.club.emblem_url}
-                alt={`${team.club.name} Wappen`}
-                className="club-emblem"
-                onError={(e) => {
-                  console.log(`Fehler beim Laden des Emblems für ${team.club.name}:`, e);
-                  e.target.style.display = 'none';
-                  e.target.parentNode.innerHTML = `<span>${team.name.split(' ').map(word => word[0]).join('')}</span>`;
-                }}
-              />
-            ) : (
-              <span>{team.name.split(' ').map(word => word[0]).join('')}</span>
-            )}
+            <ClubEmblem
+              emblemUrl={team.club?.emblem_url}
+              clubName={team.club?.name || team.name}
+              className="club-emblem"
+            />
           </div>
           <div className="team-header-info">
             <h1 className="team-name">{team.name}</h1>
@@ -568,7 +572,9 @@ const TeamDetail = () => {
                               <div className="player-attributes">
                                 <div className="player-attribute">
                                   <span className="attribute-label">Stärke:</span>
-                                  <span className="attribute-value">???</span>
+                                  <span className="attribute-value">
+                                    {cheatModeEnabled ? Math.floor(player.strength) : '???'}
+                                  </span>
                                 </div>
                                 <div className="player-attribute">
                                   <span className="attribute-label">Volle:</span>
@@ -681,12 +687,33 @@ const TeamDetail = () => {
                       <td>{player.position}</td>
                       <td>
                         <div className="strength-display">
-                          <span>???</span>
+                          {cheatModeEnabled ? (
+                            <>
+                              <div className="strength-bar">
+                                <div
+                                  className="strength-fill"
+                                  style={{ width: `${player.strength}%` }}
+                                ></div>
+                              </div>
+                              <span>{Math.floor(player.strength)}</span>
+                            </>
+                          ) : (
+                            <span>???</span>
+                          )}
                         </div>
                       </td>
                       <td>
                         <div className="talent-stars">
-                          <span>???</span>
+                          {cheatModeEnabled ? (
+                            Array.from({ length: 10 }, (_, i) => (
+                              <span
+                                key={i}
+                                className={`star ${i < player.talent ? 'filled' : ''}`}
+                              >★</span>
+                            ))
+                          ) : (
+                            <span>???</span>
+                          )}
                         </div>
                       </td>
                       <td>
@@ -950,7 +977,8 @@ const TeamDetail = () => {
                             <td>
                               <Link to={`/players/${player.id}`} className="player-name-link">
                                 {player.name}
-                                {player.is_substitute && <span className="substitute-badge" title="Aushilfsspieler"> (A)</span>}
+                                {player.is_retired && <span className="substitute-badge" title="Im Ruhestand"> (R)</span>}
+                                {!player.is_retired && player.is_substitute && <span className="substitute-badge" title="Aushilfsspieler"> (A)</span>}
                               </Link>
                               {player.club_id !== team.club_id && (
                                 <div className="player-club">{player.club_name}</div>
@@ -1143,7 +1171,8 @@ const TeamDetail = () => {
                             <td>
                               <Link to={`/players/${player.id}`} className="player-name-link">
                                 {player.name}
-                                {player.is_substitute && <span className="substitute-badge" title="Aushilfsspieler"> (A)</span>}
+                                {player.is_retired && <span className="substitute-badge" title="Im Ruhestand"> (R)</span>}
+                                {!player.is_retired && player.is_substitute && <span className="substitute-badge" title="Aushilfsspieler"> (A)</span>}
                               </Link>
                               {player.club_id !== team.club_id && (
                                 <div className="player-club">{player.club_name}</div>
@@ -1483,13 +1512,10 @@ const TeamDetail = () => {
                               {entry.elimination.eliminated_by_team_name ? (
                                 <div className="elimination-info">
                                   {entry.elimination.eliminated_by_emblem_url && (
-                                    <img
-                                      src={entry.elimination.eliminated_by_emblem_url}
-                                      alt={`${entry.elimination.eliminated_by_club_name} Wappen`}
+                                    <ClubEmblem
+                                      emblemUrl={entry.elimination.eliminated_by_emblem_url}
+                                      clubName={entry.elimination.eliminated_by_club_name}
                                       className="team-emblem-tiny"
-                                      onError={(e) => {
-                                        e.target.style.display = 'none';
-                                      }}
                                     />
                                   )}
                                   <span className="team-name">{entry.elimination.eliminated_by_team_name}</span>

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { getLeague, getLeagueHistory } from '../services/api';
+import ClubEmblem from '../components/ClubEmblem';
+import TeamLink from '../components/TeamLink';
 import './Leagues.css';
 
 const Leagues = () => {
@@ -258,7 +260,11 @@ const Leagues = () => {
                       }>
                         <td>{team.position}</td>
                         <td>
-                          <Link to={`/teams/${team.team_id}`} className="team-link">
+                          <TeamLink
+                            teamId={team.team_id}
+                            clubId={team.club_id}
+                            teamName={team.team}
+                          >
                             <div className="club-row-info">
                               {team.emblem_url ? (
                                 <img
@@ -273,7 +279,7 @@ const Leagues = () => {
                               ) : null}
                               <span>{team.team}</span>
                             </div>
-                          </Link>
+                          </TeamLink>
                         </td>
                         <td>{team.played}</td>
                         <td>{team.won}</td>
@@ -517,20 +523,11 @@ const Leagues = () => {
                   {selectedLeague.teams.map(team => (
                     <Link to={`/teams/${team.id}`} key={team.id} className="team-card">
                       <div className="team-logo">
-                        {team.emblem_url ? (
-                          <img
-                            src={team.emblem_url}
-                            alt={`${team.name} Wappen`}
-                            className="club-emblem"
-                            onError={(e) => {
-                              console.log(`Fehler beim Laden des Emblems für ${team.name}:`, e);
-                              e.target.style.display = 'none';
-                              e.target.parentNode.innerHTML = `<span>${team.name.split(' ').map(word => word[0]).join('')}</span>`;
-                            }}
-                          />
-                        ) : (
-                          <span>{team.name.split(' ').map(word => word[0]).join('')}</span>
-                        )}
+                        <ClubEmblem
+                          emblemUrl={team.emblem_url}
+                          clubName={team.name}
+                          className="club-emblem"
+                        />
                       </div>
                       <div className="team-info">
                         <h3 className="team-name">{team.name}</h3>

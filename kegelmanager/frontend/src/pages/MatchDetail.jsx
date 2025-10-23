@@ -3,6 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import { getMatch } from '../services/api';
 import { useAppContext } from '../contexts/AppContext';
 import LineupSelector from '../components/LineupSelector';
+import ClubEmblem from '../components/ClubEmblem';
+import TeamLink from '../components/TeamLink';
 import './MatchDetail.css';
 
 const MatchDetail = () => {
@@ -178,13 +180,18 @@ const MatchDetail = () => {
         <div className="match-teams-container">
           <div className="match-team home">
             <Link to={`/teams/${match.home_team_id}`} className="team-logo">
-              <img
-                src={`/api/club-emblem/${match.home_team_verein_id || match.home_team_club_id}`}
-                alt={match.home_team_name}
-                onError={(e) => { e.target.src = '/placeholder.png'; e.target.onerror = null; }}
+              <ClubEmblem
+                emblemUrl={`/api/club-emblem/${match.home_team_verein_id || match.home_team_club_id}`}
+                clubName={match.home_team_name}
+                className="team-emblem"
               />
             </Link>
-            <div className="team-name">{match.home_team_name}</div>
+            <TeamLink
+              teamId={match.home_team_id}
+              clubId={match.home_team_club_id}
+              teamName={match.home_team_name}
+              className="team-name"
+            />
           </div>
 
           <div className="match-result">
@@ -211,13 +218,18 @@ const MatchDetail = () => {
 
           <div className="match-team away">
             <Link to={`/teams/${match.away_team_id}`} className="team-logo">
-              <img
-                src={`/api/club-emblem/${match.away_team_verein_id || match.away_team_club_id}`}
-                alt={match.away_team_name}
-                onError={(e) => { e.target.src = '/placeholder.png'; e.target.onerror = null; }}
+              <ClubEmblem
+                emblemUrl={`/api/club-emblem/${match.away_team_verein_id || match.away_team_club_id}`}
+                clubName={match.away_team_name}
+                className="team-emblem"
               />
             </Link>
-            <div className="team-name">{match.away_team_name}</div>
+            <TeamLink
+              teamId={match.away_team_id}
+              clubId={match.away_team_club_id}
+              teamName={match.away_team_name}
+              className="team-name"
+            />
           </div>
         </div>
       </div>

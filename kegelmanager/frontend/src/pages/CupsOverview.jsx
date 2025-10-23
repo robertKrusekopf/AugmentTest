@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getCupsOptimized, getCupDetailOptimized, getCupHistoryByNameOptimized } from '../services/apiCache';
+import ClubEmblem from '../components/ClubEmblem';
+import TeamLink from '../components/TeamLink';
 import './CupsOverview.css';
 
 const CupsOverview = () => {
@@ -249,7 +251,7 @@ const CupsOverview = () => {
 
                                 if (isClickable) {
                                   return (
-                                    <Link key={match.id} to={`/matches/${match.id}`} className={`match-row ${match.is_played ? 'played' : 'upcoming'} clickable`}>
+                                    <div key={match.id} className={`match-row ${match.is_played ? 'played' : 'upcoming'} clickable`}>
                                       {/* Home Team */}
                                       <div className="team-info home-team">
                                         <div className="team-emblem-container">
@@ -265,7 +267,12 @@ const CupsOverview = () => {
                                           )}
                                         </div>
                                         <div className="team-details">
-                                          <span className="team-name">{match.home_team_name}</span>
+                                          <TeamLink
+                                            teamId={match.home_team_id}
+                                            clubId={match.home_team_club_id}
+                                            teamName={match.home_team_name}
+                                            className="team-name"
+                                          />
                                           {match.home_team_league_level && (
                                             <span className="league-level">Liga {match.home_team_league_level}</span>
                                           )}
@@ -273,7 +280,7 @@ const CupsOverview = () => {
                                       </div>
 
                                       {/* Score/VS */}
-                                      <div className="match-score">
+                                      <Link to={`/matches/${match.id}`} className="match-score">
                                         {match.is_played ? (
                                           <div className="score-display">
                                             <span className="score">{match.home_score || 0}</span>
@@ -283,14 +290,19 @@ const CupsOverview = () => {
                                         ) : (
                                           <span className="vs-text">vs</span>
                                         )}
-                                      </div>
+                                      </Link>
 
                                       {/* Away Team */}
                                       <div className="team-info away-team">
                                         {match.away_team_name ? (
                                           <>
                                             <div className="team-details">
-                                              <span className="team-name">{match.away_team_name}</span>
+                                              <TeamLink
+                                                teamId={match.away_team_id}
+                                                clubId={match.away_team_club_id}
+                                                teamName={match.away_team_name}
+                                                className="team-name"
+                                              />
                                               {match.away_team_league_level && (
                                                 <span className="league-level">Liga {match.away_team_league_level}</span>
                                               )}
@@ -316,15 +328,15 @@ const CupsOverview = () => {
                                       </div>
 
                                       {/* Match Status */}
-                                      <div className="match-status-info">
+                                      <Link to={`/matches/${match.id}`} className="match-status-info">
                                         {match.match_date && (
                                           <span className="match-date">{new Date(match.match_date).toLocaleDateString('de-DE')}</span>
                                         )}
                                         <span className={`match-status ${match.is_played ? 'played' : 'upcoming'}`}>
                                           {match.is_played ? 'Gespielt' : 'Ausstehend'}
                                         </span>
-                                      </div>
-                                    </Link>
+                                      </Link>
+                                    </div>
                                   );
                                 } else {
                                   return (
@@ -344,7 +356,12 @@ const CupsOverview = () => {
                                           )}
                                         </div>
                                         <div className="team-details">
-                                          <span className="team-name">{match.home_team_name}</span>
+                                          <TeamLink
+                                            teamId={match.home_team_id}
+                                            clubId={match.home_team_club_id}
+                                            teamName={match.home_team_name}
+                                            className="team-name"
+                                          />
                                           {match.home_team_league_level && (
                                             <span className="league-level">Liga {match.home_team_league_level}</span>
                                           )}
@@ -369,7 +386,12 @@ const CupsOverview = () => {
                                         {match.away_team_name ? (
                                           <>
                                             <div className="team-details">
-                                              <span className="team-name">{match.away_team_name}</span>
+                                              <TeamLink
+                                                teamId={match.away_team_id}
+                                                clubId={match.away_team_club_id}
+                                                teamName={match.away_team_name}
+                                                className="team-name"
+                                              />
                                               {match.away_team_league_level && (
                                                 <span className="league-level">Liga {match.away_team_league_level}</span>
                                               )}
@@ -428,13 +450,10 @@ const CupsOverview = () => {
                         <div key={team.id} className="team-card">
                           <div className="team-header">
                             {team.emblem_url && (
-                              <img
-                                src={team.emblem_url}
-                                alt={`${team.club_name} Wappen`}
+                              <ClubEmblem
+                                emblemUrl={team.emblem_url}
+                                clubName={team.club_name}
                                 className="team-emblem"
-                                onError={(e) => {
-                                  e.target.style.display = 'none';
-                                }}
                               />
                             )}
                             <div className="team-info">

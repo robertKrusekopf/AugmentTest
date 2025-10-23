@@ -72,7 +72,7 @@
   margin-left: 10px;
 }
 
-.player-position, .player-team, .player-age {
+.player-position, .player-nationality, .player-team, .player-age {
   display: flex;
   align-items: center;
 }
@@ -85,6 +85,150 @@
   border-radius: 50%;
   background-color: var(--border-color);
   margin-right: 8px;
+}
+
+.player-nationality {
+  display: flex;
+  align-items: center;
+  cursor: help;
+}
+
+.flag-icon {
+  font-size: 16px;
+  margin-right: 4px;
+}
+
+.nationality-display {
+  display: flex;
+  align-items: center;
+  cursor: help;
+}
+
+/* Flaggen-Styles */
+.flag {
+  display: inline-block;
+  width: 24px;
+  height: 18px;
+  border-radius: 2px;
+  border: 1px solid #ccc;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.player-nationality .flag {
+  width: 20px;
+  height: 15px;
+}
+
+.nationality-display .flag {
+  width: 28px;
+  height: 21px;
+}
+
+/* Deutsche Flagge */
+.flag-de {
+  background: linear-gradient(to bottom,
+    #000 0%, #000 33.33%,
+    #dd0000 33.33%, #dd0000 66.66%,
+    #ffce00 66.66%, #ffce00 100%);
+}
+
+/* Österreichische Flagge */
+.flag-at {
+  background: linear-gradient(to bottom,
+    #ed2939 0%, #ed2939 33.33%,
+    #ffffff 33.33%, #ffffff 66.66%,
+    #ed2939 66.66%, #ed2939 100%);
+}
+
+/* Schweizer Flagge */
+.flag-ch {
+  background: #ff0000;
+  position: relative;
+}
+
+.flag-ch::before {
+  content: '+';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* Niederländische Flagge */
+.flag-nl {
+  background: linear-gradient(to bottom,
+    #ae1c28 0%, #ae1c28 33.33%,
+    #ffffff 33.33%, #ffffff 66.66%,
+    #21468b 66.66%, #21468b 100%);
+}
+
+/* Französische Flagge */
+.flag-fr {
+  background: linear-gradient(to right,
+    #002395 0%, #002395 33.33%,
+    #ffffff 33.33%, #ffffff 66.66%,
+    #ed2939 66.66%, #ed2939 100%);
+}
+
+/* Italienische Flagge */
+.flag-it {
+  background: linear-gradient(to right,
+    #009246 0%, #009246 33.33%,
+    #ffffff 33.33%, #ffffff 66.66%,
+    #ce2b37 66.66%, #ce2b37 100%);
+}
+
+/* Spanische Flagge */
+.flag-es {
+  background: linear-gradient(to bottom,
+    #aa151b 0%, #aa151b 25%,
+    #f1bf00 25%, #f1bf00 75%,
+    #aa151b 75%, #aa151b 100%);
+}
+
+/* US Flagge */
+.flag-us {
+  background: linear-gradient(to bottom,
+    #b22234 0%, #b22234 7.69%,
+    #ffffff 7.69%, #ffffff 15.38%,
+    #b22234 15.38%, #b22234 23.07%,
+    #ffffff 23.07%, #ffffff 30.76%,
+    #b22234 30.76%, #b22234 38.45%,
+    #ffffff 38.45%, #ffffff 46.14%,
+    #b22234 46.14%, #b22234 53.83%,
+    #ffffff 53.83%, #ffffff 61.52%,
+    #b22234 61.52%, #b22234 69.21%,
+    #ffffff 69.21%, #ffffff 76.9%,
+    #b22234 76.9%, #b22234 84.59%,
+    #ffffff 84.59%, #ffffff 92.28%,
+    #b22234 92.28%, #b22234 100%);
+  position: relative;
+}
+
+.flag-us::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 53.83%;
+  background: #3c3b6e;
+}
+
+/* Fallback für unbekannte Flaggen */
+.flag-unknown {
+  background: linear-gradient(45deg, #ccc 25%, transparent 25%),
+              linear-gradient(-45deg, #ccc 25%, transparent 25%),
+              linear-gradient(45deg, transparent 75%, #ccc 75%),
+              linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 4px 4px;
+  background-position: 0 0, 0 2px, 2px -2px, -2px 0px;
 }
 
 .player-ratings {
@@ -821,5 +965,177 @@
 
   .expand-button {
     align-self: flex-end;
+  }
+}
+
+/* Development Tab Styles */
+.development-tab {
+  padding: 20px;
+}
+
+.cheat-mode-required {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.cheat-mode-required .info-box {
+  max-width: 600px;
+  text-align: center;
+  padding: 40px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 2px dashed var(--border-color);
+}
+
+.cheat-mode-required .info-box h3 {
+  margin-bottom: 15px;
+  color: var(--text-color);
+}
+
+.cheat-mode-required .info-box p {
+  margin-bottom: 20px;
+  color: #5f6368;
+  line-height: 1.6;
+}
+
+.development-chart-container {
+  margin-bottom: 40px;
+}
+
+.development-chart-container h3 {
+  margin-bottom: 20px;
+  color: var(--text-color);
+}
+
+.chart-wrapper {
+  height: 400px;
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.development-table-container {
+  margin-top: 30px;
+}
+
+.development-table-container h3 {
+  margin-bottom: 15px;
+  color: var(--text-color);
+}
+
+.development-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.development-table thead {
+  background-color: #f8f9fa;
+}
+
+.development-table th {
+  padding: 12px 15px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-color);
+  border-bottom: 2px solid var(--border-color);
+}
+
+.development-table td {
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.development-table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+.strength-value {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.strength-change {
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  min-width: 40px;
+  text-align: center;
+}
+
+.strength-change.positive {
+  color: #28a745;
+  background-color: #d4edda;
+}
+
+.strength-change.negative {
+  color: #dc3545;
+  background-color: #f8d7da;
+}
+
+.strength-change.neutral {
+  color: #6c757d;
+  background-color: #e9ecef;
+}
+
+.no-development-data {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.no-development-data .info-box {
+  max-width: 600px;
+  text-align: center;
+  padding: 40px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.no-development-data .info-box h3 {
+  margin-bottom: 15px;
+  color: var(--text-color);
+}
+
+.no-development-data .info-box p {
+  margin-bottom: 15px;
+  color: #5f6368;
+  line-height: 1.6;
+}
+
+.no-development-data .info-box .hint {
+  font-style: italic;
+  color: #6c757d;
+  margin-top: 20px;
+}
+
+/* Responsive Design for Development Tab */
+@media (max-width: 768px) {
+  .chart-wrapper {
+    height: 300px;
+    padding: 10px;
+  }
+
+  .development-table {
+    font-size: 12px;
+  }
+
+  .development-table th,
+  .development-table td {
+    padding: 8px 10px;
+  }
+
+  .cheat-mode-required .info-box,
+  .no-development-data .info-box {
+    padding: 20px;
   }
 }

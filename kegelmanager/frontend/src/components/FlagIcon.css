@@ -1,0 +1,276 @@
+/* FlagIcon Component Styles */
+
+/* Basis-Flaggen-Styles */
+.flag {
+  display: inline-block;
+  border-radius: 2px;
+  border: 1px solid #ccc;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  vertical-align: middle;
+}
+
+/* Größen */
+.flag-small {
+  width: 16px;
+  height: 12px;
+}
+
+.flag-medium {
+  width: 24px;
+  height: 18px;
+}
+
+.flag-large {
+  width: 32px;
+  height: 24px;
+}
+
+/* Emoji-Flaggen */
+.flag-emoji {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.flag-emoji.flag-small {
+  font-size: 16px;
+}
+
+.flag-emoji.flag-medium {
+  font-size: 20px;
+}
+
+.flag-emoji.flag-large {
+  font-size: 28px;
+}
+
+/* Bild-Flaggen */
+.flag-image {
+  display: inline-block;
+  border-radius: 2px;
+  border: 1px solid #ccc;
+  object-fit: cover;
+  vertical-align: middle;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.flag-image.flag-small {
+  width: 16px;
+  height: 12px;
+}
+
+.flag-image.flag-medium {
+  width: 24px;
+  height: 18px;
+}
+
+.flag-image.flag-large {
+  width: 32px;
+  height: 24px;
+}
+
+/* Loading state für Bild-Flaggen */
+.flag-image.flag-loading {
+  opacity: 0;
+}
+
+/* Placeholder während des Ladens */
+.flag-placeholder {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* CSS-basierte Flaggen-Designs */
+
+/* Deutsche Flagge */
+.flag-de {
+  background: linear-gradient(to bottom, 
+    #000 0%, #000 33.33%, 
+    #dd0000 33.33%, #dd0000 66.66%, 
+    #ffce00 66.66%, #ffce00 100%);
+}
+
+/* Österreichische Flagge */
+.flag-at {
+  background: linear-gradient(to bottom, 
+    #ed2939 0%, #ed2939 33.33%, 
+    #ffffff 33.33%, #ffffff 66.66%, 
+    #ed2939 66.66%, #ed2939 100%);
+}
+
+/* Schweizer Flagge */
+.flag-ch {
+  background: #ff0000;
+  position: relative;
+}
+
+.flag-ch::before {
+  content: '+';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-weight: bold;
+  font-size: 10px;
+}
+
+.flag-ch.flag-medium::before {
+  font-size: 14px;
+}
+
+.flag-ch.flag-large::before {
+  font-size: 18px;
+}
+
+/* Niederländische Flagge */
+.flag-nl {
+  background: linear-gradient(to bottom, 
+    #ae1c28 0%, #ae1c28 33.33%, 
+    #ffffff 33.33%, #ffffff 66.66%, 
+    #21468b 66.66%, #21468b 100%);
+}
+
+/* Belgische Flagge */
+.flag-be {
+  background: linear-gradient(to right, 
+    #000000 0%, #000000 33.33%, 
+    #fdda24 33.33%, #fdda24 66.66%, 
+    #ef3340 66.66%, #ef3340 100%);
+}
+
+/* Französische Flagge */
+.flag-fr {
+  background: linear-gradient(to right, 
+    #002395 0%, #002395 33.33%, 
+    #ffffff 33.33%, #ffffff 66.66%, 
+    #ed2939 66.66%, #ed2939 100%);
+}
+
+/* Italienische Flagge */
+.flag-it {
+  background: linear-gradient(to right, 
+    #009246 0%, #009246 33.33%, 
+    #ffffff 33.33%, #ffffff 66.66%, 
+    #ce2b37 66.66%, #ce2b37 100%);
+}
+
+/* Spanische Flagge */
+.flag-es {
+  background: linear-gradient(to bottom, 
+    #aa151b 0%, #aa151b 25%, 
+    #f1bf00 25%, #f1bf00 75%, 
+    #aa151b 75%, #aa151b 100%);
+}
+
+/* Polnische Flagge */
+.flag-pl {
+  background: linear-gradient(to bottom, 
+    #ffffff 0%, #ffffff 50%, 
+    #dc143c 50%, #dc143c 100%);
+}
+
+/* Tschechische Flagge */
+.flag-cz {
+  background: linear-gradient(to bottom, 
+    #ffffff 0%, #ffffff 50%, 
+    #d7141a 50%, #d7141a 100%);
+  position: relative;
+}
+
+.flag-cz::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 9px 0 9px 16px;
+  border-color: transparent transparent transparent #11457e;
+}
+
+.flag-cz.flag-small::before {
+  border-width: 6px 0 6px 10px;
+}
+
+.flag-cz.flag-large::before {
+  border-width: 12px 0 12px 20px;
+}
+
+/* US Flagge (vereinfacht) */
+.flag-us {
+  background: linear-gradient(to bottom, 
+    #b22234 0%, #b22234 7.69%, 
+    #ffffff 7.69%, #ffffff 15.38%, 
+    #b22234 15.38%, #b22234 23.07%, 
+    #ffffff 23.07%, #ffffff 30.76%, 
+    #b22234 30.76%, #b22234 38.45%, 
+    #ffffff 38.45%, #ffffff 46.14%, 
+    #b22234 46.14%, #b22234 53.83%, 
+    #ffffff 53.83%, #ffffff 61.52%, 
+    #b22234 61.52%, #b22234 69.21%, 
+    #ffffff 69.21%, #ffffff 76.9%, 
+    #b22234 76.9%, #b22234 84.59%, 
+    #ffffff 84.59%, #ffffff 92.28%, 
+    #b22234 92.28%, #b22234 100%);
+  position: relative;
+}
+
+.flag-us::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 53.83%;
+  background: #3c3b6e;
+}
+
+/* Kanadische Flagge */
+.flag-ca {
+  background: linear-gradient(to right, 
+    #ff0000 0%, #ff0000 25%, 
+    #ffffff 25%, #ffffff 75%, 
+    #ff0000 75%, #ff0000 100%);
+  position: relative;
+}
+
+.flag-ca::before {
+  content: '🍁';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #ff0000;
+  font-size: 8px;
+}
+
+.flag-ca.flag-medium::before {
+  font-size: 12px;
+}
+
+.flag-ca.flag-large::before {
+  font-size: 16px;
+}
+
+/* Fallback für unbekannte Flaggen */
+.flag-unknown {
+  background: linear-gradient(45deg, #ccc 25%, transparent 25%), 
+              linear-gradient(-45deg, #ccc 25%, transparent 25%), 
+              linear-gradient(45deg, transparent 75%, #ccc 75%), 
+              linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 4px 4px;
+  background-position: 0 0, 0 2px, 2px -2px, -2px 0px;
+}

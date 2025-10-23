@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import { getClubs, getClub, getUnreadMessageCount } from '../services/api';
 import { useAppContext } from '../contexts/AppContext';
+import ClubEmblem from './ClubEmblem';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen }) => {
@@ -94,19 +95,12 @@ const Sidebar = ({ isOpen }) => {
           ) : userClub ? (
             <Link to={`/clubs/${userClub.id}`} className="club-info-link">
               <div className="club-logo">
-                {userClub.emblem_url ? (
-                  <img
-                    src={userClub.emblem_url}
-                    alt={`${userClub.name} Wappen`}
-                    className="club-emblem"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.nextSibling.style.display = 'flex';
-                    }}
-                  />
-                ) : (
-                  <span>{userClub.name.substring(0, 3).toUpperCase()}</span>
-                )}
+                <ClubEmblem
+                  emblemUrl={userClub.emblem_url}
+                  clubName={userClub.name}
+                  className="club-emblem"
+                  fallbackText={userClub.name.substring(0, 3).toUpperCase()}
+                />
               </div>
               <div className="club-details">
                 <h3 className="club-name">{userClub.name}</h3>

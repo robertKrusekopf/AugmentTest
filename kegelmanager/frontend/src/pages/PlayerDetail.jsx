@@ -1,16 +1,42 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPlayer, updatePlayer, getPlayerHistory, getPlayerMatches, createTransferOffer } from '../services/api';
+import { getPlayer, updatePlayer, getPlayerHistory, getPlayerMatches, getPlayerDevelopmentHistory, createTransferOffer } from '../services/api';
+import FlagIcon from '../components/FlagIcon';
+import '../components/FlagIcon.css';
 import './PlayerDetail.css';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const PlayerDetail = () => {
   const { id } = useParams();
   const [player, setPlayer] = useState(null);
   const [playerHistory, setPlayerHistory] = useState(null);
   const [playerMatches, setPlayerMatches] = useState(null);
+  const [developmentHistory, setDevelopmentHistory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [matchesLoading, setMatchesLoading] = useState(true);
+  const [developmentLoading, setDevelopmentLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [cheatForm, setCheatForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -99,6 +125,7 @@ const PlayerDetail = () => {
             name: processedPlayer.name,
             age: processedPlayer.age,
             position: processedPlayer.position,
+            nationalitaet: processedPlayer.nationalitaet || 'Deutsch',
             strength: processedPlayer.strength,
             talent: processedPlayer.talent,
             salary: processedPlayer.salary,
@@ -178,12 +205,31 @@ const PlayerDetail = () => {
       });
   }, [id]);
 
+  // Lade Spieler-Entwicklungshistorie aus der API (nur wenn Development-Tab aktiv ist)
+  useEffect(() => {
+    if (activeTab === 'development' && !developmentHistory) {
+      console.log(`Lade Entwicklungshistorie für Spieler ID ${id}...`);
+      setDevelopmentLoading(true);
+
+      getPlayerDevelopmentHistory(id)
+        .then(data => {
+          console.log('Geladene Entwicklungshistorie:', data);
+          setDevelopmentHistory(data);
+          setDevelopmentLoading(false);
+        })
+        .catch(error => {
+          console.error('Fehler beim Laden der Entwicklungshistorie:', error);
+          setDevelopmentLoading(false);
+        });
+    }
+  }, [id, activeTab, developmentHistory]);
+
   // Handle form input changes
   const handleCheatInputChange = (e) => {
     const { name, value } = e.target;
     setCheatForm({
       ...cheatForm,
-      [name]: name === 'name' || name === 'position' ? value : Number(value)
+      [name]: name === 'name' || name === 'position' || name === 'nationalitaet' ? value : Number(value)
     });
   };
 
@@ -330,6 +376,9 @@ const PlayerDetail = () => {
             <h1 className="player-name">{player.name}</h1>
             <div className="player-meta">
               <span className="player-position">{player.position}</span>
+              <span className="player-nationality">
+                <FlagIcon nationality={player.nationalitaet || 'Deutsch'} size="medium" mode="image" />
+              </span>
               <span className="player-team">{player.team}</span>
               <span className="player-age">{player.age} Jahre</span>
               {cheatModeEnabled && (
@@ -342,15 +391,29 @@ const PlayerDetail = () => {
           <div className="player-ratings">
             <div className="rating-item">
               <span className="rating-label">Stärke</span>
-              <span className="rating-value">???</span>
+              <span className="rating-value">
+                {cheatModeEnabled ? Math.floor(player.strength) : '???'}
+              </span>
               <div className="strength-bar">
-                <div className="strength-fill" style={{ width: `0%` }}></div>
+                <div
+                  className="strength-fill"
+                  style={{ width: cheatModeEnabled ? `${player.strength}%` : '0%' }}
+                ></div>
               </div>
             </div>
             <div className="rating-item">
               <span className="rating-label">Talent</span>
               <div className="talent-stars">
-                <span>???</span>
+                {cheatModeEnabled ? (
+                  Array.from({ length: 10 }, (_, i) => (
+                    <span
+                      key={i}
+                      className={`star ${i < player.talent ? 'filled' : ''}`}
+                    >★</span>
+                  ))
+                ) : (
+                  <span>???</span>
+                )}
               </div>
             </div>
           </div>
@@ -419,6 +482,12 @@ const PlayerDetail = () => {
                     <div className="info-item">
                       <span className="info-label">Position:</span>
                       <span className="info-value">{player.position}</span>
+                    </div>
+                    <div className="info-item">
+                      <span className="info-label">Nationalität:</span>
+                      <span className="info-value nationality-display">
+                        <FlagIcon nationality={player.nationalitaet || 'Deutsch'} size="large" mode="image" />
+                      </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Verein:</span>
@@ -514,9 +583,14 @@ const PlayerDetail = () => {
                   <div key={key} className="attribute-item">
                     <span className="attribute-label">{key.charAt(0).toUpperCase() + key.slice(1)}</span>
                     <div className="attribute-bar">
-                      <div className="attribute-fill" style={{ width: `0%` }}></div>
+                      <div
+                        className="attribute-fill"
+                        style={{ width: cheatModeEnabled ? `${value}%` : '0%' }}
+                      ></div>
                     </div>
-                    <span className="attribute-value">???</span>
+                    <span className="attribute-value">
+                      {cheatModeEnabled ? Math.floor(value) : '???'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -764,32 +838,138 @@ const PlayerDetail = () => {
 
           {activeTab === 'development' && (
             <div className="development-tab">
-              <div className="development-chart">
-                <h3>Stärkeentwicklung</h3>
-                <div className="chart-placeholder">
-                  [Hier würde ein Entwicklungs-Chart angezeigt werden]
+              {!cheatModeEnabled ? (
+                <div className="cheat-mode-required">
+                  <div className="info-box">
+                    <h3>🔒 Entwicklungsdaten nur im Cheat-Modus verfügbar</h3>
+                    <p>
+                      Die Visualisierung der Spielerentwicklung ist nur im Cheat-Modus sichtbar.
+                      Aktiviere den Cheat-Modus in den Einstellungen, um die historische Entwicklung
+                      von Stärke und Attributen zu sehen.
+                    </p>
+                    <Link to="/settings?tab=cheats" className="btn btn-primary">
+                      Zu den Einstellungen
+                    </Link>
+                  </div>
                 </div>
-              </div>
-              <table className="table development-table">
-                <thead>
-                  <tr>
-                    <th>Alter</th>
-                    <th>Stärke</th>
-                    <th>Veränderung</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {player.development.map((dev, index) => {
-                    return (
-                      <tr key={index}>
-                        <td>{dev.age}</td>
-                        <td>???</td>
-                        <td>???</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              ) : developmentLoading ? (
+                <div className="loading">Lade Entwicklungsdaten...</div>
+              ) : developmentHistory && developmentHistory.history && developmentHistory.history.length > 0 ? (
+                <>
+                  <div className="development-chart-container">
+                    <h3>Stärkeentwicklung über Saisons</h3>
+                    <div className="chart-wrapper">
+                      <Line
+                        data={{
+                          labels: developmentHistory.history.map(h => `${h.season_name} (Alter ${h.age})`),
+                          datasets: [
+                            {
+                              label: 'Stärke',
+                              data: developmentHistory.history.map(h => h.strength),
+                              borderColor: 'rgb(75, 192, 192)',
+                              backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                              tension: 0.1,
+                              pointRadius: 5,
+                              pointHoverRadius: 7
+                            }
+                          ]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              display: true,
+                              position: 'top'
+                            },
+                            title: {
+                              display: false
+                            },
+                            tooltip: {
+                              callbacks: {
+                                label: function(context) {
+                                  return `Stärke: ${context.parsed.y}`;
+                                }
+                              }
+                            }
+                          },
+                          scales: {
+                            y: {
+                              beginAtZero: false,
+                              min: 1,
+                              max: 99,
+                              title: {
+                                display: true,
+                                text: 'Stärke'
+                              }
+                            },
+                            x: {
+                              title: {
+                                display: true,
+                                text: 'Saison'
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="development-table-container">
+                    <h3>Entwicklungsdetails</h3>
+                    <table className="table development-table">
+                      <thead>
+                        <tr>
+                          <th>Saison</th>
+                          <th>Alter</th>
+                          <th>Stärke</th>
+                          <th>Veränderung</th>
+                          <th>Verein</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {developmentHistory.history.map((record, index) => {
+                          const previousStrength = index > 0 ? developmentHistory.history[index - 1].strength : null;
+                          const change = previousStrength !== null ? record.strength - previousStrength : null;
+
+                          return (
+                            <tr key={record.id}>
+                              <td>{record.season_name}</td>
+                              <td>{record.age}</td>
+                              <td>
+                                <span className="strength-value">{record.strength}</span>
+                              </td>
+                              <td>
+                                {change !== null ? (
+                                  <span className={`strength-change ${change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral'}`}>
+                                    {change > 0 ? '+' : ''}{change}
+                                  </span>
+                                ) : (
+                                  <span className="strength-change neutral">-</span>
+                                )}
+                              </td>
+                              <td>{record.club_name || 'Vereinslos'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="no-development-data">
+                  <div className="info-box">
+                    <h3>Keine Entwicklungsdaten verfügbar</h3>
+                    <p>
+                      Für diesen Spieler sind noch keine historischen Entwicklungsdaten vorhanden.
+                      Die Daten werden automatisch am Ende jeder Saison gespeichert.
+                    </p>
+                    <p className="hint">
+                      💡 Tipp: Führe einen Saisonwechsel durch, um die erste Entwicklungsaufzeichnung zu erstellen.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -826,7 +1006,7 @@ const PlayerDetail = () => {
                         type="number"
                         id="age"
                         name="age"
-                        min="16"
+                        min="10"
                         max="45"
                         value={cheatForm.age || ''}
                         onChange={handleCheatInputChange}
@@ -842,6 +1022,18 @@ const PlayerDetail = () => {
                         name="position"
                         value={cheatForm.position || ''}
                         onChange={handleCheatInputChange}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="nationalitaet">Nationalität:</label>
+                      <input
+                        type="text"
+                        id="nationalitaet"
+                        name="nationalitaet"
+                        value={cheatForm.nationalitaet || ''}
+                        onChange={handleCheatInputChange}
+                        placeholder="Deutsch"
                       />
                     </div>
 

@@ -1,0 +1,320 @@
+═══════════════════════════════════════════════════════════════════════════
+SPIELERENTWICKLUNG - EXCEL FORMELN
+═══════════════════════════════════════════════════════════════════════════
+
+SPALTEN-ÜBERSICHT:
+A = Spieler Name
+B = Alter
+C = Talent (1-10)
+D = Aktuelle Stärke (1-99)
+E = Training (0-100)
+F = Coaching (0-100)
+G = Alters-Faktor (berechnet)
+H = Talent-Multiplikator (berechnet)
+I = Vereins-Bonus (berechnet)
+J = Zufälligkeit (berechnet)
+K = Stärke-Änderung (berechnet)
+L = Neue Stärke (berechnet)
+
+═══════════════════════════════════════════════════════════════════════════
+EXCEL FORMELN (ab Zeile 2)
+═══════════════════════════════════════════════════════════════════════════
+
+Zelle G2 - ALTERS-FAKTOR:
+─────────────────────────────────────────────────────────────────────────
+=WENN(B2<18;2,5;WENN(B2<20;2;WENN(B2<22;1,5;WENN(B2<24;1;WENN(B2<25;0,5;WENN(B2<28;0,05;WENN(B2<30;-0,35;WENN(B2<32;-0,75;WENN(B2<35;-1,25;-1,75)))))))))
+
+Erklärung:
+- Alter < 18: Faktor 2,5 (sehr schnelle Entwicklung)
+- Alter 18-19: Faktor 2,0 (schnelle Entwicklung)
+- Alter 20-21: Faktor 1,5 (gute Entwicklung)
+- Alter 22-23: Faktor 1,0 (moderate Entwicklung)
+- Alter 24: Faktor 0,5 (Übergang)
+- Alter 25-27: Faktor 0,05 (Hochphase, kaum Änderung)
+- Alter 28-29: Faktor -0,35 (früher Abstieg)
+- Alter 30-31: Faktor -0,75 (moderater Abstieg)
+- Alter 32-34: Faktor -1,25 (signifikanter Abstieg)
+- Alter 35+: Faktor -1,75 (steiler Abstieg)
+
+
+Zelle H2 - TALENT-MULTIPLIKATOR:
+─────────────────────────────────────────────────────────────────────────
+=WENN((D2/(C2*9))>=1;0,1;WENN((D2/(C2*9))>=0,9;0,3;WENN((D2/(C2*9))>=0,8;0,6;1)))
+
+Erklärung:
+- Berechnet zuerst: Max-Potential = Talent × 9
+- Dann: Potential-Ratio = Aktuelle Stärke / Max-Potential
+- Wenn Ratio >= 100%: Multiplikator 0,1 (nur Erhaltung)
+- Wenn Ratio 90-100%: Multiplikator 0,3 (langsam)
+- Wenn Ratio 80-90%: Multiplikator 0,6 (moderat)
+- Wenn Ratio < 80%: Multiplikator 1,0 (volle Geschwindigkeit)
+
+
+Zelle I2 - VEREINS-BONUS:
+─────────────────────────────────────────────────────────────────────────
+=1+((E2+F2)/2/100)*0,2
+
+Erklärung:
+- Durchschnitt von Training und Coaching: (E2+F2)/2
+- Umrechnung in Prozent: /100
+- Maximaler Bonus 20%: *0,2
+- Basis-Wert 1,0: 1+...
+- Ergebnis: 1,0 (kein Bonus) bis 1,2 (20% Bonus)
+
+
+Zelle J2 - ZUFÄLLIGKEIT:
+─────────────────────────────────────────────────────────────────────────
+=0,85+ZUFALLSZAHL()*0,3
+
+Erklärung:
+- ZUFALLSZAHL() gibt Wert zwischen 0 und 1
+- *0,3 ergibt Wert zwischen 0 und 0,3
+- +0,85 ergibt finalen Wert zwischen 0,85 und 1,15
+- Das entspricht ±15% Varianz
+
+
+Zelle K2 - STÄRKE-ÄNDERUNG:
+─────────────────────────────────────────────────────────────────────────
+=RUNDEN(G2*H2*I2*J2;0)
+
+Erklärung:
+- Multipliziert alle Faktoren: Alter × Talent × Verein × Zufall
+- RUNDEN(...;0) rundet auf ganze Zahl
+- Kann positiv (Verbesserung) oder negativ (Verschlechterung) sein
+
+
+Zelle L2 - NEUE STÄRKE:
+─────────────────────────────────────────────────────────────────────────
+=MIN(99;MAX(1;D2+K2))
+
+Erklärung:
+- D2+K2: Alte Stärke + Änderung
+- MAX(1;...): Mindestens 1
+- MIN(99;...): Höchstens 99
+- Begrenzt den Wert auf den Bereich 1-99
+
+
+═══════════════════════════════════════════════════════════════════════════
+BEISPIEL-BERECHNUNG (Schritt für Schritt)
+═══════════════════════════════════════════════════════════════════════════
+
+Spieler: Max Müller
+Alter: 19
+Talent: 9
+Aktuelle Stärke: 55
+Training: 80
+Coaching: 80
+
+SCHRITT 1 - Alters-Faktor (G2):
+  Alter 19 → Faktor 2,0
+
+SCHRITT 2 - Talent-Multiplikator (H2):
+  Max-Potential = 9 × 9 = 81
+  Potential-Ratio = 55 / 81 = 0,679 (67,9%)
+  Da < 80% → Multiplikator 1,0
+
+SCHRITT 3 - Vereins-Bonus (I2):
+  Durchschnitt = (80 + 80) / 2 = 80
+  Bonus = 1 + (80/100) × 0,2 = 1 + 0,16 = 1,16
+
+SCHRITT 4 - Zufälligkeit (J2):
+  Beispiel: 1,05 (zwischen 0,85 und 1,15)
+
+SCHRITT 5 - Stärke-Änderung (K2):
+  2,0 × 1,0 × 1,16 × 1,05 = 2,436
+  Gerundet: 2
+
+SCHRITT 6 - Neue Stärke (L2):
+  55 + 2 = 57
+  Begrenzt auf 1-99: 57
+
+ERGEBNIS: Max Müller verbessert sich von 55 auf 57 (+2)
+
+
+═══════════════════════════════════════════════════════════════════════════
+WEITERE BEISPIELE
+═══════════════════════════════════════════════════════════════════════════
+
+BEISPIEL 2: Spieler in Hochphase
+─────────────────────────────────────────────────────────────────────────
+Spieler: Thomas Schmidt
+Alter: 26, Talent: 5, Stärke: 44, Training: 50, Coaching: 50
+
+Alters-Faktor: 0,05 (Hochphase)
+Max-Potential: 5 × 9 = 45
+Potential-Ratio: 44/45 = 97,8% → Multiplikator 0,3
+Vereins-Bonus: 1 + (50/100) × 0,2 = 1,10
+Zufälligkeit: 0,92 (Beispiel)
+
+Änderung: 0,05 × 0,3 × 1,10 × 0,92 = 0,015 → 0
+Neue Stärke: 44 + 0 = 44 (keine Änderung)
+
+
+BEISPIEL 3: Alternder Spieler
+─────────────────────────────────────────────────────────────────────────
+Spieler: Klaus Weber
+Alter: 33, Talent: 7, Stärke: 58, Training: 60, Coaching: 60
+
+Alters-Faktor: -1,25 (Abstieg)
+Max-Potential: 7 × 9 = 63
+Potential-Ratio: 58/63 = 92,1% → Multiplikator 0,3
+Vereins-Bonus: 1 + (60/100) × 0,2 = 1,12
+Zufälligkeit: 1,08 (Beispiel)
+
+Änderung: -1,25 × 0,3 × 1,12 × 1,08 = -0,454 → 0 (gerundet)
+Neue Stärke: 58 + 0 = 58
+
+Hinweis: Bei anderem Zufallswert könnte es -1 sein
+
+
+BEISPIEL 4: Sehr junges Talent
+─────────────────────────────────────────────────────────────────────────
+Spieler: Anna Becker
+Alter: 17, Talent: 10, Stärke: 60, Training: 90, Coaching: 90
+
+Alters-Faktor: 2,5 (sehr jung)
+Max-Potential: 10 × 9 = 90
+Potential-Ratio: 60/90 = 66,7% → Multiplikator 1,0
+Vereins-Bonus: 1 + (90/100) × 0,2 = 1,18
+Zufälligkeit: 1,12 (Beispiel)
+
+Änderung: 2,5 × 1,0 × 1,18 × 1,12 = 3,304 → 3
+Neue Stärke: 60 + 3 = 63
+
+
+═══════════════════════════════════════════════════════════════════════════
+TABELLE: ALTERS-FAKTOREN
+═══════════════════════════════════════════════════════════════════════════
+
+Alter | Faktor | Erwartete Änderung | Beschreibung
+─────────────────────────────────────────────────────────────────────────
+  16  |  2,5   |    +4 bis +6      | Sehr schnelle Entwicklung
+  17  |  2,5   |    +4 bis +6      | Sehr schnelle Entwicklung
+  18  |  2,0   |    +3 bis +5      | Schnelle Entwicklung
+  19  |  2,0   |    +3 bis +5      | Schnelle Entwicklung
+  20  |  1,5   |    +2 bis +4      | Gute Entwicklung
+  21  |  1,5   |    +2 bis +4      | Gute Entwicklung
+  22  |  1,0   |    +1 bis +3      | Moderate Entwicklung
+  23  |  1,0   |    +1 bis +3      | Moderate Entwicklung
+  24  |  0,5   |     0 bis +2      | Übergang zur Hochphase
+  25  |  0,05  |    -1 bis +1      | Hochphase
+  26  |  0,05  |    -1 bis +1      | Hochphase
+  27  |  0,05  |    -1 bis +1      | Hochphase
+  28  | -0,35  |    -1 bis -2      | Früher Abstieg
+  29  | -0,35  |    -1 bis -2      | Früher Abstieg
+  30  | -0,75  |    -2 bis -3      | Moderater Abstieg
+  31  | -0,75  |    -2 bis -3      | Moderater Abstieg
+  32  | -1,25  |    -3 bis -4      | Signifikanter Abstieg
+  33  | -1,25  |    -3 bis -4      | Signifikanter Abstieg
+  34  | -1,25  |    -3 bis -4      | Signifikanter Abstieg
+  35  | -1,75  |    -4 bis -5      | Steiler Abstieg
+  36  | -1,75  |    -4 bis -5      | Steiler Abstieg
+  37+ | -1,75  |    -4 bis -5      | Steiler Abstieg
+
+
+═══════════════════════════════════════════════════════════════════════════
+TABELLE: TALENT UND MAX-POTENTIAL
+═══════════════════════════════════════════════════════════════════════════
+
+Talent | Max-Potential | Beschreibung
+─────────────────────────────────────────────────────────────────────────
+  10   |      90       | Elite-Potential
+   9   |      81       | Exzellentes Potential
+   8   |      72       | Sehr gutes Potential
+   7   |      63       | Gutes Potential
+   6   |      54       | Überdurchschnittlich
+   5   |      45       | Durchschnittlich
+   4   |      36       | Unterdurchschnittlich
+   3   |      27       | Begrenztes Potential
+   2   |      18       | Sehr begrenztes Potential
+   1   |       9       | Minimales Potential
+
+
+═══════════════════════════════════════════════════════════════════════════
+TABELLE: VEREINS-QUALITÄT UND BONUS
+═══════════════════════════════════════════════════════════════════════════
+
+Training | Coaching | Durchschnitt | Bonus | Effekt
+─────────────────────────────────────────────────────────────────────────
+   100   |   100    |     100      | 1,20  | +20%
+    90   |    90    |      90      | 1,18  | +18%
+    80   |    80    |      80      | 1,16  | +16%
+    70   |    70    |      70      | 1,14  | +14%
+    60   |    60    |      60      | 1,12  | +12%
+    50   |    50    |      50      | 1,10  | +10%
+    40   |    40    |      40      | 1,08  | +8%
+    30   |    30    |      30      | 1,06  | +6%
+    20   |    20    |      20      | 1,04  | +4%
+    10   |    10    |      10      | 1,02  | +2%
+     0   |     0    |       0      | 1,00  | +0%
+
+
+═══════════════════════════════════════════════════════════════════════════
+ANLEITUNG FÜR EXCEL
+═══════════════════════════════════════════════════════════════════════════
+
+1. Öffne Excel und erstelle eine neue Arbeitsmappe
+
+2. Erstelle folgende Spalten-Überschriften in Zeile 1:
+   A1: Spieler Name
+   B1: Alter
+   C1: Talent
+   D1: Aktuelle Stärke
+   E1: Training
+   F1: Coaching
+   G1: Alters-Faktor
+   H1: Talent-Multiplikator
+   I1: Vereins-Bonus
+   J1: Zufälligkeit
+   K1: Stärke-Änderung
+   L1: Neue Stärke
+
+3. Trage in Zeile 2 Beispieldaten ein:
+   A2: Max Müller
+   B2: 19
+   C2: 9
+   D2: 55
+   E2: 80
+   F2: 80
+
+4. Kopiere die Formeln in die entsprechenden Zellen (siehe oben)
+
+5. Kopiere die Formeln nach unten für weitere Spieler
+
+6. Drücke F9 um neue Zufallswerte zu generieren
+
+
+WICHTIG:
+- In Excel Deutschland: Komma (,) statt Punkt (.) für Dezimalzahlen
+- In Excel International: Punkt (.) statt Komma (,) für Dezimalzahlen
+- WENN = IF (in englischem Excel)
+- RUNDEN = ROUND (in englischem Excel)
+- ZUFALLSZAHL = RAND (in englischem Excel)
+
+
+═══════════════════════════════════════════════════════════════════════════
+ATTRIBUT-ENTWICKLUNG
+═══════════════════════════════════════════════════════════════════════════
+
+Alle anderen Attribute (Ausdauer, Konstanz, Drucksicherheit, Volle, Räumer,
+Sicherheit, Auswärts, Start, Mitte, Schluss) entwickeln sich proportional
+zur Stärke-Änderung:
+
+Formel für jedes Attribut:
+Attribut-Änderung = RUNDEN(Stärke-Änderung × (0,7 + ZUFALLSZAHL() × 0,2); 0)
+
+Das bedeutet:
+- Jedes Attribut entwickelt sich mit 70-90% der Stärke-Änderung
+- Bei Stärke +3: Attribute ändern sich um +2 bis +3
+- Bei Stärke -2: Attribute ändern sich um -1 bis -2
+
+Beispiel in Excel (für Ausdauer in Spalte M):
+=MIN(99;MAX(1;M1+RUNDEN(K2*(0,7+ZUFALLSZAHL()*0,2);0)))
+
+Wobei M1 die alte Ausdauer ist und K2 die Stärke-Änderung.
+
+
+═══════════════════════════════════════════════════════════════════════════
+ENDE
+═══════════════════════════════════════════════════════════════════════════
+

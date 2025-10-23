@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getClub, updateClub, addTeamToClub, getLeagues, getSeasonStatus } from '../services/api';
+import ClubEmblem from '../components/ClubEmblem';
 import './ClubDetail.css';
 
 const ClubDetail = () => {
@@ -192,20 +193,11 @@ const ClubDetail = () => {
       <div className="club-profile card">
         <div className="club-header">
           <div className="club-logo">
-            {club.emblem_url ? (
-              <img
-                src={club.emblem_url}
-                alt={`${club.name} Wappen`}
-                className="club-emblem"
-                onError={(e) => {
-                  console.log(`Fehler beim Laden des Emblems für ${club.name}:`, e);
-                  e.target.style.display = 'none';
-                  e.target.parentNode.innerHTML = `<span>${club.name.split(' ').map(word => word[0]).join('')}</span>`;
-                }}
-              />
-            ) : (
-              <span>{club.name.split(' ').map(word => word[0]).join('')}</span>
-            )}
+            <ClubEmblem
+              emblemUrl={club.emblem_url}
+              clubName={club.name}
+              className="club-emblem"
+            />
           </div>
           <div className="club-header-info">
             <h1 className="club-name">{club.name}</h1>
@@ -285,20 +277,12 @@ const ClubDetail = () => {
                     {(club.teams_info || []).map(team => (
                       <Link to={`/teams/${team.id}`} key={team.id} className="team-item">
                         <div className="team-item-logo">
-                          {team.emblem_url ? (
-                            <img
-                              src={team.emblem_url}
-                              alt={`${club.name} Wappen`}
-                              className="team-item-emblem"
-                              onError={(e) => {
-                                console.log(`Fehler beim Laden des Emblems für ${club.name}:`, e);
-                                e.target.style.display = 'none';
-                                e.target.parentNode.innerHTML = `<span>${team.name.charAt(0)}</span>`;
-                              }}
-                            />
-                          ) : (
-                            <span>{team.name.charAt(0)}</span>
-                          )}
+                          <ClubEmblem
+                            emblemUrl={team.emblem_url}
+                            clubName={club.name}
+                            className="team-item-emblem"
+                            fallbackText={team.name.charAt(0)}
+                          />
                         </div>
                         <div className="team-item-content">
                           <span className="team-name">{team.name}</span>
@@ -396,20 +380,11 @@ const ClubDetail = () => {
                   <div key={team.id} className="team-card">
                     <div className="team-header">
                       <div className="team-logo">
-                        {team.emblem_url ? (
-                          <img
-                            src={team.emblem_url}
-                            alt={`${club.name} Wappen`}
-                            className="club-emblem"
-                            onError={(e) => {
-                              console.log(`Fehler beim Laden des Emblems für ${club.name}:`, e);
-                              e.target.style.display = 'none';
-                              e.target.parentNode.innerHTML = `<span>${team.name.split(' ').map(word => word[0]).join('')}</span>`;
-                            }}
-                          />
-                        ) : (
-                          <span>{team.name.split(' ').map(word => word[0]).join('')}</span>
-                        )}
+                        <ClubEmblem
+                          emblemUrl={team.emblem_url}
+                          clubName={club.name}
+                          className="club-emblem"
+                        />
                       </div>
                       <div className="team-title-container">
                         <h3 className="team-title">{team.name}</h3>
@@ -661,7 +636,15 @@ const ClubDetail = () => {
                                   {record.team_name}
                                 </Link>
                               </td>
-                              <td className="record-score">{record.score}</td>
+                              <td className="record-score">
+                                {record.match_id ? (
+                                  <Link to={`/matches/${record.match_id}`} className="record-link">
+                                    {record.score}
+                                  </Link>
+                                ) : (
+                                  record.score
+                                )}
+                              </td>
                               <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
                               <td>
                                 {isCurrentRecord ? (
@@ -715,7 +698,15 @@ const ClubDetail = () => {
                                   <span className="no-team">Unbekannt</span>
                                 )}
                               </td>
-                              <td className="record-score">{record.score}</td>
+                              <td className="record-score">
+                                {record.match_id ? (
+                                  <Link to={`/matches/${record.match_id}`} className="record-link">
+                                    {record.score}
+                                  </Link>
+                                ) : (
+                                  record.score
+                                )}
+                              </td>
                               <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
                               <td>
                                 {isCurrentRecord ? (
@@ -769,7 +760,15 @@ const ClubDetail = () => {
                                   <span className="no-team">Unbekannt</span>
                                 )}
                               </td>
-                              <td className="record-score">{record.score}</td>
+                              <td className="record-score">
+                                {record.match_id ? (
+                                  <Link to={`/matches/${record.match_id}`} className="record-link">
+                                    {record.score}
+                                  </Link>
+                                ) : (
+                                  record.score
+                                )}
+                              </td>
                               <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
                               <td>
                                 {isCurrentRecord ? (
@@ -823,7 +822,15 @@ const ClubDetail = () => {
                                   <span className="no-team">Unbekannt</span>
                                 )}
                               </td>
-                              <td className="record-score">{record.score}</td>
+                              <td className="record-score">
+                                {record.match_id ? (
+                                  <Link to={`/matches/${record.match_id}`} className="record-link">
+                                    {record.score}
+                                  </Link>
+                                ) : (
+                                  record.score
+                                )}
+                              </td>
                               <td>{new Date(record.record_date).toLocaleDateString('de-DE')}</td>
                               <td>
                                 {isCurrentRecord ? (

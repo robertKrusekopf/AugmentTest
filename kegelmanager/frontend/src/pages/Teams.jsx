@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
+import ClubEmblem from '../components/ClubEmblem';
 import './Teams.css';
 
 const Teams = () => {
@@ -139,20 +140,11 @@ const Teams = () => {
           <Link to={`/teams/${team.id}`} key={team.id} className="team-card">
             <div className="team-header">
               <div className="team-logo">
-                {team.emblemUrl ? (
-                  <img
-                    src={team.emblemUrl}
-                    alt={`${team.club} Wappen`}
-                    className="club-emblem"
-                    onError={(e) => {
-                      console.log(`Fehler beim Laden des Emblems für ${team.club}:`, e);
-                      e.target.style.display = 'none';
-                      e.target.parentNode.innerHTML = `<span>${team.name.split(' ').map(word => word[0]).join('')}</span>`;
-                    }}
-                  />
-                ) : (
-                  <span>{team.name.split(' ').map(word => word[0]).join('')}</span>
-                )}
+                <ClubEmblem
+                  emblemUrl={team.emblemUrl}
+                  clubName={team.club}
+                  className="club-emblem"
+                />
               </div>
               <div className="team-title">
                 <h2 className="team-name">{team.name}</h2>

@@ -1,0 +1,55 @@
+/* Club Emblem Component Styles */
+
+/* Prevent flickering during image load */
+.emblem-loading {
+  opacity: 0;
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Fallback initials display */
+.emblem-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: bold;
+  border-radius: 50%;
+  text-transform: uppercase;
+}
+
+/* Placeholder shown while image is loading */
+.emblem-placeholder {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Ensure smooth transitions */
+.club-emblem,
+.club-emblem-small,
+.club-emblem-medium,
+.club-emblem-large,
+.team-emblem,
+.team-emblem-tiny {
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* Hide broken image icon */
+img.club-emblem:not([src]),
+img.club-emblem-small:not([src]),
+img.club-emblem-medium:not([src]),
+img.club-emblem-large:not([src]),
+img.team-emblem:not([src]),
+img.team-emblem-tiny:not([src]) {
+  display: none;
+}
+

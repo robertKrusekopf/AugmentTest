@@ -110,31 +110,114 @@ def get_age_range_for_altersklasse(altersklasse):
         return (18, 35)
 
 
-def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False, team_staerke=None):
+
+
+
+def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False, team_staerke=None, age=None, talent=None):
     """
     Calculate player attributes based on team strength.
     IDENTICAL to init_db.py version for consistency.
+
+    NEW: Age-adjusted strength generation!
+    - Young players are generated with LOWER strength
+    - This lower strength is calculated so they reach team_staerke at peak (age 27)
+    - This makes young players realistically weaker but with growth potential
+
+    SPECIAL CASE: 10-year-old players
+    - ALL 10-year-olds are generated with strength 5-15, regardless of team level
+    - This reflects that young children don't show major skill differences yet
+    - Talent determines their peak strength, not their starting strength
+
+    Args:
+        league_level: League level (1 = top level)
+        is_youth_team: Whether this is a youth team
+        is_second_team: Whether this is a second team
+        team_staerke: Team strength value (represents peak/target strength)
+        age: Player's age (used for age-adjusted strength calculation)
+        talent: Player's talent (optional, for talent-based generation)
+
+    Returns:
+        dict: Dictionary with all player attributes
     """
+    from config.config import get_config
+    config = get_config()
 
+    # Get configuration values
+    base_std_dev = config.get('player_generation.attributes.base_std_dev', 5.0)
+    league_factor = config.get('player_generation.attributes.league_level_factor', 0.5)
+    min_attr = config.get('player_generation.attributes.min_attribute_value', 1)
+    max_attr = config.get('player_generation.attributes.max_attribute_value', 99)
+    talent_min = config.get('player_generation.talent.min', 1)
+    talent_max = config.get('player_generation.talent.max', 10)
+
+    attr_base_offset = config.get('player_generation.attributes.attr_base_value_offset', 60)
+    attr_strength_factor = config.get('player_generation.attributes.attr_strength_factor', 0.6)
+    attr_std_dev_base = config.get('player_generation.attributes.attr_std_dev_base', 5.0)
+    attr_std_dev_league_factor = config.get('player_generation.attributes.attr_std_dev_league_factor', 0.3)
+
+    # UNIFIED SYSTEM FOR YOUNG PLAYERS (age 10-26)
+    # Young players' strength is determined by talent and age, NOT by team level
+    # This creates realistic progression where all young players start similar and develop based on talent
+    if age is not None and age < 27:
+        # Generate random talent (will determine peak strength)
+        if talent is None:
+            talent = random.randint(talent_min, talent_max)
+
+        # Calculate current strength based on talent and age (unified system)
+        from player_development import calculate_current_strength_from_talent_and_age
+        player_strength = calculate_current_strength_from_talent_and_age(talent, age, club_bonus=1.1)
+
+        attributes = {
+            'strength': player_strength,
+            'talent': talent,
+        }
+
+        # Calculate other attributes based on CURRENT strength (not target)
+        base_attr_value = attr_base_offset + (attributes['strength'] - 50) * attr_strength_factor
+        attr_std_dev = attr_std_dev_base + (league_level - 1) * attr_std_dev_league_factor
+
+        # Generate all other attributes
+        for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
+                    'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
+            attributes[attr] = max(min_attr, min(max_attr, int(np.random.normal(base_attr_value, attr_std_dev))))
+
+        return attributes
+
+    # OLDER PLAYERS (age 27+) - use team_staerke based generation
+    # For players at or past peak, team level determines their strength
     # Calculate standard deviation (higher leagues have more consistent players)
-    std_dev = 5 + (league_level - 1) * 0.5
+    std_dev = base_std_dev + (league_level - 1) * league_factor
 
-    # Generate attribute values using normal distribution
-    player_strength = max(1, min(99, int(np.random.normal(team_staerke, std_dev))))
+    # Generate BASE strength using normal distribution based on team strength
+    # This represents the "target" or "peak" strength
+    target_strength = max(min_attr, min(max_attr, int(np.random.normal(team_staerke, std_dev))))
+
+    # Calculate talent based on peak strength (if not provided)
+    if talent is None:
+        from player_development import calculate_talent_from_peak_strength
+        talent = calculate_talent_from_peak_strength(target_strength)
+
+    # For players past peak, calculate decline
+    if age is not None and age > 27:
+        from player_development import calculate_age_adjusted_strength
+        player_strength = calculate_age_adjusted_strength(target_strength, age, talent, club_bonus=1.1)
+    else:
+        # Player is at peak or age not provided - use target strength directly
+        player_strength = target_strength
 
     attributes = {
         'strength': player_strength,
-        'talent': random.randint(1, 10),  # Talent is independent of league level
+        'talent': talent,
     }
 
-    # Calculate other attributes based on strength - IDENTICAL to init_db.py
-    base_attr_value = 60 + (attributes['strength'] - 50) * 0.6
-    attr_std_dev = 5 + (league_level - 1) * 0.3
+    # Calculate other attributes based on CURRENT strength (not target)
+    base_attr_value = attr_base_offset + (attributes['strength'] - 50) * attr_strength_factor
+    attr_std_dev = attr_std_dev_base + (league_level - 1) * attr_std_dev_league_factor
 
     # Generate all other attributes
     for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
                 'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
-        attributes[attr] = max(1, min(99, int(np.random.normal(base_attr_value, attr_std_dev))))
+        attributes[attr] = max(min_attr, min(max_attr, int(np.random.normal(base_attr_value, attr_std_dev))))
 
     return attributes
 
@@ -447,15 +530,7 @@ def supplement_missing_data(analysis):
                     # Überprüfe, ob es ein zweites Team ist
                     is_second_team = "II" in team.name
 
-                    # Berechne Spieler-Attribute basierend auf Team-Stärke
-                    attributes = calculate_player_attribute_by_league_level(
-                        league_level,
-                        is_youth_team=team.is_youth_team,
-                        is_second_team=is_second_team,
-                        team_staerke=team.staerke
-                    )
-
-                    # Determine age based on league's altersklasse
+                    # Determine age FIRST (before calculating attributes)
                     if team.league and team.league.altersklasse:
                         min_age, max_age = get_age_range_for_altersklasse(team.league.altersklasse)
                         age = random.randint(min_age, max_age)
@@ -465,6 +540,15 @@ def supplement_missing_data(analysis):
                     else:
                         # Default: Herren (18-35 Jahre)
                         age = random.randint(18, 35)
+
+                    # Berechne Spieler-Attribute basierend auf Team-Stärke UND ALTER
+                    attributes = calculate_player_attribute_by_league_level(
+                        league_level,
+                        is_youth_team=team.is_youth_team,
+                        is_second_team=is_second_team,
+                        team_staerke=team.staerke,
+                        age=age  # Pass age for age-based strength calculation
+                    )
 
                     # Gehalt basierend auf Stärke und Alter - IDENTICAL to init_db.py
                     base_salary = attributes['strength'] * 100
@@ -516,7 +600,9 @@ def supplement_missing_data(analysis):
                         schluss=attributes['schluss'],
                         # Ruhestandsalter
                         retirement_age=retirement_age,
-                        is_retired=False
+                        is_retired=False,
+                        # Nationalität
+                        nationalitaet='Deutsch'
                     )
                     db.session.add(player)
 
@@ -786,11 +872,11 @@ def supplement_missing_data(analysis):
                                 total_assignments += 1
                         print(f"  {club.name}: {len(players)} Spieler zu {team.name} zugeordnet")
 
-                    # Wenn mehrere Teams: Verwende initial_player_distribution
+                    # Wenn mehrere Teams: Verwende age-aware Verteilungslogik
                     elif len(teams) > 1:
                         print(f"  {club.name}: Verwende Verteilungslogik für {len(teams)} Teams")
-                        from player_redistribution import redistribute_club_players_by_strength
-                        redistribute_club_players_by_strength(club.id)
+                        from player_redistribution import redistribute_club_players_by_strength_and_age
+                        redistribute_club_players_by_strength_and_age(club.id)
 
                 db.session.commit()
                 print(f"Player-Team-Zuordnungen erfolgreich erstellt! ({total_assignments} Zuordnungen)")

@@ -1133,6 +1133,53 @@ def get_player_history(player_id):
         traceback.print_exc()
         return jsonify({"error": "Fehler beim Laden der Spieler-Historie"}), 500
 
+
+@app.route('/api/players/<int:player_id>/development_history', methods=['GET'])
+def get_player_development_history(player_id):
+    """Get player development history (strength and attributes over seasons)."""
+    try:
+        from models import PlayerHistory
+
+        # Verify player exists
+        player = Player.query.get_or_404(player_id)
+
+        # Check if PlayerHistory table exists
+        inspector = db.inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+
+        if 'player_history' not in existing_tables:
+            return jsonify({
+                'player_id': player_id,
+                'player_name': player.name,
+                'current_age': player.age,
+                'current_strength': player.strength,
+                'history': []
+            })
+
+        # Get all history records for this player, ordered by season
+        history_records = PlayerHistory.query.filter_by(
+            player_id=player_id
+        ).order_by(PlayerHistory.season_id.asc()).all()
+
+        # Convert to dict format
+        history_data = [record.to_dict() for record in history_records]
+
+        return jsonify({
+            'player_id': player_id,
+            'player_name': player.name,
+            'current_age': player.age,
+            'current_strength': player.strength,
+            'current_talent': player.talent,
+            'history': history_data
+        })
+
+    except Exception as e:
+        print(f"Error getting player development history: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Fehler beim Laden der Entwicklungshistorie"}), 500
+
+
 @app.route('/api/players/<int:player_id>', methods=['PATCH'])
 def update_player(player_id):
     """Update player attributes (Cheat mode)."""
@@ -1201,6 +1248,10 @@ def update_player(player_id):
     # Update retirement system attributes (only in cheat mode)
     if 'retirement_age' in data:
         player.retirement_age = data['retirement_age']
+
+    # Update nationality (only in cheat mode)
+    if 'nationalitaet' in data:
+        player.nationalitaet = data['nationalitaet']
 
     # Save changes to database
     db.session.commit()
@@ -2237,43 +2288,52 @@ def migrate_database():
 # Route to serve club emblems
 @app.route('/api/club-emblem/<verein_id>', methods=['GET'])
 def get_club_emblem(verein_id):
-    """Serve the club emblem image."""
-    print(f"DEBUG: Requested emblem for verein_id: {verein_id}")
+    """Serve the club emblem image with proper caching headers."""
     # Convert verein_id to string if it's not already
     verein_id_str = str(verein_id)
 
     # Get the wappen directory
     wappen_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wappen")
-    print(f"DEBUG: Wappen directory: {wappen_dir}")
 
     # Check if the directory exists
     if not os.path.exists(wappen_dir):
-        print(f"DEBUG: Wappen directory does not exist: {wappen_dir}")
         return jsonify({"error": "Wappen directory not found"}), 404
-
-    # List all files in the wappen directory
-    all_files = os.listdir(wappen_dir)
-    print(f"DEBUG: Number of files in wappen directory: {len(all_files)}")
 
     # First try exact match
     exact_file = f"{verein_id_str}.png"
     exact_path = os.path.join(wappen_dir, exact_file)
 
     if os.path.exists(exact_path):
-        print(f"DEBUG: Found exact match: {exact_path}")
-        return send_file(exact_path, mimetype='image/png')
+        # Send file with caching headers to prevent flickering
+        response = send_file(
+            exact_path,
+            mimetype='image/png',
+            as_attachment=False,
+            download_name=exact_file
+        )
+        # Add cache headers (cache for 1 hour)
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        response.headers['ETag'] = f'"{verein_id_str}"'
+        return response
 
     # If no exact match, try to find a file that contains the verein_id
-    matching_files = [f for f in all_files if verein_id_str in f]
-    print(f"DEBUG: Matching files for verein_id {verein_id}: {matching_files}")
+    all_files = os.listdir(wappen_dir)
+    matching_files = [f for f in all_files if verein_id_str in f and f.endswith('.png')]
 
     if matching_files:
         # Use the first matching file
         emblem_path = os.path.join(wappen_dir, matching_files[0])
-        print(f"DEBUG: Serving emblem from: {emblem_path}")
-        return send_file(emblem_path, mimetype='image/png')
+        response = send_file(
+            emblem_path,
+            mimetype='image/png',
+            as_attachment=False,
+            download_name=matching_files[0]
+        )
+        # Add cache headers (cache for 1 hour)
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        response.headers['ETag'] = f'"{verein_id_str}"'
+        return response
     else:
-        print(f"DEBUG: No emblem found for verein_id: {verein_id}")
         return jsonify({"error": "Emblem not found"}), 404
 
 # Debug endpoint to check match data
@@ -3598,3 +3658,41 @@ if __name__ == '__main__':
 # Auto-reload trigger: 1759851630.6044295
 # Auto-reload trigger: 1759852850.8799868
 # Auto-reload trigger: 1759853378.967468
+# Auto-reload trigger: 1759859107.1895528
+# Auto-reload trigger: 1759859622.8780248
+# Auto-reload trigger: 1759859956.0304375
+# Auto-reload trigger: 1759860571.4961412
+# Auto-reload trigger: 1759861092.9008517
+# Auto-reload trigger: 1760637495.2138665
+# Auto-reload trigger: 1760637813.0092092
+# Auto-reload trigger: 1760641596.2589025
+# Auto-reload trigger: 1760642066.0581129
+# Auto-reload trigger: 1760714616.2490017
+# Auto-reload trigger: 1760715062.348347
+# Auto-reload trigger: 1760715567.7699833
+# Auto-reload trigger: 1760716470.6454687
+# Auto-reload trigger: 1760869377.0636678
+# Auto-reload trigger: 1760869910.563525
+# Auto-reload trigger: 1760871281.510435
+# Auto-reload trigger: 1760872694.8017468
+# Auto-reload trigger: 1760873433.5676937
+# Auto-reload trigger: 1760880147.470745
+# Auto-reload trigger: 1760880925.049333
+# Auto-reload trigger: 1760883855.6195416
+# Auto-reload trigger: 1760884656.3789918
+# Auto-reload trigger: 1760884696.7487133
+# Auto-reload trigger: 1760886092.936358
+# Auto-reload trigger: 1760886779.4632063
+# Auto-reload trigger: 1760888778.4555132
+# Auto-reload trigger: 1760888780.759785
+# Auto-reload trigger: 1760889741.5037782
+# Auto-reload trigger: 1760891073.0387585
+# Auto-reload trigger: 1760892611.1130044
+# Auto-reload trigger: 1760893905.9330013
+# Auto-reload trigger: 1760893911.5494227
+# Auto-reload trigger: 1760893917.6667306
+# Auto-reload trigger: 1760894860.397627
+# Auto-reload trigger: 1760896455.1239274
+# Auto-reload trigger: 1761209046.7144282
+# Auto-reload trigger: 1761209083.0999093
+# Auto-reload trigger: 1761212449.9610798

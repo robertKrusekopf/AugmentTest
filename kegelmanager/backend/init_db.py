@@ -139,10 +139,34 @@ def get_age_range_for_altersklasse(altersklasse):
         # Herren oder unbekannte Altersklasse
         return (18, 35)
 
-def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False, team_staerke=None):
+
+
+
+def calculate_player_attribute_by_league_level(league_level, is_youth_team=False, is_second_team=False, team_staerke=None, age=None, talent=None):
     """
     Calculate player attributes based on team strength.
     Uses values from game_config.json.
+
+    NEW: Age-adjusted strength generation!
+    - Young players are generated with LOWER strength
+    - This lower strength is calculated so they reach team_staerke at peak (age 27)
+    - This makes young players realistically weaker but with growth potential
+
+    SPECIAL CASE: 10-year-old players
+    - ALL 10-year-olds are generated with strength 5-15, regardless of team level
+    - This reflects that young children don't show major skill differences yet
+    - Talent determines their peak strength, not their starting strength
+
+    Args:
+        league_level: League level (1 = top level)
+        is_youth_team: Whether this is a youth team
+        is_second_team: Whether this is a second team
+        team_staerke: Team strength value (represents peak/target strength)
+        age: Player's age (used for age-adjusted strength calculation)
+        talent: Player's talent (optional, for talent-based generation)
+
+    Returns:
+        dict: Dictionary with all player attributes
     """
     config = get_config()
 
@@ -159,18 +183,62 @@ def calculate_player_attribute_by_league_level(league_level, is_youth_team=False
     attr_std_dev_base = config.get('player_generation.attributes.attr_std_dev_base', 5.0)
     attr_std_dev_league_factor = config.get('player_generation.attributes.attr_std_dev_league_factor', 0.3)
 
+    # UNIFIED SYSTEM FOR YOUNG PLAYERS (age 10-26)
+    # Young players' strength is determined by talent and age, NOT by team level
+    # This creates realistic progression where all young players start similar and develop based on talent
+    if age is not None and age < 27:
+        # Generate random talent (will determine peak strength)
+        if talent is None:
+            talent = random.randint(talent_min, talent_max)
+
+        # Calculate current strength based on talent and age (unified system)
+        from player_development import calculate_current_strength_from_talent_and_age
+        player_strength = calculate_current_strength_from_talent_and_age(talent, age, club_bonus=1.1)
+
+        attributes = {
+            'strength': player_strength,
+            'talent': talent,
+        }
+
+        # Calculate other attributes based on CURRENT strength (not target)
+        base_attr_value = attr_base_offset + (attributes['strength'] - 50) * attr_strength_factor
+        attr_std_dev = attr_std_dev_base + (league_level - 1) * attr_std_dev_league_factor
+
+        # Generate all other attributes
+        for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
+                    'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
+            attributes[attr] = max(min_attr, min(max_attr, int(np.random.normal(base_attr_value, attr_std_dev))))
+
+        return attributes
+
+    # OLDER PLAYERS (age 27+) - use team_staerke based generation
+    # For players at or past peak, team level determines their strength
     # Calculate standard deviation (higher leagues have more consistent players)
     std_dev = base_std_dev + (league_level - 1) * league_factor
 
-    # Generate attribute values using normal distribution
-    player_strength = max(min_attr, min(max_attr, int(np.random.normal(team_staerke, std_dev))))
+    # Generate BASE strength using normal distribution based on team strength
+    # This represents the "target" or "peak" strength
+    target_strength = max(min_attr, min(max_attr, int(np.random.normal(team_staerke, std_dev))))
+
+    # Calculate talent based on peak strength (if not provided)
+    if talent is None:
+        from player_development import calculate_talent_from_peak_strength
+        talent = calculate_talent_from_peak_strength(target_strength)
+
+    # For players past peak, calculate decline
+    if age is not None and age > 27:
+        from player_development import calculate_age_adjusted_strength
+        player_strength = calculate_age_adjusted_strength(target_strength, age, talent, club_bonus=1.1)
+    else:
+        # Player is at peak or age not provided - use target strength directly
+        player_strength = target_strength
 
     attributes = {
         'strength': player_strength,
-        'talent': random.randint(talent_min, talent_max),  # Talent is independent of league level
+        'talent': talent,
     }
 
-    # Calculate other attributes based on strength
+    # Calculate other attributes based on CURRENT strength (not target)
     base_attr_value = attr_base_offset + (attributes['strength'] - 50) * attr_strength_factor
     attr_std_dev = attr_std_dev_base + (league_level - 1) * attr_std_dev_league_factor
 
@@ -553,14 +621,6 @@ def create_sample_data(custom_app=None):
                 # Check if it's a second team
                 is_second_team = "II" in team.name
 
-                # Calculate player attributes based on league level and team strength
-                attributes = calculate_player_attribute_by_league_level(
-                    league_level,
-                    is_youth_team=team.is_youth_team,
-                    is_second_team=is_second_team,
-                    team_staerke=team.staerke  # Pass the team's strength value
-                )
-
                 # Get configuration values
                 config = get_config()
                 youth_min = config.get('player_generation.age_ranges.youth_min', 16)
@@ -579,7 +639,7 @@ def create_sample_data(custom_app=None):
 
                 positions = config.get('player_generation.positions', ["Angriff", "Mittelfeld", "Abwehr"])
 
-                # Determine age based on league's altersklasse
+                # Determine age FIRST (before calculating attributes)
                 if team.league and team.league.altersklasse:
                     min_age, max_age = get_age_range_for_altersklasse(team.league.altersklasse)
                     age = random.randint(min_age, max_age)
@@ -589,6 +649,15 @@ def create_sample_data(custom_app=None):
                 else:
                     # Default: Herren (18-35 Jahre)
                     age = random.randint(18, 35)
+
+                # Calculate player attributes based on league level, team strength, AND AGE
+                attributes = calculate_player_attribute_by_league_level(
+                    league_level,
+                    is_youth_team=team.is_youth_team,
+                    is_second_team=is_second_team,
+                    team_staerke=team.staerke,  # Pass the team's strength value
+                    age=age  # Pass the age for age-based strength calculation
+                )
 
                 # Get attributes from the calculated values
                 strength = attributes['strength']
@@ -653,7 +722,9 @@ def create_sample_data(custom_app=None):
                     schluss=schluss,
                     # Ruhestandsalter
                     retirement_age=retirement_age,
-                    is_retired=False
+                    is_retired=False,
+                    # Nationalität
+                    nationalitaet='Deutsch'
                 )
                 db.session.add(player)
 
@@ -666,8 +737,8 @@ def create_sample_data(custom_app=None):
 
         # Perform initial player distribution for UI display purposes
         print("Performing initial player distribution...")
-        from player_redistribution import initial_player_distribution
-        initial_player_distribution()
+        from player_redistribution import redistribute_players_by_strength_and_age
+        redistribute_players_by_strength_and_age()
 
         # Generate fixtures for each league using the proper round-robin algorithm
         print("Generating match fixtures...")

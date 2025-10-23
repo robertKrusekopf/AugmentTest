@@ -1,9 +1,18 @@
 """
 Module for assigning players to teams within a club for a match day.
+
+IMPORTANT: Player assignment respects age class (Altersklasse) restrictions.
+Players can only be assigned to teams whose league age class is equal to or older
+than the player's age class.
 """
 
 from models import db, Player, Team, Match, CupMatch, Cup, UserLineup, LineupPosition, get_cup_match_frontend_id
 from sqlalchemy import or_
+from age_class_utils import (
+    get_minimum_altersklasse_for_age,
+    get_age_class_rank,
+    is_player_allowed_in_team
+)
 
 def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     """
@@ -76,37 +85,68 @@ def assign_players_to_teams_for_match_day(club_id, match_day, season_id):
     if not teams_with_matches:
         return {}
 
-    # Sort teams by league level (lower level number = higher league)
-    teams_with_matches.sort(key=lambda t: t.league.level if t.league else 999)
+    # Sort teams by age class rank (oldest first), then by league level (higher league first)
+    def team_sort_key(t):
+        if t.league and t.league.altersklasse:
+            age_rank = get_age_class_rank(t.league.altersklasse)
+        else:
+            age_rank = 6  # Herren rank for teams without age class
+        league_level = t.league.level if t.league else 999
+        # Sort by age_rank descending (oldest first), then by league_level ascending (best league first)
+        return (-age_rank, league_level)
+
+    teams_with_matches.sort(key=team_sort_key)
 
     # Get all available players from this club with optimized query
-    # Load only the attributes we need for sorting to reduce memory usage
-    # Filter out players who have already played on this match day
-    # IMPORTANT: Also filter out retired players
+    # IMPORTANT: We need the 'age' field for age class validation
     available_players = Player.query.filter_by(
         club_id=club_id,
         is_available_current_matchday=True,
         has_played_current_matchday=False,
         is_retired=False
-    ).options(
-        db.load_only(Player.id, Player.strength, Player.konstanz, Player.drucksicherheit, Player.volle, Player.raeumer)
     ).all()
 
-    # Sort players by a weighted rating of their attributes
+    # Group players by their minimum age class
+    from collections import defaultdict
     from simulation import calculate_player_rating
-    available_players.sort(key=calculate_player_rating, reverse=True)
 
-    # Assign players to teams
+    players_by_min_class = defaultdict(list)
+    for player in available_players:
+        if not player.age:
+            min_class = 'Herren'
+        else:
+            min_class = get_minimum_altersklasse_for_age(player.age)
+        players_by_min_class[min_class].append(player)
+
+    # Sort players within each age class by rating (best first)
+    for age_class in players_by_min_class:
+        players_by_min_class[age_class].sort(key=calculate_player_rating, reverse=True)
+
+    # Assign players to teams with age class validation
     team_players = {}
     used_players = set()
 
-    # For each team (starting with the highest league), assign 6 players
+    # For each team (starting with youngest age class, highest league), assign 6 players
     for team in teams_with_matches:
-        # Select the best 6 available players (same logic as before)
+        team_age_class = team.league.altersklasse if team.league and team.league.altersklasse else 'Herren'
+        team_age_rank = get_age_class_rank(team_age_class)
+
+        # Find all players eligible for this team (age class equal or younger)
+        eligible_players = []
+        for age_class, player_list in players_by_min_class.items():
+            player_age_rank = get_age_class_rank(age_class)
+            # Player can play in this team if their age class rank <= team age class rank
+            if player_age_rank <= team_age_rank:
+                eligible_players.extend(player_list)
+
+        # Sort eligible players by rating
+        eligible_players.sort(key=calculate_player_rating, reverse=True)
+
+        # Select the best 6 eligible available players
         selected_players = []
         assigned_count = 0
 
-        for player in available_players:
+        for player in eligible_players:
             if player.id not in used_players and assigned_count < 6:
                 selected_players.append(player)
                 used_players.add(player.id)
@@ -281,6 +321,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             t.club_id,
             t.name as team_name,
             l.level as league_level,
+            l.altersklasse as altersklasse,
             m.id as match_id,
             'league' as match_source,
             CASE
@@ -302,6 +343,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             t.club_id,
             t.name as team_name,
             l.level as league_level,
+            l.altersklasse as altersklasse,
             cm.id as match_id,
             'cup' as match_source,
             CASE
@@ -340,6 +382,7 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             'id': row_dict['team_id'],
             'name': row_dict['team_name'],
             'league_level': row_dict['league_level'],
+            'altersklasse': row_dict.get('altersklasse'),  # Include age class for validation
             'match_id': match_id,
             'match_type': row_dict['match_type']
         }
@@ -366,9 +409,10 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         player_filter = f"AND is_available_current_matchday = 1 {'' if include_played_matches else 'AND has_played_current_matchday = 0'}"
         print(f"DEBUG: League day detected - using normal player filtering")
 
+    # IMPORTANT: Include 'age' field for age class validation
     players_query = text(f"""
         SELECT
-            id, name, club_id, strength, konstanz, drucksicherheit, volle, raeumer,
+            id, name, club_id, age, strength, konstanz, drucksicherheit, volle, raeumer,
             ausdauer, sicherheit, auswaerts, start, mitte, schluss,
             form_short_term, form_medium_term, form_long_term,
             form_short_remaining_days, form_medium_remaining_days, form_long_remaining_days
@@ -394,9 +438,11 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
             club_players[club_id] = []
 
         # Create player object-like structure for compatibility
+        # IMPORTANT: Include 'age' for age class validation
         player_data = {
             'id': row_dict['id'],
             'name': row_dict['name'],
+            'age': row_dict['age'],
             'strength': row_dict['strength'],
             'konstanz': row_dict['konstanz'],
             'drucksicherheit': row_dict['drucksicherheit'],
@@ -429,8 +475,29 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
         if not teams or not available_players:
             continue
 
-        # Sort teams by league level (lower level = higher priority)
-        teams.sort(key=lambda t: t['league_level'])
+        # Sort teams by age class rank (oldest first), then by league level (higher league first)
+        def team_sort_key_batch(t):
+            if t.get('altersklasse'):
+                age_rank = get_age_class_rank(t['altersklasse'])
+            else:
+                age_rank = 6  # Herren rank for teams without age class
+            league_level = t.get('league_level', 999)
+            # Sort by age_rank descending (oldest first), then by league_level ascending (best league first)
+            return (-age_rank, league_level)
+
+        teams.sort(key=team_sort_key_batch)
+
+        # Group players by their minimum age class for this club
+        from collections import defaultdict
+        players_by_min_class = defaultdict(list)
+
+        for player_data in available_players:
+            player_age = player_data.get('age')
+            if not player_age:
+                min_class = 'Herren'
+            else:
+                min_class = get_minimum_altersklasse_for_age(player_age)
+            players_by_min_class[min_class].append(player_data)
 
         used_players = set()
 
@@ -477,11 +544,22 @@ def batch_assign_players_to_teams(clubs_with_matches, match_day, season_id, cach
 
                 continue
 
-            # No manual lineup found, use automatic assignment
-            # Select the best 6 available players (same logic as before)
+            # No manual lineup found, use automatic assignment with age class validation
+            team_age_class = team.get('altersklasse', 'Herren')
+            team_age_rank = get_age_class_rank(team_age_class)
+
+            # Find all players eligible for this team (age class equal or younger)
+            eligible_players = []
+            for age_class, player_list in players_by_min_class.items():
+                player_age_rank = get_age_class_rank(age_class)
+                # Player can play in this team if their age class rank <= team age class rank
+                if player_age_rank <= team_age_rank:
+                    eligible_players.extend(player_list)
+
+            # Select the best 6 eligible available players
             assigned_count = 0
             selected_players = []
-            for player_data in available_players:
+            for player_data in eligible_players:
                 if player_data['id'] not in used_players and assigned_count < 6:
                     selected_players.append(player_data)
                     used_players.add(player_data['id'])

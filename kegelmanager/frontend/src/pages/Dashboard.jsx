@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getClub, getTeam, getMatch, getLeagues, getClubRecentMatches } from '../services/api';
 import LineupSelector from '../components/LineupSelector';
+import ClubEmblem from '../components/ClubEmblem';
+import TeamLink from '../components/TeamLink';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -182,15 +184,11 @@ const Dashboard = () => {
     <div className="dashboard">
       <h1 className="page-title">
         {managerClub?.name || 'Dashboard'}
-        {managerClub?.emblem_url && (
-          <img
-            src={managerClub.emblem_url}
-            alt={`${managerClub.name} Wappen`}
+        {managerClub && (
+          <ClubEmblem
+            emblemUrl={managerClub.emblem_url}
+            clubName={managerClub.name}
             className="club-emblem-medium"
-            onError={(e) => {
-              console.log(`Fehler beim Laden des Emblems für ${managerClub.name}:`, e);
-              e.target.style.display = 'none';
-            }}
           />
         )}
       </h1>
@@ -339,7 +337,11 @@ const Dashboard = () => {
                   <tr key={team.team_id} className={isOwnTeam ? 'own-team' : ''}>
                     <td>{team.position}</td>
                     <td>
-                      <Link to={`/teams/${team.team_id}`} className="team-link">
+                      <TeamLink
+                        teamId={team.team_id}
+                        clubId={team.club_id}
+                        teamName={team.team}
+                      >
                         <div className="club-row-info">
                           {team.emblem_url ? (
                             <img
@@ -354,7 +356,7 @@ const Dashboard = () => {
                           ) : null}
                           <span>{team.team}</span>
                         </div>
-                      </Link>
+                      </TeamLink>
                     </td>
                     <td>{team.played}</td>
                     <td>{team.won}</td>

@@ -152,6 +152,16 @@ export const getPlayerHistory = async (id) => {
   }
 };
 
+export const getPlayerDevelopmentHistory = async (id) => {
+  try {
+    const response = await api.get(`/players/${id}/development_history`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching player development history for ${id}:`, error);
+    throw error;
+  }
+};
+
 export const getPlayerMatches = async (id) => {
   try {
     const response = await api.get(`/players/${id}/matches`);

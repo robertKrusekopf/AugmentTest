@@ -1,7 +1,9 @@
 import numpy as np
+import random
 from datetime import datetime, timedelta, timezone
-from models import db, Match, Player, Team, League, Season, Message, GameSettings
+from models import db, Match, Player, Team, League, Season, Message, GameSettings, Club
 from form_system import apply_form_to_strength, get_player_total_form_modifier
+from config.config import get_config
 
 # Central player rating formula for SQL queries
 PLAYER_RATING_SQL = "(strength * 0.5 + konstanz * 0.1 + drucksicherheit * 0.1 + volle * 0.15 + raeumer * 0.15)"
@@ -62,6 +64,362 @@ Die Geschäftsführung"""
 
     except Exception as e:
         print(f"  Error creating retirement message for {player.name}: {e}")
+
+
+def create_new_player_message(player):
+    """
+    Erstellt eine Nachricht, wenn ein neuer Spieler für einen Verein generiert wird.
+    Nur für Spieler des Manager-Vereins.
+
+    Args:
+        player: Der neu generierte Spieler
+    """
+    try:
+        # Get game settings to check if this player belongs to the manager's club
+        settings = GameSettings.query.first()
+
+        # Only create message if player belongs to the manager's club
+        if not settings or not settings.manager_club_id:
+            # No manager club set, don't create messages
+            return
+
+        if player.club_id != settings.manager_club_id:
+            # Player doesn't belong to manager's club, don't create message
+            return
+
+        # Get the club name
+        club_name = player.club.name if player.club else "Unbekannter Verein"
+
+        # Create the message
+        subject = f"Neuer Spieler {player.name} ist dem Verein beigetreten"
+
+        # Create HTML content with clickable player name
+        content = f"""Sehr geehrter Manager,
+
+wir freuen uns, Ihnen mitteilen zu können, dass <a href="/players/{player.id}" class="player-link">{player.name}</a> unserem Verein beigetreten ist!
+
+Der {player.age}-jährige {player.position} hat einen Vertrag bei {club_name} unterschrieben und steht ab sofort zur Verfügung.
+
+Wir wünschen {player.name} viel Erfolg und eine erfolgreiche Karriere bei {club_name}!
+
+Mit freundlichen Grüßen
+Die Geschäftsführung"""
+
+        # Create the message
+        message = Message(
+            subject=subject,
+            content=content,
+            message_type='success',
+            notification_category='player_new',
+            is_read=False,
+            related_club_id=player.club_id,
+            related_player_id=player.id
+        )
+
+        db.session.add(message)
+        print(f"  Created new player notification for {player.name} (Manager's club)")
+
+    except Exception as e:
+        print(f"  Error creating new player message for {player.name}: {e}")
+
+
+def get_age_range_for_altersklasse(altersklasse):
+    """
+    Bestimmt den Altersbereich basierend auf der Altersklasse der Liga.
+
+    Args:
+        altersklasse: String mit der Altersklasse (z.B. "Herren", "A-Jugend", "A", etc.)
+
+    Returns:
+        tuple: (min_age, max_age) für die Altersklasse
+    """
+    if not altersklasse:
+        return (18, 35)  # Default: Herren
+
+    altersklasse_lower = altersklasse.lower().strip()
+
+    # Jugendklassen (sowohl Langform "A-Jugend" als auch Kurzform "A")
+    if 'a-jugend' in altersklasse_lower or 'a jugend' in altersklasse_lower or altersklasse_lower == 'a':
+        return (17, 18)
+    elif 'b-jugend' in altersklasse_lower or 'b jugend' in altersklasse_lower or altersklasse_lower == 'b':
+        return (15, 16)
+    elif 'c-jugend' in altersklasse_lower or 'c jugend' in altersklasse_lower or altersklasse_lower == 'c':
+        return (13, 14)
+    elif 'd-jugend' in altersklasse_lower or 'd jugend' in altersklasse_lower or altersklasse_lower == 'd':
+        return (11, 12)
+    elif 'e-jugend' in altersklasse_lower or 'e jugend' in altersklasse_lower or altersklasse_lower == 'e':
+        return (9, 10)
+    elif 'f-jugend' in altersklasse_lower or 'f jugend' in altersklasse_lower or altersklasse_lower == 'f':
+        return (7, 8)
+    else:
+        # Herren oder unbekannte Altersklasse
+        return (18, 35)
+
+
+def generate_retirement_age():
+    """
+    Generiert das Ruhestandsalter für einen Spieler.
+
+    Verwendet Werte aus der Konfigurationsdatei (game_config.json).
+    Standard: ~80% zwischen 35-40 Jahren, Rest zwischen 30-45 Jahren.
+
+    Returns:
+        int: Ruhestandsalter zwischen min_age und max_age
+    """
+    config = get_config()
+    mean_age = config.get('player_generation.retirement.mean_age', 37.5)
+    std_dev = config.get('player_generation.retirement.std_dev', 1.95)
+    min_age = config.get('player_generation.retirement.min_age', 30)
+    max_age = config.get('player_generation.retirement.max_age', 45)
+
+    retirement_age = int(np.random.normal(mean_age, std_dev))
+    # Clamp auf konfigurierten Bereich
+    retirement_age = max(min_age, min(max_age, retirement_age))
+    return retirement_age
+
+
+
+
+
+def calculate_player_attribute_by_league_level(league_level, team_staerke, age=None, talent=None):
+    """
+    Calculate player attributes based on team strength.
+    Uses values from game_config.json.
+
+    NEW: Age-adjusted strength generation!
+    - Young players are generated with LOWER strength
+    - This lower strength is calculated so they reach team_staerke at peak (age 27)
+    - This makes young players realistically weaker but with growth potential
+
+    SPECIAL CASE: 10-year-old players
+    - ALL 10-year-olds are generated with strength 5-15, regardless of team level
+    - This reflects that young children don't show major skill differences yet
+    - Talent determines their peak strength, not their starting strength
+
+    Args:
+        league_level: League level (1 = top level)
+        team_staerke: Team strength value (represents peak/target strength)
+        age: Player's age (used for age-adjusted strength calculation)
+        talent: Player's talent (optional, for talent-based generation)
+
+    Returns:
+        dict: Dictionary with all player attributes
+    """
+    config = get_config()
+
+    # Get configuration values
+    base_std_dev = config.get('player_generation.attributes.base_std_dev', 5.0)
+    league_factor = config.get('player_generation.attributes.league_level_factor', 0.5)
+    min_attr = config.get('player_generation.attributes.min_attribute_value', 1)
+    max_attr = config.get('player_generation.attributes.max_attribute_value', 99)
+    talent_min = config.get('player_generation.talent.min', 1)
+    talent_max = config.get('player_generation.talent.max', 10)
+
+    attr_base_offset = config.get('player_generation.attributes.attr_base_value_offset', 60)
+    attr_strength_factor = config.get('player_generation.attributes.attr_strength_factor', 0.6)
+    attr_std_dev_base = config.get('player_generation.attributes.attr_std_dev_base', 5.0)
+    attr_std_dev_league_factor = config.get('player_generation.attributes.attr_std_dev_league_factor', 0.3)
+
+    # UNIFIED SYSTEM FOR YOUNG PLAYERS (age 10-26)
+    # Young players' strength is determined by talent and age, NOT by team level
+    # This creates realistic progression where all young players start similar and develop based on talent
+    if age is not None and age < 27:
+        # Generate random talent (will determine peak strength)
+        if talent is None:
+            talent = random.randint(talent_min, talent_max)
+
+        # Calculate current strength based on talent and age (unified system)
+        from player_development import calculate_current_strength_from_talent_and_age
+        player_strength = calculate_current_strength_from_talent_and_age(talent, age, club_bonus=1.1)
+
+        attributes = {
+            'strength': player_strength,
+            'talent': talent,
+        }
+
+        # Calculate other attributes based on CURRENT strength (not target)
+        base_attr_value = attr_base_offset + (attributes['strength'] - 50) * attr_strength_factor
+        attr_std_dev = attr_std_dev_base + (league_level - 1) * attr_std_dev_league_factor
+
+        # Generate all other attributes
+        for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
+                    'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
+            attributes[attr] = max(min_attr, min(max_attr, int(np.random.normal(base_attr_value, attr_std_dev))))
+
+        return attributes
+
+    # OLDER PLAYERS (age 27+) - use team_staerke based generation
+    # For players at or past peak, team level determines their strength
+    # Calculate standard deviation (higher leagues have more consistent players)
+    std_dev = base_std_dev + (league_level - 1) * league_factor
+
+    # Generate BASE strength using normal distribution based on team strength
+    # This represents the "target" or "peak" strength
+    target_strength = max(min_attr, min(max_attr, int(np.random.normal(team_staerke, std_dev))))
+
+    # Calculate talent based on peak strength (if not provided)
+    if talent is None:
+        from player_development import calculate_talent_from_peak_strength
+        talent = calculate_talent_from_peak_strength(target_strength)
+
+    # For players past peak, calculate decline
+    if age is not None and age > 27:
+        from player_development import calculate_age_adjusted_strength
+        player_strength = calculate_age_adjusted_strength(target_strength, age, talent, club_bonus=1.1)
+    else:
+        # Player is at peak or age not provided - use target strength directly
+        player_strength = target_strength
+
+    attributes = {
+        'strength': player_strength,
+        'talent': talent,
+    }
+
+    # Calculate other attributes based on CURRENT strength (not target)
+    base_attr_value = attr_base_offset + (attributes['strength'] - 50) * attr_strength_factor
+    attr_std_dev = attr_std_dev_base + (league_level - 1) * attr_std_dev_league_factor
+
+    # Generate all other attributes
+    for attr in ['ausdauer', 'konstanz', 'drucksicherheit',
+                'volle', 'raeumer', 'sicherheit', 'auswaerts', 'start', 'mitte', 'schluss']:
+        attributes[attr] = max(min_attr, min(max_attr, int(np.random.normal(base_attr_value, attr_std_dev))))
+
+    return attributes
+
+
+def generate_player_name():
+    """
+    Generiert einen zufälligen Spielernamen.
+
+    Returns:
+        str: Vollständiger Spielername (Vorname + Nachname)
+    """
+    # Einfache deutsche Vornamen
+    first_names = [
+        'Max', 'Leon', 'Lukas', 'Tim', 'Felix', 'Jonas', 'Paul', 'Ben', 'Finn', 'Noah',
+        'Elias', 'Luis', 'Luca', 'Jan', 'Nico', 'Tom', 'Moritz', 'David', 'Simon', 'Fabian',
+        'Alexander', 'Tobias', 'Sebastian', 'Christian', 'Michael', 'Thomas', 'Daniel', 'Markus',
+        'Stefan', 'Andreas', 'Matthias', 'Florian', 'Patrick', 'Dennis', 'Marco', 'Kevin'
+    ]
+
+    # Einfache deutsche Nachnamen
+    last_names = [
+        'Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker',
+        'Schulz', 'Hoffmann', 'Schäfer', 'Koch', 'Bauer', 'Richter', 'Klein', 'Wolf',
+        'Schröder', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun', 'Krüger', 'Hofmann', 'Hartmann',
+        'Lange', 'Schmitt', 'Werner', 'Schmitz', 'Krause', 'Meier', 'Lehmann', 'Huber'
+    ]
+
+    return f"{random.choice(first_names)} {random.choice(last_names)}"
+
+
+def generate_replacement_player(club_id):
+    """
+    Generiert einen neuen Spieler für einen Verein, wenn ein Spieler in den Ruhestand geht.
+
+    Das Alter des neuen Spielers wird basierend auf der jüngsten Mannschaft des Vereins bestimmt:
+    - Wenn der Verein Jugendmannschaften hat, wird das Alter für die jüngste Altersklasse generiert
+    - Wenn der Verein nur Herrenmannschaften hat, wird ein junger Erwachsener (17-18 Jahre) generiert
+
+    Args:
+        club_id: ID des Vereins, für den ein neuer Spieler generiert werden soll
+
+    Returns:
+        Player: Der neu generierte Spieler (noch nicht in der Datenbank gespeichert)
+    """
+    try:
+        # Get the club
+        club = Club.query.get(club_id)
+        if not club:
+            print(f"  Error: Club with ID {club_id} not found")
+            return None
+
+        # Find the youngest team (team with the youngest altersklasse)
+        youngest_team = None
+        youngest_rank = 999  # Start with a high number
+
+        from age_class_utils import get_age_class_rank
+
+        for team in club.teams:
+            if team.league and team.league.altersklasse:
+                rank = get_age_class_rank(team.league.altersklasse)
+                if rank < youngest_rank:
+                    youngest_rank = rank
+                    youngest_team = team
+
+        # Determine age based on youngest team's altersklasse
+        if youngest_team and youngest_team.league and youngest_team.league.altersklasse:
+            min_age, max_age = get_age_range_for_altersklasse(youngest_team.league.altersklasse)
+            age = random.randint(min_age, max_age)
+            print(f"  Generating player for {club.name} based on youngest team {youngest_team.name} (Altersklasse: {youngest_team.league.altersklasse})")
+        else:
+            # No youth teams found, generate a young adult player (17-18 years)
+            age = random.randint(17, 18)
+            print(f"  Generating young adult player for {club.name} (no youth teams found)")
+
+        # Find a representative team to base attributes on
+        # Prefer the youngest team, or use any team from the club
+        reference_team = youngest_team if youngest_team else (club.teams[0] if club.teams else None)
+
+        if not reference_team:
+            print(f"  Error: Club {club.name} has no teams")
+            return None
+
+        # Get league level and team strength
+        league_level = reference_team.league.level if reference_team.league else 10
+        team_staerke = reference_team.staerke if reference_team.staerke else 50
+
+        # Generate player attributes (with age for age-based strength calculation)
+        attributes = calculate_player_attribute_by_league_level(
+            league_level,
+            team_staerke,
+            age=age  # Pass age for age-based strength calculation
+        )
+
+        # Generate player name
+        player_name = generate_player_name()
+
+        # Generate retirement age
+        retirement_age = generate_retirement_age()
+
+        # Calculate salary and contract end
+        salary = attributes['strength'] * 100  # Simple salary calculation
+        contract_end = datetime.now() + timedelta(days=365 * 3)  # 3-year contract
+
+        # Create the new player
+        new_player = Player(
+            name=player_name,
+            age=age,
+            strength=attributes['strength'],
+            talent=attributes['talent'],
+            position='Kegler',
+            salary=salary,
+            contract_end=contract_end.date(),
+            club_id=club_id,
+            ausdauer=attributes['ausdauer'],
+            konstanz=attributes['konstanz'],
+            drucksicherheit=attributes['drucksicherheit'],
+            volle=attributes['volle'],
+            raeumer=attributes['raeumer'],
+            sicherheit=attributes['sicherheit'],
+            auswaerts=attributes['auswaerts'],
+            start=attributes['start'],
+            mitte=attributes['mitte'],
+            schluss=attributes['schluss'],
+            retirement_age=retirement_age,
+            is_retired=False,
+            nationalitaet='Deutsch'
+        )
+
+        print(f"  Generated new player: {player_name} (Age: {age}, Strength: {attributes['strength']}) for {club.name}")
+
+        return new_player
+
+    except Exception as e:
+        print(f"  Error generating replacement player for club {club_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 class SimplePlayer:
@@ -1124,7 +1482,16 @@ def simulate_player_performance(player, position, lane_quality, team_advantage, 
         mean_score *= ausdauer_factor
 
         # Add randomness based on consistency
-        std_dev = 12 - (konstanz / 20)  # 12 to 7 based on konstanz
+        # Use a coefficient of variation approach: std_dev proportional to mean_score
+        # This ensures variance scales with the score level
+        base_cv = (12 - (konstanz / 20)) / 150  # Coefficient of variation (std_dev / typical_mean)
+        std_dev = mean_score * base_cv
+
+        # Increase standard deviation for away players (unfamiliar lanes)
+        # Away players have higher variance due to unfamiliar conditions
+        if not is_home:
+            std_dev *= 1.3  # 30% higher standard deviation for away players
+
         lane_score = int(np.random.normal(mean_score, std_dev))
         lane_score = max(80, min(200, lane_score))  # Clamp to reasonable range
 
@@ -3175,13 +3542,25 @@ def create_new_season(old_season):
 
     print("Generated fixtures for all leagues and cups in the new season")
 
-    # Age all players by 1 year and handle retirements
+    # STEP 1: Age all players by 1 year
+    print("\n" + "="*60)
+    print("STEP 1: AGING PLAYERS")
+    print("="*60)
     players = Player.query.filter_by(is_retired=False).all()
-    retired_count = 0
-
     for player in players:
         player.age += 1
+    db.session.commit()
+    print(f"Aged {len(players)} players by 1 year")
 
+    # STEP 2: Handle retirements (but don't generate replacements yet)
+    print("\n" + "="*60)
+    print("STEP 2: PROCESSING RETIREMENTS")
+    print("="*60)
+    players = Player.query.filter_by(is_retired=False).all()
+    retired_count = 0
+    retired_clubs = []  # Track clubs that need replacement players
+
+    for player in players:
         # Check if player should retire
         if player.retirement_age and player.age >= player.retirement_age:
             # Mark player as retired
@@ -3200,18 +3579,68 @@ def create_new_season(old_season):
             # Create retirement notification message for the player's club
             if player.club_id:
                 create_retirement_message(player)
+                retired_clubs.append(player.club_id)
 
     db.session.commit()
-    print(f"Aged {len(players)} players by 1 year")
     if retired_count > 0:
         print(f"{retired_count} players retired this season")
+    else:
+        print("No players retired this season")
 
-    # Note: Player redistribution is disabled during season transitions to avoid conflicts
-    # with the game's dynamic player assignment system. The current system assigns players
-    # to teams dynamically based on availability and strength for each match day.
-    #
-    # TODO: Future improvement - integrate permanent team assignments with match assignments
-    # so that players can only play for teams they are permanently assigned to.
+    # STEP 3: Develop all existing (non-retired) players based on age, talent, and club quality
+    # This happens BEFORE new players are generated, so new players won't be developed immediately
+    print("\n" + "="*60)
+    print("STEP 3: DEVELOPING EXISTING PLAYERS")
+    print("="*60)
+    try:
+        from player_development import develop_all_players, save_player_history_snapshot
+        development_stats = develop_all_players()
+        print("Player development completed successfully")
+
+        # Save player history snapshot after development
+        print("\nSaving player development history...")
+        save_player_history_snapshot()
+    except Exception as e:
+        print(f"Warning: Player development failed: {str(e)}")
+        # Don't fail the season transition if development fails
+        import traceback
+        traceback.print_exc()
+
+    # STEP 4: Generate replacement players for retired players
+    # These new players will NOT be developed in this season transition
+    print("\n" + "="*60)
+    print("STEP 4: GENERATING REPLACEMENT PLAYERS")
+    print("="*60)
+    new_players_generated = 0
+    for club_id in retired_clubs:
+        new_player = generate_replacement_player(club_id)
+        if new_player:
+            db.session.add(new_player)
+            new_players_generated += 1
+
+            # Create notification for new player if club is managed
+            create_new_player_message(new_player)
+
+    db.session.commit()
+    if new_players_generated > 0:
+        print(f"{new_players_generated} new players generated to replace retired players")
+    else:
+        print("No new players generated")
+
+    # STEP 5: Redistribute players based on their new age and strength
+    # This ensures players are moved to age-appropriate teams after aging and development
+    print("\n" + "="*60)
+    print("STEP 5: REDISTRIBUTING PLAYERS TO TEAMS")
+    print("="*60)
+    try:
+        from player_redistribution import redistribute_players_by_strength_and_age
+        redistribute_players_by_strength_and_age()
+        print("Player redistribution completed successfully")
+    except Exception as e:
+        print(f"Warning: Player redistribution failed: {str(e)}")
+        # Don't fail the season transition if redistribution fails
+        import traceback
+        traceback.print_exc()
 
     # Now that everything is set up, make the new season current
     old_season.is_current = False

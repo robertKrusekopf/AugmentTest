@@ -71,6 +71,9 @@ class Player(db.Model):
     is_retired = db.Column(db.Boolean, default=False, index=True)  # Ist der Spieler im Ruhestand?
     retirement_season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=True)  # Saison des Ruhestands
 
+    # Nationalität
+    nationalitaet = db.Column(db.String(50), default='Deutsch', nullable=False)  # Nationalität des Spielers
+
     # Relationships
     club = db.relationship('Club', back_populates='players')
     teams = db.relationship('Team', secondary=player_team, back_populates='players')
@@ -230,6 +233,15 @@ class Player(db.Model):
         }
 
     def to_dict(self):
+        # Determine the team/club name to display
+        # Priority: First team name > Club name > "Kein Team"
+        if self.teams:
+            team_display = self.teams[0].name
+        elif self.club:
+            team_display = self.club.name
+        else:
+            team_display = "Kein Team"
+
         return {
             'id': self.id,
             'name': self.name,
@@ -240,6 +252,7 @@ class Player(db.Model):
             'salary': self.salary,
             'contract_end': self.contract_end.isoformat() if self.contract_end else None,
             'club_id': self.club_id,
+            'team': team_display,  # Human-readable team/club name for display
             # Kegeln-spezifische Attribute
             'ausdauer': self.ausdauer,
             # Neue Attribute
@@ -267,6 +280,8 @@ class Player(db.Model):
             'retirement_age': self.retirement_age,
             'is_retired': self.is_retired,
             'retirement_season_id': self.retirement_season_id,
+            # Nationalität
+            'nationalitaet': self.nationalitaet,
             # Include player statistics
             'statistics': self.calculate_stats()
         }
@@ -358,11 +373,10 @@ class Team(db.Model):
         players_info = []
         current_season = Season.query.filter_by(is_current=True).first()
 
+        # Filter out retired players from regular team members
         for player in self.players:
-            # Skip retired players
             if player.is_retired:
                 continue
-
             # Calculate statistics for this player specifically for this team (all-time)
             team_stats = player.calculate_team_specific_stats(self.id)
             # Calculate current season statistics
@@ -390,6 +404,7 @@ class Team(db.Model):
                 'statistics': team_stats,  # Verwende teamspezifische Statistiken (all-time)
                 'current_season_statistics': current_season_team_stats,  # Current season statistics
                 'is_substitute': False,  # Regular team member
+                'is_retired': player.is_retired,  # Retirement status
                 'club_id': player.club_id,
                 'club_name': player.club.name if player.club else 'Kein Verein'
             }
@@ -401,7 +416,6 @@ class Team(db.Model):
             # Skip retired players
             if player.is_retired:
                 continue
-
             # Calculate statistics for this player specifically for this team (all-time)
             team_stats = player.calculate_team_specific_stats(self.id)
             # Calculate current season statistics
@@ -429,6 +443,7 @@ class Team(db.Model):
                 'statistics': team_stats,  # All-time statistics
                 'current_season_statistics': current_season_team_stats,  # Current season statistics
                 'is_substitute': True,  # Substitute player
+                'is_retired': player.is_retired,  # Retirement status
                 'club_id': player.club_id,
                 'club_name': player.club.name if player.club else 'Kein Verein'
             }
@@ -1314,6 +1329,7 @@ class League(db.Model):
             standings.append({
                 'position': i + 1,
                 'team_id': team.id,
+                'club_id': team.club_id,
                 'team': team_display_name,
                 'team_name_base': team.name,  # Original name without suffix
                 'club_name': team.club.name if team.club else 'Unbekannt',
@@ -1900,6 +1916,7 @@ class CupMatch(db.Model):
             away_team_data = {
                 'id': self.away_team.id,
                 'name': self.away_team.name,
+                'club_id': self.away_team.club_id,
                 'club_name': self.away_team.club.name if self.away_team.club else None,
                 'league_level': self.away_team.league.level if self.away_team.league else None,
                 'emblem_url': f"/api/club-emblem/{self.away_team.club.verein_id}" if self.away_team.club and self.away_team.club.verein_id else None
@@ -1909,7 +1926,9 @@ class CupMatch(db.Model):
             'id': self.id,
             'cup_id': self.cup_id,
             'home_team_id': self.home_team.id,
+            'home_team_club_id': self.home_team.club_id,
             'away_team_id': self.away_team.id if self.away_team else None,
+            'away_team_club_id': self.away_team.club_id if self.away_team else None,
             'home_team_name': self.home_team.name,
             'away_team_name': self.away_team.name if self.away_team else None,
             'home_team_league_level': self.home_team.league.level if self.home_team.league else None,
@@ -1919,6 +1938,7 @@ class CupMatch(db.Model):
             'home_team': {
                 'id': self.home_team.id,
                 'name': self.home_team.name,
+                'club_id': self.home_team.club_id,
                 'club_name': self.home_team.club.name if self.home_team.club else None,
                 'league_level': self.home_team.league.level if self.home_team.league else None,
                 'emblem_url': f"/api/club-emblem/{self.home_team.club.verein_id}" if self.home_team.club and self.home_team.club.verein_id else None
@@ -2023,6 +2043,67 @@ class LeagueHistory(db.Model):
             'pins_against': self.pins_against,
             'avg_home_score': self.avg_home_score,
             'avg_away_score': self.avg_away_score
+        }
+
+
+class PlayerHistory(db.Model):
+    """Speichert die Attribut-Entwicklung von Spielern am Ende jeder Saison."""
+    __tablename__ = 'player_history'
+
+    id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False, index=True)
+    season_id = db.Column(db.Integer, db.ForeignKey('season.id'), nullable=False, index=True)
+    season_name = db.Column(db.String(100), nullable=False)  # Name der Saison für einfachere Abfragen
+
+    # Spieler-Informationen zum Zeitpunkt der Aufzeichnung
+    player_name = db.Column(db.String(100), nullable=False)
+    age = db.Column(db.Integer, nullable=False)
+    club_id = db.Column(db.Integer)  # Kann null sein wenn Spieler vereinslos
+    club_name = db.Column(db.String(100))
+
+    # Attribute zum Saisonende
+    strength = db.Column(db.Integer, nullable=False)
+    talent = db.Column(db.Integer, nullable=False)
+    ausdauer = db.Column(db.Integer)
+    konstanz = db.Column(db.Integer)
+    drucksicherheit = db.Column(db.Integer)
+    volle = db.Column(db.Integer)
+    raeumer = db.Column(db.Integer)
+    sicherheit = db.Column(db.Integer)
+    auswaerts = db.Column(db.Integer)
+    start = db.Column(db.Integer)
+    mitte = db.Column(db.Integer)
+    schluss = db.Column(db.Integer)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    player = db.relationship('Player', backref='history_records')
+    season = db.relationship('Season', backref='player_histories')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'player_id': self.player_id,
+            'player_name': self.player_name,
+            'season_id': self.season_id,
+            'season_name': self.season_name,
+            'age': self.age,
+            'club_id': self.club_id,
+            'club_name': self.club_name,
+            'strength': self.strength,
+            'talent': self.talent,
+            'ausdauer': self.ausdauer,
+            'konstanz': self.konstanz,
+            'drucksicherheit': self.drucksicherheit,
+            'volle': self.volle,
+            'raeumer': self.raeumer,
+            'sicherheit': self.sicherheit,
+            'auswaerts': self.auswaerts,
+            'start': self.start,
+            'mitte': self.mitte,
+            'schluss': self.schluss,
+            'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
 
@@ -2432,6 +2513,9 @@ class LaneRecord(db.Model):
         """Convert the record to a dictionary for API responses."""
         # Determine the display date - prefer match_date over record_date
         display_date = None
+        is_cup_match = False
+        frontend_match_id = self.match_id
+
         if self.match and self.match.match_date:
             # Regular league match
             display_date = self.match.match_date.isoformat()
@@ -2440,6 +2524,9 @@ class LaneRecord(db.Model):
             cup_match = CupMatch.query.get(self.match_id)
             if cup_match and cup_match.match_date:
                 display_date = cup_match.match_date.isoformat()
+                is_cup_match = True
+                # Convert database ID to frontend ID for cup matches
+                frontend_match_id = get_cup_match_frontend_id(self.match_id)
 
         # Fallback to record_date if no match date is available
         if not display_date and self.record_date:
@@ -2452,7 +2539,7 @@ class LaneRecord(db.Model):
             'club_id': self.club_id,
             'club_name': self.club.name,
             'score': self.score,
-            'match_id': self.match_id,
+            'match_id': frontend_match_id,  # Use frontend ID for cup matches
             'record_date': display_date  # This is now the match date when available
         }
 
